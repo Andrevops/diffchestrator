@@ -149,6 +149,12 @@
         "icon": "$(terminal)"
       },
       {
+        "command": "diffchestrator.yolo",
+        "title": "Yolo (Claude Sandbox)",
+        "category": "Diffchestrator",
+        "icon": "$(zap)"
+      },
+      {
         "command": "diffchestrator.searchFiles",
         "title": "Search Files Across Repos",
         "category": "Diffchestrator",
@@ -249,6 +255,11 @@
           "group": "2_tools@2"
         },
         {
+          "command": "diffchestrator.yolo",
+          "when": "viewItem == repo",
+          "group": "2_tools@3"
+        },
+        {
           "command": "diffchestrator.toggleFavorite",
           "when": "viewItem == repo || viewItem == directory",
           "group": "3_misc@1"
@@ -278,6 +289,7 @@
       { "command": "diffchestrator.push", "key": "ctrl+d p", "mac": "cmd+d p" },
       { "command": "diffchestrator.openTerminal", "key": "ctrl+d t", "mac": "cmd+d t" },
       { "command": "diffchestrator.openClaudeCode", "key": "ctrl+d l", "mac": "cmd+d l" },
+      { "command": "diffchestrator.yolo", "key": "ctrl+d y", "mac": "cmd+d y" },
       { "command": "diffchestrator.toggleChangedOnly", "key": "ctrl+d d", "mac": "cmd+d d" }
     ],
     "configuration": {

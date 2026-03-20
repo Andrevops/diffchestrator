@@ -1,20 +1,23 @@
 import * as vscode from "vscode";
-import * as path from "path";
-import { spawn } from "child_process";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
+import { getOrCreateTerminal } from "./terminal";
+
+const AI_COMMIT_PROMPT =
+  "Review the current git changes and create an appropriate commit. " +
+  "Stage all relevant files and write a clear conventional commit message. " +
+  "Do NOT push.";
 
 export function registerAiCommitCommands(
   context: vscode.ExtensionContext,
   repoManager: RepoManager
 ): void {
-  const outputChannel = vscode.window.createOutputChannel("Diffchestrator AI");
-
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.aiCommit,
       async (item?: any) => {
-        const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+        const repoPath =
+          item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
         if (!repoPath) {
           vscode.window.showWarningMessage(
             "Diffchestrator: No repository selected for AI commit."
@@ -22,66 +25,25 @@ export function registerAiCommitCommands(
           return;
         }
 
-        const repoName = path.basename(repoPath);
         const config = vscode.workspace.getConfiguration("diffchestrator");
-        const permissionMode = config.get<string>("claudePermissionMode", "acceptEdits");
-
-        // Pass through directly — Claude CLI expects exact values: acceptEdits, bypassPermissions, default, dontAsk, plan, auto
-        const permFlag = permissionMode;
-
-        const prompt =
-          "Review the current git diff (staged and unstaged). Write a clear, conventional " +
-          "commit message. Stage all meaningful changes and create the commit. " +
-          "Do NOT push. Respond with just the commit hash and message when done.";
-
-        outputChannel.clear();
-        outputChannel.show();
-        outputChannel.appendLine(`[AI Commit] ${repoName} (${repoPath})`);
-        outputChannel.appendLine(`Permission mode: ${permFlag}`);
-        outputChannel.appendLine("---");
-
-        const claudeProcess = spawn(
-          "claude",
-          ["-p", "--permission-mode", permFlag, prompt],
-          {
-            cwd: repoPath,
-            stdio: ["ignore", "pipe", "pipe"],
-            env: { ...process.env },
-          }
+        const permissionMode = config.get<string>(
+          "claudePermissionMode",
+          "acceptEdits"
         );
 
-        claudeProcess.stdout.on("data", (data: Buffer) => {
-          outputChannel.append(data.toString());
-        });
+        const terminal = getOrCreateTerminal(repoPath);
+        terminal.show();
 
-        claudeProcess.stderr.on("data", (data: Buffer) => {
-          outputChannel.append(data.toString());
-        });
+        // Check if there's already a Claude session running by looking at
+        // the terminal name — if we previously sent claude to this terminal,
+        // just send the prompt text directly
+        const cmd = `claude --permission-mode ${permissionMode} "${AI_COMMIT_PROMPT}"`;
+        terminal.sendText(cmd);
 
-        claudeProcess.on("error", (err) => {
-          outputChannel.appendLine(`\n[ERROR] Failed to spawn claude: ${err.message}`);
-          outputChannel.appendLine(
-            "Make sure 'claude' CLI is installed and available in PATH."
-          );
-          vscode.window.showErrorMessage(
-            `Diffchestrator: Failed to launch Claude CLI: ${err.message}`
-          );
-        });
-
-        claudeProcess.on("close", async (code) => {
-          outputChannel.appendLine(`\n--- Claude exited with code ${code} ---`);
-          await repoManager.refreshRepo(repoPath);
-
-          if (code === 0) {
-            vscode.window.showInformationMessage(
-              `Diffchestrator: AI commit complete for ${repoName}`
-            );
-          } else {
-            vscode.window.showWarningMessage(
-              `Diffchestrator: Claude exited with code ${code} for ${repoName}`
-            );
-          }
-        });
+        // Refresh after a delay to pick up the commit
+        setTimeout(() => repoManager.refreshRepo(repoPath), 15000);
+        setTimeout(() => repoManager.refreshRepo(repoPath), 30000);
+        setTimeout(() => repoManager.refreshRepo(repoPath), 60000);
       }
     )
   );
