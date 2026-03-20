@@ -145,9 +145,10 @@ export function registerFileSearchCommand(
         return;
       }
 
+      // Use filesToInclude with trailing glob so VS Code treats it as a folder scope
       await vscode.commands.executeCommand("workbench.action.findInFiles", {
         query: "",
-        filesToInclude: repoPath,
+        filesToInclude: `${repoPath}${path.sep}**`,
         triggerSearch: false,
       });
     })
