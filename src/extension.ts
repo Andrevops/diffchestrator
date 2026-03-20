@@ -3,7 +3,7 @@ import { RepoManager } from "./services/repoManager";
 import { RepoTreeProvider } from "./providers/repoTreeProvider";
 import { FavoritesTreeProvider } from "./providers/favoritesTreeProvider";
 import { ChangedFilesProvider } from "./providers/changedFilesProvider";
-import { CMD, VIEW_REPOS, VIEW_FAVORITES, VIEW_CHANGED_FILES } from "./constants";
+import { CMD, VIEW_ACTIVE_REPOS, VIEW_REPOS, VIEW_FAVORITES, VIEW_CHANGED_FILES } from "./constants";
 import { registerScanCommands } from "./commands/scan";
 import { registerStageCommands } from "./commands/stage";
 import { registerCommitCommands } from "./commands/commit";
@@ -18,6 +18,7 @@ import { registerCommitHistoryCommands } from "./commands/commitHistory";
 import { registerDiscardCommands } from "./commands/discard";
 import { registerSwitchBranchCommands } from "./commands/switchBranch";
 import { registerStashCommands } from "./commands/stash";
+import { ActiveReposProvider } from "./providers/activeReposProvider";
 import { GitContentProvider } from "./providers/gitContentProvider";
 import { DiffWebviewPanel } from "./views/diffWebviewPanel";
 import { FileWatcher } from "./services/fileWatcher";
@@ -30,6 +31,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(repoManager);
 
   // Tree views
+  const activeRepos = new ActiveReposProvider(repoManager);
   const repoTree = new RepoTreeProvider(repoManager);
   const favTree = new FavoritesTreeProvider(repoManager);
   const changedFiles = new ChangedFilesProvider(repoManager);
@@ -37,12 +39,14 @@ export function activate(context: vscode.ExtensionContext): void {
   // Git content provider for diff URIs
   const gitContentProvider = new GitContentProvider();
   // Create tree views (not just providers) so we can set description + badge
+  const activeReposView = vscode.window.createTreeView(VIEW_ACTIVE_REPOS, { treeDataProvider: activeRepos });
   const repoTreeView = vscode.window.createTreeView(VIEW_REPOS, { treeDataProvider: repoTree });
   const favTreeView = vscode.window.createTreeView(VIEW_FAVORITES, { treeDataProvider: favTree });
   const changedFilesView = vscode.window.createTreeView(VIEW_CHANGED_FILES, { treeDataProvider: changedFiles });
 
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider("git-show", gitContentProvider),
+    activeReposView,
     repoTreeView,
     favTreeView,
     changedFilesView,

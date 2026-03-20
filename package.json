@@ -29,16 +29,21 @@
     "views": {
       "diffchestrator": [
         {
+          "id": "diffchestrator.activeRepos",
+          "name": "Active Repos",
+          "when": "diffchestrator.hasSelectedRepo"
+        },
+        {
+          "id": "diffchestrator.changedFiles",
+          "name": "Changed Files"
+        },
+        {
           "id": "diffchestrator.favorites",
           "name": "Favorites"
         },
         {
           "id": "diffchestrator.repos",
           "name": "Repositories"
-        },
-        {
-          "id": "diffchestrator.changedFiles",
-          "name": "Changed Files"
         }
       ]
     },

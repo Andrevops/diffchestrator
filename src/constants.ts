@@ -1,5 +1,6 @@
 export const EXTENSION_ID = "diffchestrator";
 
+export const VIEW_ACTIVE_REPOS = "diffchestrator.activeRepos";
 export const VIEW_REPOS = "diffchestrator.repos";
 export const VIEW_FAVORITES = "diffchestrator.favorites";
 export const VIEW_CHANGED_FILES = "diffchestrator.changedFiles";
