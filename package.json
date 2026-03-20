@@ -80,6 +80,12 @@
         "icon": "$(star)"
       },
       {
+        "command": "diffchestrator.favoriteCurrent",
+        "title": "Favorite Current Repo",
+        "category": "Diffchestrator",
+        "icon": "$(star)"
+      },
+      {
         "command": "diffchestrator.viewDiff",
         "title": "View Diff",
         "category": "Diffchestrator",
@@ -428,6 +434,11 @@
         "command": "diffchestrator.toggleBlame",
         "key": "ctrl+d g",
         "mac": "cmd+d g"
+      },
+      {
+        "command": "diffchestrator.favoriteCurrent",
+        "key": "ctrl+d e",
+        "mac": "cmd+d e"
       }
     ],
     "configuration": {

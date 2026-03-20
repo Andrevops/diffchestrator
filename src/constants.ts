@@ -35,6 +35,7 @@ export const CMD = {
   switchBranch: "diffchestrator.switchBranch",
   stash: "diffchestrator.stash",
   toggleBlame: "diffchestrator.toggleBlame",
+  favoriteCurrent: "diffchestrator.favoriteCurrent",
 } as const;
 
 export const CONFIG = {
