@@ -6,33 +6,34 @@ export function registerFavoriteCommands(
   context: vscode.ExtensionContext,
   repoManager: RepoManager
 ): void {
-  // Suppress unused parameter warning — repoManager reserved for future use
   void repoManager;
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.toggleFavorite,
-      async (item?: { path?: string }) => {
-        if (!item?.path) {
+      async (item?: any) => {
+        // Extract path from TreeNode (context menu) or { path } (command palette)
+        const itemPath = item?.repo?.path ?? item?.fullPath ?? item?.path;
+        if (!itemPath) {
           vscode.window.showWarningMessage(
-            "Diffchestrator: No repository selected to favorite."
+            "Diffchestrator: No item selected to favorite."
           );
           return;
         }
 
         const config = vscode.workspace.getConfiguration("diffchestrator");
         const favorites = [...config.get<string[]>("favorites", [])];
-        const idx = favorites.indexOf(item.path);
+        const idx = favorites.indexOf(itemPath);
 
         if (idx >= 0) {
           favorites.splice(idx, 1);
           vscode.window.showInformationMessage(
-            `Diffchestrator: Removed from favorites`
+            `Removed from favorites`
           );
         } else {
-          favorites.push(item.path);
+          favorites.push(itemPath);
           vscode.window.showInformationMessage(
-            `Diffchestrator: Added to favorites`
+            `Added to favorites`
           );
         }
 

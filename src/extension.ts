@@ -58,10 +58,9 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.selectRepo,
-      (item?: { path?: string }) => {
-        if (item?.path) {
-          repoManager.toggleRepoSelection(item.path);
-        }
+      (item?: any) => {
+        const p = resolveRepoPath(item);
+        if (p) repoManager.toggleRepoSelection(p);
       }
     )
   );
@@ -73,12 +72,23 @@ export function activate(context: vscode.ExtensionContext): void {
     )
   );
 
+  // Helper to extract repo path from various argument shapes
+  // Tree click: { path: "..." }, Context menu: TreeNode { fullPath: "...", repo: { path: "..." } }
+  function resolveRepoPath(item?: any): string | undefined {
+    if (!item) return repoManager.selectedRepo;
+    if (item.repo?.path) return item.repo.path;
+    if (item.fullPath) return item.fullPath;
+    if (item.path) return item.path;
+    if (item.repoPath) return item.repoPath;
+    return repoManager.selectedRepo;
+  }
+
   // View diff — selects repo and shows changed files panel
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.viewDiff,
-      async (item?: { path?: string }) => {
-        const repoPath = item?.path ?? repoManager.selectedRepo;
+      async (item?: any) => {
+        const repoPath = resolveRepoPath(item);
         if (!repoPath) {
           vscode.window.showWarningMessage(
             "Diffchestrator: No repository selected."
@@ -86,7 +96,6 @@ export function activate(context: vscode.ExtensionContext): void {
           return;
         }
         repoManager.selectRepo(repoPath);
-        // Reveal the changed files view so the user sees it
         await vscode.commands.executeCommand(`${VIEW_CHANGED_FILES}.focus`);
       }
     )

@@ -13,8 +13,8 @@ export function registerAiCommitCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.aiCommit,
-      async (item?: { path?: string }) => {
-        const repoPath = item?.path ?? repoManager.selectedRepo;
+      async (item?: any) => {
+        const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
         if (!repoPath) {
           vscode.window.showWarningMessage(
             "Diffchestrator: No repository selected for AI commit."

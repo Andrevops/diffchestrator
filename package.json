@@ -233,7 +233,7 @@
         },
         {
           "command": "diffchestrator.toggleFavorite",
-          "when": "viewItem == repo",
+          "when": "viewItem == repo || viewItem == directory",
           "group": "3_misc@1"
         },
         {

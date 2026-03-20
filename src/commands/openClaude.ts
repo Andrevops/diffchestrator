@@ -10,9 +10,9 @@ export function registerClaudeCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.openClaudeCode,
-      (item?: { path?: string }) => {
+      (item?: any) => {
         const selectedPaths = repoManager.selectedRepoPaths;
-        const singlePath = item?.path ?? repoManager.selectedRepo;
+        const singlePath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
 
         if (selectedPaths.size > 1) {
           // Multi-repo mode: open claude with --add-dir for each selected repo

@@ -13,8 +13,8 @@ export function registerTerminalCommand(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.openTerminal,
-      (item?: { path?: string }) => {
-        const targetPath = item?.path ?? repoManager.selectedRepo;
+      (item?: any) => {
+        const targetPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
         if (!targetPath) {
           vscode.window.showWarningMessage(
             "Diffchestrator: No repository selected."
