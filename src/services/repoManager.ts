@@ -12,6 +12,8 @@ export class RepoManager implements vscode.Disposable {
   private _changedOnly: boolean;
   private _refreshTimer: ReturnType<typeof setInterval> | undefined;
   private _git = new GitExecutor();
+  private _windowFocused = true;
+  private _focusDisposable: vscode.Disposable | undefined;
 
   private _onDidChangeRepos = new vscode.EventEmitter<void>();
   readonly onDidChangeRepos = this._onDidChangeRepos.event;
@@ -135,15 +137,31 @@ export class RepoManager implements vscode.Disposable {
 
   private startAutoRefresh(): void {
     if (this._refreshTimer) clearInterval(this._refreshTimer);
+
+    // Track window focus — skip polling when VS Code is not focused
+    this._focusDisposable?.dispose();
+    this._focusDisposable = vscode.window.onDidChangeWindowState((state) => {
+      this._windowFocused = state.focused;
+      // Refresh immediately when regaining focus to catch external changes
+      if (state.focused) {
+        this.refreshAll();
+      }
+    });
+
     const config = vscode.workspace.getConfiguration("diffchestrator");
     const interval = config.get<number>("autoRefreshInterval", 10);
     if (interval > 0) {
-      this._refreshTimer = setInterval(() => this.refreshAll(), interval * 1000);
+      this._refreshTimer = setInterval(() => {
+        if (this._windowFocused) {
+          this.refreshAll();
+        }
+      }, interval * 1000);
     }
   }
 
   dispose(): void {
     if (this._refreshTimer) clearInterval(this._refreshTimer);
+    this._focusDisposable?.dispose();
     this._onDidChangeRepos.dispose();
     this._onDidChangeSelection.dispose();
     this._onDidScanProgress.dispose();
