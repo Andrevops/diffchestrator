@@ -2,7 +2,7 @@
   "name": "diffchestrator",
   "displayName": "Diffchestrator",
   "description": "Multi-repo Git orchestration built for Claude Code — AI commits, diffs, and terminal integration",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "Andrevops",
   "license": "MIT",
   "engines": {
@@ -359,20 +359,76 @@
       ]
     },
     "keybindings": [
-      { "command": "diffchestrator.scan", "key": "ctrl+d s", "mac": "cmd+d s" },
-      { "command": "diffchestrator.switchRepo", "key": "ctrl+d r", "mac": "cmd+d r" },
-      { "command": "diffchestrator.browseFiles", "key": "ctrl+d f", "mac": "cmd+d f" },
-      { "command": "diffchestrator.aiCommit", "key": "ctrl+d c", "mac": "cmd+d c" },
-      { "command": "diffchestrator.push", "key": "ctrl+d p", "mac": "cmd+d p" },
-      { "command": "diffchestrator.pull", "key": "ctrl+d u", "mac": "cmd+d u" },
-      { "command": "diffchestrator.openTerminal", "key": "ctrl+d t", "mac": "cmd+d t" },
-      { "command": "diffchestrator.openClaudeCode", "key": "ctrl+d l", "mac": "cmd+d l" },
-      { "command": "diffchestrator.yolo", "key": "ctrl+d y", "mac": "cmd+d y" },
-      { "command": "diffchestrator.toggleChangedOnly", "key": "ctrl+d d", "mac": "cmd+d d" },
-      { "command": "diffchestrator.commitHistory", "key": "ctrl+d h", "mac": "cmd+d h" },
-      { "command": "diffchestrator.switchBranch", "key": "ctrl+d b", "mac": "cmd+d b" },
-      { "command": "diffchestrator.stash", "key": "ctrl+d a", "mac": "cmd+d a" },
-      { "command": "diffchestrator.toggleBlame", "key": "ctrl+d g", "mac": "cmd+d g" }
+      {
+        "command": "diffchestrator.scan",
+        "key": "ctrl+d s",
+        "mac": "cmd+d s"
+      },
+      {
+        "command": "diffchestrator.switchRepo",
+        "key": "ctrl+d r",
+        "mac": "cmd+d r"
+      },
+      {
+        "command": "diffchestrator.browseFiles",
+        "key": "ctrl+d f",
+        "mac": "cmd+d f"
+      },
+      {
+        "command": "diffchestrator.aiCommit",
+        "key": "ctrl+d c",
+        "mac": "cmd+d c"
+      },
+      {
+        "command": "diffchestrator.push",
+        "key": "ctrl+d p",
+        "mac": "cmd+d p"
+      },
+      {
+        "command": "diffchestrator.pull",
+        "key": "ctrl+d u",
+        "mac": "cmd+d u"
+      },
+      {
+        "command": "diffchestrator.openTerminal",
+        "key": "ctrl+d t",
+        "mac": "cmd+d t"
+      },
+      {
+        "command": "diffchestrator.openClaudeCode",
+        "key": "ctrl+d l",
+        "mac": "cmd+d l"
+      },
+      {
+        "command": "diffchestrator.yolo",
+        "key": "ctrl+d y",
+        "mac": "cmd+d y"
+      },
+      {
+        "command": "diffchestrator.toggleChangedOnly",
+        "key": "ctrl+d d",
+        "mac": "cmd+d d"
+      },
+      {
+        "command": "diffchestrator.commitHistory",
+        "key": "ctrl+d h",
+        "mac": "cmd+d h"
+      },
+      {
+        "command": "diffchestrator.switchBranch",
+        "key": "ctrl+d b",
+        "mac": "cmd+d b"
+      },
+      {
+        "command": "diffchestrator.stash",
+        "key": "ctrl+d a",
+        "mac": "cmd+d a"
+      },
+      {
+        "command": "diffchestrator.toggleBlame",
+        "key": "ctrl+d g",
+        "mac": "cmd+d g"
+      }
     ],
     "configuration": {
       "title": "Diffchestrator",
@@ -444,7 +500,11 @@
     "compile": "node esbuild.mjs",
     "build": "npm run build:webview && node esbuild.mjs --production",
     "watch": "node esbuild.mjs --watch",
-    "package": "npm run build:webview && node esbuild.mjs --production",
+    "package": "npm run build && npx @vscode/vsce package --no-dependencies",
+    "release": "node scripts/release.mjs",
+    "release:patch": "node scripts/release.mjs patch",
+    "release:minor": "node scripts/release.mjs minor",
+    "release:major": "node scripts/release.mjs major",
     "test": "node --test"
   },
   "devDependencies": {
