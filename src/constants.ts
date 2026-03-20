@@ -22,6 +22,7 @@ export const CMD = {
   bulkPush: "diffchestrator.bulkPush",
   openClaudeCode: "diffchestrator.openClaudeCode",
   searchFiles: "diffchestrator.searchFiles",
+  browseFiles: "diffchestrator.browseFiles",
   openTerminal: "diffchestrator.openTerminal",
   selectRepo: "diffchestrator.selectRepo",
   clearSelection: "diffchestrator.clearSelection",

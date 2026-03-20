@@ -89,4 +89,50 @@ export function registerFileSearchCommand(
       quickPick.show();
     })
   );
+
+  // Browse files in a specific repo (pre-loaded, instant filter)
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.browseFiles, async (item?: any) => {
+      const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+      if (!repoPath) {
+        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
+        return;
+      }
+
+      const repoName = path.basename(repoPath);
+
+      const quickPick = vscode.window.createQuickPick();
+      quickPick.placeholder = `Browse files in ${repoName}...`;
+      quickPick.matchOnDescription = true;
+      quickPick.busy = true;
+
+      // Pre-load all files
+      try {
+        const files = await git.listFiles(repoPath);
+        quickPick.items = files.map((f) => ({
+          label: `$(file) ${path.basename(f)}`,
+          description: path.dirname(f) !== "." ? path.dirname(f) : undefined,
+          detail: undefined,
+          _fullPath: path.join(repoPath, f),
+          _relPath: f,
+        }));
+      } catch {
+        quickPick.items = [{ label: "Failed to list files", description: "" }];
+      }
+      quickPick.busy = false;
+
+      quickPick.onDidAccept(() => {
+        const selected = quickPick.selectedItems[0] as
+          | (vscode.QuickPickItem & { _fullPath?: string })
+          | undefined;
+        if (selected?._fullPath) {
+          vscode.window.showTextDocument(vscode.Uri.file(selected._fullPath));
+        }
+        quickPick.dispose();
+      });
+
+      quickPick.onDidHide(() => quickPick.dispose());
+      quickPick.show();
+    })
+  );
 }

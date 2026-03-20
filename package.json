@@ -155,6 +155,12 @@
         "icon": "$(search)"
       },
       {
+        "command": "diffchestrator.browseFiles",
+        "title": "Browse Files",
+        "category": "Diffchestrator",
+        "icon": "$(file-directory)"
+      },
+      {
         "command": "diffchestrator.openTerminal",
         "title": "Open Terminal",
         "category": "Diffchestrator",
@@ -220,6 +226,11 @@
           "command": "diffchestrator.aiCommit",
           "when": "viewItem == repo",
           "group": "1_actions@2"
+        },
+        {
+          "command": "diffchestrator.browseFiles",
+          "when": "viewItem == repo",
+          "group": "1_actions@5"
         },
         {
           "command": "diffchestrator.openTerminal",
