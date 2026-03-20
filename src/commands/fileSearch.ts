@@ -136,7 +136,7 @@ export function registerFileSearchCommand(
     })
   );
 
-  // Search in repo — opens VS Code's native search scoped to the selected repo
+  // Search in repo — live git grep results in a QuickPick
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.searchInRepo, async (item?: any) => {
       const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
@@ -145,40 +145,59 @@ export function registerFileSearchCommand(
         return;
       }
 
-      // VS Code search filesToInclude needs a path relative to a workspace folder.
-      // Find the workspace folder that contains this repo and build a relative glob.
-      const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
-      let includePattern = "";
+      const repoName = path.basename(repoPath);
+      const quickPick = vscode.window.createQuickPick();
+      quickPick.placeholder = `Search in ${repoName} (git grep)...`;
+      quickPick.matchOnDescription = true;
+      quickPick.matchOnDetail = true;
 
-      for (const folder of workspaceFolders) {
-        const rel = path.relative(folder.uri.fsPath, repoPath);
-        if (!rel.startsWith("..") && !path.isAbsolute(rel)) {
-          // Repo is inside this workspace folder
-          includePattern = rel ? `./${rel}/**` : "**";
-          break;
+      let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+      quickPick.onDidChangeValue((value) => {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        if (value.length < 2) {
+          quickPick.items = [];
+          return;
         }
-      }
 
-      if (!includePattern) {
-        // Repo is not inside any workspace folder — add it temporarily
-        const uri = vscode.Uri.file(repoPath);
-        const added = vscode.workspace.updateWorkspaceFolders(
-          workspaceFolders.length, 0,
-          { uri, name: `${path.basename(repoPath)} (search)` }
-        );
-        if (added) {
-          includePattern = `./${path.basename(repoPath)} (search)/**`;
-        } else {
-          // Fallback: just open search with absolute path, user can fix manually
-          includePattern = repoPath;
-        }
-      }
-
-      await vscode.commands.executeCommand("workbench.action.findInFiles", {
-        query: "",
-        filesToInclude: includePattern,
-        triggerSearch: false,
+        debounceTimer = setTimeout(async () => {
+          quickPick.busy = true;
+          try {
+            const matches = await git.grep(repoPath, value);
+            quickPick.items = matches.map((m) => ({
+              label: `$(file) ${path.basename(m.file)}:${m.line}`,
+              description: path.dirname(m.file) !== "." ? path.dirname(m.file) : undefined,
+              detail: m.text,
+              _fullPath: path.join(repoPath, m.file),
+              _line: m.line,
+            }));
+          } catch {
+            quickPick.items = [];
+          }
+          quickPick.busy = false;
+        }, 300);
       });
+
+      quickPick.onDidAccept(() => {
+        const selected = quickPick.selectedItems[0] as
+          | (vscode.QuickPickItem & { _fullPath?: string; _line?: number })
+          | undefined;
+        if (selected?._fullPath) {
+          const line = (selected._line ?? 1) - 1;
+          vscode.window.showTextDocument(
+            vscode.Uri.file(selected._fullPath),
+            { selection: new vscode.Range(line, 0, line, 0) }
+          );
+        }
+        quickPick.dispose();
+      });
+
+      quickPick.onDidHide(() => {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        quickPick.dispose();
+      });
+
+      quickPick.show();
     })
   );
 

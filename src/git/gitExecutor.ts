@@ -429,6 +429,33 @@ export class GitExecutor {
     return { hash, author, date, summary };
   }
 
+  async grep(repoPath: string, query: string, maxResults = 100): Promise<{ file: string; line: number; text: string }[]> {
+    const result = await this._run(
+      ["grep", "-n", "-I", "--no-color", "-i", "--max-count=5", "-e", query, "--", ":!*.min.*", ":!*.lock"],
+      repoPath
+    );
+    // git grep exits 1 when no matches — not an error
+    if (!result.stdout.trim()) return [];
+
+    const matches: { file: string; line: number; text: string }[] = [];
+    for (const l of result.stdout.split("\n")) {
+      if (!l.trim()) continue;
+      // Format: file:line:text
+      const firstColon = l.indexOf(":");
+      if (firstColon < 0) continue;
+      const secondColon = l.indexOf(":", firstColon + 1);
+      if (secondColon < 0) continue;
+      const file = l.slice(0, firstColon);
+      const lineNo = parseInt(l.slice(firstColon + 1, secondColon), 10);
+      const text = l.slice(secondColon + 1);
+      if (!isNaN(lineNo)) {
+        matches.push({ file, line: lineNo, text: text.trim() });
+      }
+      if (matches.length >= maxResults) break;
+    }
+    return matches;
+  }
+
   async listFiles(repoPath: string, query?: string): Promise<string[]> {
     const result = await this._run(
       ["ls-files", "--cached", "--others", "--exclude-standard"],
