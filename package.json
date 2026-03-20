@@ -1,0 +1,324 @@
+{
+  "name": "diffchestrator",
+  "displayName": "Diffchestrator",
+  "description": "Multi-repo Git orchestration with AI-powered commit messages",
+  "version": "0.1.0",
+  "publisher": "Andrevops",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "diffchestrator",
+          "title": "Diffchestrator",
+          "icon": "resources/icons/diffchestrator.svg"
+        }
+      ]
+    },
+    "views": {
+      "diffchestrator": [
+        {
+          "id": "diffchestrator.favorites",
+          "name": "Favorites"
+        },
+        {
+          "id": "diffchestrator.repos",
+          "name": "Repositories"
+        },
+        {
+          "id": "diffchestrator.changedFiles",
+          "name": "Changed Files"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "diffchestrator.scan",
+        "title": "Scan for Repositories",
+        "category": "Diffchestrator",
+        "icon": "$(search)"
+      },
+      {
+        "command": "diffchestrator.rescan",
+        "title": "Rescan Repositories",
+        "category": "Diffchestrator",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "diffchestrator.toggleChangedOnly",
+        "title": "Toggle Changed Only",
+        "category": "Diffchestrator",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "diffchestrator.toggleFavorite",
+        "title": "Toggle Favorite",
+        "category": "Diffchestrator",
+        "icon": "$(star)"
+      },
+      {
+        "command": "diffchestrator.viewDiff",
+        "title": "View Diff",
+        "category": "Diffchestrator",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "diffchestrator.viewMultiRepoDiff",
+        "title": "View Multi-Repo Diff",
+        "category": "Diffchestrator"
+      },
+      {
+        "command": "diffchestrator.stageFile",
+        "title": "Stage File",
+        "category": "Diffchestrator",
+        "icon": "$(add)"
+      },
+      {
+        "command": "diffchestrator.unstageFile",
+        "title": "Unstage File",
+        "category": "Diffchestrator",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "diffchestrator.stageAll",
+        "title": "Stage All",
+        "category": "Diffchestrator",
+        "icon": "$(add)"
+      },
+      {
+        "command": "diffchestrator.unstageAll",
+        "title": "Unstage All",
+        "category": "Diffchestrator",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "diffchestrator.commit",
+        "title": "Commit",
+        "category": "Diffchestrator",
+        "icon": "$(check)"
+      },
+      {
+        "command": "diffchestrator.push",
+        "title": "Push",
+        "category": "Diffchestrator",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "diffchestrator.aiCommit",
+        "title": "AI Commit (Claude)",
+        "category": "Diffchestrator",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "diffchestrator.bulkCommit",
+        "title": "Bulk Commit Selected Repos",
+        "category": "Diffchestrator"
+      },
+      {
+        "command": "diffchestrator.bulkPush",
+        "title": "Bulk Push Selected Repos",
+        "category": "Diffchestrator"
+      },
+      {
+        "command": "diffchestrator.openClaudeCode",
+        "title": "Open Claude Code",
+        "category": "Diffchestrator",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "diffchestrator.searchFiles",
+        "title": "Search Files Across Repos",
+        "category": "Diffchestrator",
+        "icon": "$(search)"
+      },
+      {
+        "command": "diffchestrator.openTerminal",
+        "title": "Open Terminal",
+        "category": "Diffchestrator",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "diffchestrator.selectRepo",
+        "title": "Select / Deselect Repo",
+        "category": "Diffchestrator",
+        "icon": "$(check)"
+      },
+      {
+        "command": "diffchestrator.clearSelection",
+        "title": "Clear Selection",
+        "category": "Diffchestrator"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "diffchestrator.scan",
+          "when": "view == diffchestrator.repos",
+          "group": "navigation@1"
+        },
+        {
+          "command": "diffchestrator.rescan",
+          "when": "view == diffchestrator.repos",
+          "group": "navigation@2"
+        },
+        {
+          "command": "diffchestrator.toggleChangedOnly",
+          "when": "view == diffchestrator.repos",
+          "group": "navigation@3"
+        },
+        {
+          "command": "diffchestrator.stageAll",
+          "when": "view == diffchestrator.changedFiles && diffchestrator.hasSelectedRepo",
+          "group": "navigation@1"
+        },
+        {
+          "command": "diffchestrator.unstageAll",
+          "when": "view == diffchestrator.changedFiles && diffchestrator.hasSelectedRepo",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "diffchestrator.viewDiff",
+          "when": "viewItem == repo",
+          "group": "inline@1"
+        },
+        {
+          "command": "diffchestrator.commit",
+          "when": "viewItem == repo",
+          "group": "inline@2"
+        },
+        {
+          "command": "diffchestrator.push",
+          "when": "viewItem == repo",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "diffchestrator.aiCommit",
+          "when": "viewItem == repo",
+          "group": "1_actions@2"
+        },
+        {
+          "command": "diffchestrator.openTerminal",
+          "when": "viewItem == repo",
+          "group": "2_tools@1"
+        },
+        {
+          "command": "diffchestrator.openClaudeCode",
+          "when": "viewItem == repo",
+          "group": "2_tools@2"
+        },
+        {
+          "command": "diffchestrator.toggleFavorite",
+          "when": "viewItem == repo",
+          "group": "3_misc@1"
+        },
+        {
+          "command": "diffchestrator.selectRepo",
+          "when": "viewItem == repo",
+          "group": "3_misc@2"
+        },
+        {
+          "command": "diffchestrator.stageFile",
+          "when": "viewItem == file-unstaged || viewItem == file-untracked",
+          "group": "inline@1"
+        },
+        {
+          "command": "diffchestrator.unstageFile",
+          "when": "viewItem == file-staged",
+          "group": "inline@1"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "diffchestrator.scan",
+        "key": "ctrl+shift+d",
+        "mac": "cmd+shift+d"
+      }
+    ],
+    "configuration": {
+      "title": "Diffchestrator",
+      "properties": {
+        "diffchestrator.scanRoots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Root directories to scan for Git repositories"
+        },
+        "diffchestrator.scanMaxDepth": {
+          "type": "number",
+          "default": 6,
+          "description": "Maximum directory depth when scanning for repositories"
+        },
+        "diffchestrator.scanOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scan for repositories when VS Code starts"
+        },
+        "diffchestrator.changedOnlyDefault": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show only repos with changes by default"
+        },
+        "diffchestrator.autoRefreshInterval": {
+          "type": "number",
+          "default": 10,
+          "description": "Auto-refresh interval in seconds (0 to disable)"
+        },
+        "diffchestrator.favorites": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Favorited repository paths"
+        },
+        "diffchestrator.claudePermissionMode": {
+          "type": "string",
+          "enum": [
+            "default",
+            "acceptEdits",
+            "full"
+          ],
+          "default": "acceptEdits",
+          "description": "Permission mode for Claude Code AI commits"
+        },
+        "diffchestrator.scanExtraSkipDirs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional directory names to skip during scanning"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "package": "node esbuild.mjs --production",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.95.0",
+    "@vscode/test-electron": "^2.4.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0"
+  }
+}
