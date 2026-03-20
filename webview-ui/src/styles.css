@@ -1,0 +1,316 @@
+body {
+  background-color: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  margin: 0;
+  padding: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* react-diff-view overrides for VS Code theme */
+.diff-unified .diff-line-content {
+  font-family: var(--vscode-editor-fontFamily, monospace);
+}
+.diff-gutter {
+  color: var(--vscode-editorLineNumber-foreground);
+}
+.diff-code-insert {
+  background-color: var(--vscode-diffEditor-insertedLineBackground);
+}
+.diff-code-delete {
+  background-color: var(--vscode-diffEditor-removedLineBackground);
+}
+
+/* Layout */
+.app-container {
+  padding: 8px 12px;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0 12px;
+  border-bottom: 1px solid var(--vscode-panel-border, #333);
+  margin-bottom: 12px;
+}
+
+.app-header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.refresh-btn {
+  background: none;
+  border: 1px solid var(--vscode-button-border, transparent);
+  color: var(--vscode-button-foreground);
+  background-color: var(--vscode-button-background);
+  padding: 4px 10px;
+  border-radius: 2px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.refresh-btn:hover {
+  background-color: var(--vscode-button-hoverBackground);
+}
+
+/* Repo Section */
+.repo-section {
+  margin-bottom: 16px;
+  border: 1px solid var(--vscode-panel-border, #333);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.repo-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background-color: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  cursor: pointer;
+  user-select: none;
+}
+
+.repo-header:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.repo-toggle {
+  font-size: 10px;
+  width: 14px;
+  flex-shrink: 0;
+}
+
+.repo-name {
+  font-weight: 600;
+  font-size: 13px;
+  flex: 1;
+}
+
+.repo-branch {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+.repo-changes {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background-color: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.repo-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  color: var(--vscode-icon-foreground, var(--vscode-editor-foreground));
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.icon-btn:hover {
+  opacity: 1;
+  background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.repo-body {
+  padding: 0 12px 12px;
+}
+
+/* File Section */
+.file-section {
+  margin-top: 8px;
+  border: 1px solid var(--vscode-panel-border, #444);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.file-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background-color: var(--vscode-editor-background);
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+}
+
+.file-header:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.file-toggle {
+  font-size: 9px;
+  width: 12px;
+  flex-shrink: 0;
+}
+
+.file-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.file-badge.M { background: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d); color: #000; }
+.file-badge.A { background: var(--vscode-gitDecoration-untrackedResourceForeground, #73c991); color: #000; }
+.file-badge.D { background: var(--vscode-gitDecoration-deletedResourceForeground, #c74e39); color: #fff; }
+.file-badge.R { background: var(--vscode-gitDecoration-renamedResourceForeground, #73c991); color: #000; }
+.file-badge.U { background: var(--vscode-gitDecoration-conflictingResourceForeground, #e4676b); color: #fff; }
+
+.file-path {
+  flex: 1;
+  font-family: var(--vscode-editor-fontFamily, monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-staged-label {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: var(--vscode-gitDecoration-addedResourceForeground, #73c991);
+  color: #000;
+}
+
+.hunk-count {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+
+.file-body {
+  padding: 4px;
+}
+
+/* Diff display */
+.diff-wrapper {
+  font-family: var(--vscode-editor-fontFamily, monospace);
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+.diff-wrapper table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.hunk-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 8px;
+  background-color: var(--vscode-diffEditor-unchangedRegionBackground, rgba(100,100,100,0.15));
+  border-bottom: 1px solid var(--vscode-panel-border, #444);
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.ask-claude-btn {
+  background: none;
+  border: 1px solid var(--vscode-button-border, transparent);
+  color: var(--vscode-textLink-foreground, #4fc1ff);
+  cursor: pointer;
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-size: 11px;
+}
+
+.ask-claude-btn:hover {
+  background-color: var(--vscode-button-hoverBackground);
+  color: var(--vscode-button-foreground);
+}
+
+/* Staging section header */
+.staging-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  margin: 8px 0 4px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--vscode-panel-border, #333);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.staging-header .stage-all-btn {
+  background: none;
+  border: 1px solid var(--vscode-button-border, transparent);
+  color: var(--vscode-button-foreground);
+  background-color: var(--vscode-button-secondaryBackground);
+  padding: 2px 8px;
+  border-radius: 2px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.staging-header .stage-all-btn:hover {
+  background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+/* Empty state */
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.empty-state h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--vscode-editor-foreground);
+}
+
+.empty-state p {
+  margin: 4px 0;
+  font-size: 12px;
+}
+
+.empty-state-actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+/* Spinner */
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--vscode-descriptionForeground);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 13px;
+}

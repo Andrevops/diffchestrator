@@ -309,9 +309,11 @@
     }
   },
   "scripts": {
+    "build:webview": "cd webview-ui && npm run build",
     "compile": "node esbuild.mjs",
+    "build": "npm run build:webview && node esbuild.mjs --production",
     "watch": "node esbuild.mjs --watch",
-    "package": "node esbuild.mjs --production",
+    "package": "npm run build:webview && node esbuild.mjs --production",
     "test": "node --test"
   },
   "devDependencies": {

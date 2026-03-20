@@ -13,13 +13,13 @@ import { registerClaudeCommands } from "./commands/openClaude";
 import { registerFavoriteCommands } from "./commands/favorites";
 import { registerFileSearchCommand } from "./commands/fileSearch";
 import { registerTerminalCommand } from "./commands/terminal";
-import { GitExecutor } from "./git/gitExecutor";
+import { DiffWebviewPanel } from "./views/diffWebviewPanel";
+import { FileWatcher } from "./services/fileWatcher";
+import { StatusBarManager } from "./services/statusBar";
 
 export function activate(context: vscode.ExtensionContext): void {
   const repoManager = new RepoManager();
   context.subscriptions.push(repoManager);
-
-  const git = new GitExecutor();
 
   // Tree views
   const repoTree = new RepoTreeProvider(repoManager);
@@ -86,61 +86,29 @@ export function activate(context: vscode.ExtensionContext): void {
     )
   );
 
-  // View multi-repo diff — opens output channel with combined diffs
+  // View multi-repo diff — opens webview panel with aggregated diffs
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.viewMultiRepoDiff, async () => {
-      const selectedPaths = repoManager.selectedRepoPaths;
-      if (selectedPaths.size === 0) {
-        vscode.window.showWarningMessage(
-          "Diffchestrator: No repositories selected for multi-repo diff."
-        );
-        return;
-      }
-
-      const channel = vscode.window.createOutputChannel(
-        "Diffchestrator Multi-Repo Diff"
-      );
-      channel.clear();
-      channel.show();
-
-      for (const repoPath of selectedPaths) {
-        const name =
-          repoManager.repos.find((r) => r.path === repoPath)?.name ?? repoPath;
-        channel.appendLine(`${"=".repeat(60)}`);
-        channel.appendLine(`Repository: ${name}`);
-        channel.appendLine(`Path: ${repoPath}`);
-        channel.appendLine(`${"=".repeat(60)}`);
-
-        try {
-          const stagedDiff = await git.diff(repoPath, true);
-          const unstagedDiff = await git.diff(repoPath, false);
-
-          if (stagedDiff) {
-            channel.appendLine("\n--- Staged Changes ---");
-            channel.appendLine(stagedDiff);
-          }
-          if (unstagedDiff) {
-            channel.appendLine("\n--- Unstaged Changes ---");
-            channel.appendLine(unstagedDiff);
-          }
-          if (!stagedDiff && !unstagedDiff) {
-            channel.appendLine("\n(no changes)");
-          }
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          channel.appendLine(`\n[ERROR] ${msg}`);
-        }
-        channel.appendLine("");
-      }
+    vscode.commands.registerCommand(CMD.viewMultiRepoDiff, () => {
+      DiffWebviewPanel.createOrShow(context.extensionUri, repoManager);
     })
   );
+
+  // Phase 5: File watcher — auto-refresh repos on filesystem changes
+  const fileWatcher = new FileWatcher(repoManager);
+  context.subscriptions.push(fileWatcher);
+
+  // Phase 6: Status bar — shows repo/change counts
+  const statusBar = new StatusBarManager(repoManager);
+  context.subscriptions.push(statusBar);
 
   // Auto-scan on startup
   const config = vscode.workspace.getConfiguration("diffchestrator");
   if (config.get<boolean>("scanOnStartup", true)) {
     const roots = config.get<string[]>("scanRoots", []);
     if (roots.length > 0) {
-      repoManager.scan(roots[0]);
+      repoManager.scan(roots[0]).then(() => {
+        fileWatcher.watchAll();
+      });
     }
   }
 }
