@@ -5,7 +5,7 @@ import { FavoritesTreeProvider } from "./providers/favoritesTreeProvider";
 import { ChangedFilesProvider } from "./providers/changedFilesProvider";
 import { CMD, VIEW_ACTIVE_REPOS, VIEW_REPOS, VIEW_FAVORITES, VIEW_CHANGED_FILES } from "./constants";
 import { registerScanCommands } from "./commands/scan";
-import { registerStageCommands } from "./commands/stage";
+import { registerStageCommands, openNextPendingFile } from "./commands/stage";
 import { registerCommitCommands } from "./commands/commit";
 import { registerPushCommands } from "./commands/push";
 import { registerPullCommands } from "./commands/pull";
@@ -108,7 +108,9 @@ export function activate(context: vscode.ExtensionContext): void {
     )
   );
 
-  // Stage/unstage the file currently open in the editor
+  // Stage/unstage the file currently open in the editor (editor title bar buttons)
+  // Delegates to the same stageFile/unstageFile commands used by the sidebar tree,
+  // resolving the file path from the active editor first.
   const gitForEditor = new GitExecutor();
 
   context.subscriptions.push(
@@ -123,7 +125,7 @@ export function activate(context: vscode.ExtensionContext): void {
       try {
         await gitForEditor.stage(repoPath, [rel]);
         await repoManager.refreshRepo(repoPath);
-        vscode.window.showInformationMessage(`Staged: ${rel}`);
+        await openNextPendingFile(gitForEditor, repoPath, rel);
       } catch (err: unknown) {
         vscode.window.showErrorMessage(`Failed to stage: ${err instanceof Error ? err.message : err}`);
       }

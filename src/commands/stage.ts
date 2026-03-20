@@ -69,7 +69,7 @@ async function openFileDiff(repoPath: string, fc: FileChange): Promise<void> {
  * "Next" = first unstaged file, then first untracked file.
  * If nothing remains, do nothing (all reviewed).
  */
-async function openNextPendingFile(git: GitExecutor, repoPath: string, justStaged: string): Promise<void> {
+export async function openNextPendingFile(git: GitExecutor, repoPath: string, justStaged: string): Promise<void> {
   try {
     const status = await git.status(repoPath);
     const candidates = [
