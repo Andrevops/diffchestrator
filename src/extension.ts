@@ -13,6 +13,7 @@ import { registerClaudeCommands } from "./commands/openClaude";
 import { registerFavoriteCommands } from "./commands/favorites";
 import { registerFileSearchCommand } from "./commands/fileSearch";
 import { registerTerminalCommand } from "./commands/terminal";
+import { GitContentProvider } from "./providers/gitContentProvider";
 import { DiffWebviewPanel } from "./views/diffWebviewPanel";
 import { FileWatcher } from "./services/fileWatcher";
 import { StatusBarManager } from "./services/statusBar";
@@ -26,7 +27,10 @@ export function activate(context: vscode.ExtensionContext): void {
   const favTree = new FavoritesTreeProvider(repoManager);
   const changedFiles = new ChangedFilesProvider(repoManager);
 
+  // Git content provider for diff URIs
+  const gitContentProvider = new GitContentProvider();
   context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider("git-show", gitContentProvider),
     vscode.window.registerTreeDataProvider(VIEW_REPOS, repoTree),
     vscode.window.registerTreeDataProvider(VIEW_FAVORITES, favTree),
     vscode.window.registerTreeDataProvider(VIEW_CHANGED_FILES, changedFiles)

@@ -285,6 +285,14 @@ export class GitExecutor {
     return entries;
   }
 
+  async show(repoPath: string, ref: string): Promise<string> {
+    const result = await this._run(["show", ref], repoPath);
+    if (result.code !== 0) {
+      return "";
+    }
+    return result.stdout;
+  }
+
   async listFiles(repoPath: string, query?: string): Promise<string[]> {
     const result = await this._run(
       ["ls-files", "--cached", "--others", "--exclude-standard"],

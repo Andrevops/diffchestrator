@@ -271,7 +271,7 @@
         },
         "diffchestrator.changedOnlyDefault": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "Show only repos with changes by default"
         },
         "diffchestrator.autoRefreshInterval": {
