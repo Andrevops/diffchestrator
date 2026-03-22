@@ -211,6 +211,42 @@ export function activate(context: vscode.ExtensionContext): void {
     return repoManager.selectedRepo;
   }
 
+  // Close editors that belong to a specific repo path
+  async function closeEditorsForRepo(repoPath: string): Promise<void> {
+    for (const group of vscode.window.tabGroups.all) {
+      for (const tab of group.tabs) {
+        let belongsToRepo = false;
+        const input = tab.input;
+        if (input instanceof vscode.TabInputText) {
+          belongsToRepo = input.uri.scheme === "file" && input.uri.fsPath.startsWith(repoPath);
+          if (!belongsToRepo && input.uri.scheme === "git-show") {
+            try {
+              const params = JSON.parse(input.uri.query);
+              belongsToRepo = params.repoPath === repoPath;
+            } catch { /* ignore */ }
+          }
+        } else if (input instanceof vscode.TabInputDiff) {
+          const orig = input.original;
+          const mod = input.modified;
+          belongsToRepo =
+            (orig.scheme === "file" && orig.fsPath.startsWith(repoPath)) ||
+            (mod.scheme === "file" && mod.fsPath.startsWith(repoPath));
+          if (!belongsToRepo) {
+            try {
+              const params = JSON.parse(orig.query || mod.query);
+              belongsToRepo = params.repoPath === repoPath;
+            } catch { /* ignore */ }
+          }
+        }
+        if (belongsToRepo) {
+          await vscode.window.tabGroups.close(tab);
+        }
+      }
+    }
+  }
+
+  let previousRepoPath: string | undefined;
+
   // View diff — selects repo, shows changed files panel, auto-opens first changed file
   context.subscriptions.push(
     vscode.commands.registerCommand(
@@ -223,6 +259,13 @@ export function activate(context: vscode.ExtensionContext): void {
           );
           return;
         }
+
+        // Close editors from the previous repo before switching
+        if (previousRepoPath && previousRepoPath !== repoPath) {
+          await closeEditorsForRepo(previousRepoPath);
+        }
+        previousRepoPath = repoPath;
+
         repoManager.selectRepo(repoPath);
         await vscode.commands.executeCommand(`${VIEW_CHANGED_FILES}.focus`);
         // Show the repo's terminal if one exists (preserves focus on editor)
