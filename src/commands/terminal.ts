@@ -22,13 +22,55 @@ vscode.window.onDidCloseTerminal((t) => {
   }
 });
 
+/**
+ * Name patterns used to detect untracked terminals by scanning
+ * vscode.window.terminals. Claude Code renames its terminal to
+ * "Claude: <repo>", so we match on that too.
+ */
+const NAME_PATTERNS: Record<TerminalKind, RegExp[]> = {
+  claude: [], // built dynamically from repo name
+  yolo: [],
+  shell: [],
+};
+
+function buildPatterns(repoPath: string, kind: TerminalKind): RegExp[] {
+  const name = path.basename(repoPath);
+  switch (kind) {
+    case "claude":
+      return [
+        new RegExp(`^Claude:\\s*${escapeRegex(name)}`, "i"),
+        new RegExp(`^Claude Code.*${escapeRegex(name)}`, "i"),
+      ];
+    case "yolo":
+      return [new RegExp(`^YOLO:\\s*${escapeRegex(name)}`, "i")];
+    case "shell":
+      return [new RegExp(`^DC:\\s*${escapeRegex(name)}`, "i")];
+  }
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function getAlive(repoPath: string, kind: TerminalKind): vscode.Terminal | undefined {
+  // First check the tracked map
   const existing = repoTerminals.get(key(repoPath, kind));
   if (existing && vscode.window.terminals.includes(existing)) {
     return existing;
   }
   // Clean stale entry
   repoTerminals.delete(key(repoPath, kind));
+
+  // Fallback: scan all terminals by name pattern and adopt untracked ones
+  const patterns = buildPatterns(repoPath, kind);
+  for (const terminal of vscode.window.terminals) {
+    if (patterns.some((p) => p.test(terminal.name))) {
+      // Adopt it into the map
+      repoTerminals.set(key(repoPath, kind), terminal);
+      return terminal;
+    }
+  }
+
   return undefined;
 }
 
