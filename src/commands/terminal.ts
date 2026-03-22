@@ -37,6 +37,24 @@ export function getOrCreateTerminal(repoPath: string): vscode.Terminal {
 }
 
 /**
+ * Register an externally-created terminal (e.g. Claude Code) in the shared map.
+ */
+export function registerRepoTerminal(repoPath: string, terminal: vscode.Terminal): void {
+  repoTerminals.set(repoPath, terminal);
+}
+
+/**
+ * Get the tracked terminal for a repo if it's still alive, or undefined.
+ */
+export function getRepoTerminal(repoPath: string): vscode.Terminal | undefined {
+  const existing = repoTerminals.get(repoPath);
+  if (existing && vscode.window.terminals.includes(existing)) {
+    return existing;
+  }
+  return undefined;
+}
+
+/**
  * Check if a repo has an active (alive) terminal.
  */
 export function hasActiveTerminal(repoPath: string): boolean {

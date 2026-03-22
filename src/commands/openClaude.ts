@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
+import { registerRepoTerminal, getRepoTerminal } from "./terminal";
 
 export function registerClaudeCommands(
   context: vscode.ExtensionContext,
@@ -27,12 +28,19 @@ export function registerClaudeCommands(
           terminal.show();
           terminal.sendText(`claude ${addDirArgs}`);
         } else if (singlePath) {
-          // Single repo mode
+          // Single repo mode — reuse existing terminal if alive
+          const existing = getRepoTerminal(singlePath);
+          if (existing) {
+            existing.show();
+            return;
+          }
+
           const repoName = path.basename(singlePath);
           const terminal = vscode.window.createTerminal({
-            name: `Claude Code - ${repoName}`,
+            name: `Claude: ${repoName}`,
             cwd: singlePath,
           });
+          registerRepoTerminal(singlePath, terminal);
           terminal.show();
           terminal.sendText("claude");
         } else {
