@@ -36,7 +36,8 @@ Claude Code works best when you can see what it changed, across every repo it to
 - **Repositories** — hierarchical tree with common path prefix collapsing, change count badges
 - **View descriptions** — active repo name + branch shown next to "Changed Files" title
 - **Activity bar badge** — total change count across all repos
-- **Tooltips** — hover a repo to see path, branch, change counts, remote URL, and last commit with relative date
+- **Tooltips** — hover a repo to see path, branch, change counts, ahead/behind sync status, remote URL, and last commit with relative date
+- **Ahead/behind badges** — `↑N ↓M` shows how many commits you are ahead/behind the remote across all views
 - **Visual highlights** — active repo (blue icon + ●), multi-selected (purple check + ✓), repos with changes (yellow), clean repos (green)
 
 ### Diff Viewing & Review Workflow
@@ -61,10 +62,14 @@ Claude Code works best when you can see what it changed, across every repo it to
 - **Stash Management** (`Ctrl+D, A`) — stash push (with message), list stashes, pop latest, apply specific stash, view stash diffs
 - **Commit History** (`Ctrl+D, H`) — QuickPick showing last 15 commits, select to view full diff in editor
 
-### File Navigation
+### Search & Navigation
+- **Search in Repo** (`Ctrl+D, /`) — live git grep QuickPick scoped to the selected repo, opens file at matched line
+- **Search Active Repos** (`Ctrl+D, .`) — git grep across all recent/active repos with `[repo-name]` badges
+- **Search All Repos** (`Ctrl+D, Shift+/`) — git grep across every scanned repo
+- Selecting a search result from a different repo auto-switches to it (terminal, changed files, everything)
 - **Browse Files** (`Ctrl+D, F`) — QuickPick with all files in a repo via `git ls-files`, instant filtering
 - **Switch Repo** (`Ctrl+D, R`) — QuickPick sorted by changes, current repo first
-- **Open in New Window** (`Ctrl+D, /`) — opens the selected repo in a new VS Code window for full native search
+- **Open in New Window** (`Ctrl+D, W`) — opens the selected repo in a new VS Code window for full native search
 
 ### File Watcher
 - Automatic filesystem watching per repo with 500ms debounce
@@ -98,7 +103,10 @@ All shortcuts use **Ctrl+D** as a chord prefix — press `Ctrl+D`, release, then
 | `Ctrl+D, A` | Stash management |
 | `Ctrl+D, G` | Toggle inline blame |
 | `Ctrl+D, E` | Favorite current repo |
-| `Ctrl+D, /` | Open repo in new VS Code window |
+| `Ctrl+D, /` | Search in repo (git grep) |
+| `Ctrl+D, .` | Search active repos |
+| `Ctrl+D, Shift+/` | Search all repos |
+| `Ctrl+D, W` | Open repo in new VS Code window |
 
 > On macOS, use `Cmd+D` instead of `Ctrl+D`.
 
