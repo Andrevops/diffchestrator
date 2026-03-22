@@ -253,8 +253,7 @@ export function registerFileSearchCommand(
       });
 
       if (selected) {
-        repoManager.selectRepo(selected._repoPath);
-        await vscode.commands.executeCommand("diffchestrator.changedFiles.focus");
+        await vscode.commands.executeCommand(CMD.viewDiff, { path: selected._repoPath });
       }
     })
   );
