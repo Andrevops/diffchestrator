@@ -30,7 +30,7 @@ import { showTerminalIfExists } from "./commands/terminal";
 import * as path from "path";
 
 export function activate(context: vscode.ExtensionContext): void {
-  const repoManager = new RepoManager();
+  const repoManager = new RepoManager(context.workspaceState);
   context.subscriptions.push(repoManager);
 
   // Track last open file per repo so switching back restores context

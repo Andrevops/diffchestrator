@@ -4,11 +4,15 @@ import { GitExecutor } from "../git/gitExecutor";
 import type { RepoSummary } from "../types";
 import { CTX } from "../constants";
 
+const STATE_RECENT_REPOS = "diffchestrator.recentRepoPaths";
+const STATE_SELECTED_REPO = "diffchestrator.selectedRepo";
+
 export class RepoManager implements vscode.Disposable {
   private _repos = new Map<string, RepoSummary>();
   private _selectedRepo: string | undefined;
   private _selectedRepoPaths = new Set<string>();
   private _recentRepoPaths: string[] = [];
+  private _state: vscode.Memento | undefined;
   private _currentRoot: string | undefined;
   private _changedOnly: boolean;
   private _refreshTimer: ReturnType<typeof setInterval> | undefined;
@@ -37,15 +41,31 @@ export class RepoManager implements vscode.Disposable {
   }>();
   readonly onDidScanProgress = this._onDidScanProgress.event;
 
-  constructor() {
+  constructor(state?: vscode.Memento) {
+    this._state = state;
     const config = vscode.workspace.getConfiguration("diffchestrator");
     this._changedOnly = config.get<boolean>("changedOnlyDefault", true);
     vscode.commands.executeCommand("setContext", CTX.changedOnly, this._changedOnly);
+
+    // Restore persisted recent repos and selection
+    if (state) {
+      this._recentRepoPaths = state.get<string[]>(STATE_RECENT_REPOS, []);
+      this._selectedRepo = state.get<string | undefined>(STATE_SELECTED_REPO, undefined);
+      if (this._selectedRepo) {
+        vscode.commands.executeCommand("setContext", CTX.hasSelectedRepo, true);
+      }
+    }
   }
 
   get repos(): RepoSummary[] {
     return [...this._repos.values()];
   }
+  private _persistState(): void {
+    if (!this._state) return;
+    this._state.update(STATE_RECENT_REPOS, this._recentRepoPaths);
+    this._state.update(STATE_SELECTED_REPO, this._selectedRepo);
+  }
+
   get selectedRepo(): string | undefined {
     return this._selectedRepo;
   }
@@ -179,6 +199,7 @@ export class RepoManager implements vscode.Disposable {
         vscode.commands.executeCommand("setContext", CTX.hasSelectedRepo, false);
       }
     }
+    this._persistState();
     this._onDidChangeSelection.fire();
   }
 
@@ -186,6 +207,7 @@ export class RepoManager implements vscode.Disposable {
     this._recentRepoPaths = [];
     this._selectedRepo = undefined;
     vscode.commands.executeCommand("setContext", CTX.hasSelectedRepo, false);
+    this._persistState();
     this._onDidChangeSelection.fire();
   }
 
@@ -197,6 +219,7 @@ export class RepoManager implements vscode.Disposable {
       ...this._recentRepoPaths.filter((p) => p !== repoPath),
     ].slice(0, 10);
     vscode.commands.executeCommand("setContext", CTX.hasSelectedRepo, true);
+    this._persistState();
     this._onDidChangeSelection.fire();
   }
 
@@ -211,6 +234,7 @@ export class RepoManager implements vscode.Disposable {
     this._recentRepoPaths.push(rotated);
     this._selectedRepo = this._recentRepoPaths[0];
     vscode.commands.executeCommand("setContext", CTX.hasSelectedRepo, true);
+    this._persistState();
     this._onDidChangeSelection.fire();
     return this._selectedRepo;
   }
