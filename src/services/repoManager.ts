@@ -81,24 +81,41 @@ export class RepoManager implements vscode.Disposable {
 
   async refreshRepo(repoPath: string): Promise<void> {
     try {
-      const counts = await this._git.shortStatus(repoPath);
-      const branch = await this._git.getBranch(repoPath);
+      // shortStatus now returns branch too — single git process instead of two
+      const s = await this._git.shortStatus(repoPath);
       const existing = this._repos.get(repoPath);
-      if (existing) {
-        existing.stagedCount = counts.staged;
-        existing.unstagedCount = counts.unstaged;
-        existing.untrackedCount = counts.untracked;
-        existing.totalChanges = counts.staged + counts.unstaged + counts.untracked;
-        existing.branch = branch;
-        this._onDidChangeRepos.fire();
+      if (!existing) return;
+
+      const totalChanges = s.staged + s.unstaged + s.untracked;
+
+      // Only fire event if something actually changed
+      if (
+        existing.stagedCount === s.staged &&
+        existing.unstagedCount === s.unstaged &&
+        existing.untrackedCount === s.untracked &&
+        existing.branch === s.branch
+      ) {
+        return; // nothing changed, skip cascade
       }
+
+      existing.stagedCount = s.staged;
+      existing.unstagedCount = s.unstaged;
+      existing.untrackedCount = s.untracked;
+      existing.totalChanges = totalChanges;
+      existing.branch = s.branch;
+      this._onDidChangeRepos.fire();
     } catch {
       /* ignore */
     }
   }
 
   async refreshAll(): Promise<void> {
-    await Promise.all([...this._repos.keys()].map((p) => this.refreshRepo(p)));
+    // Limit concurrency to 5 to avoid spawning too many git processes
+    const repos = [...this._repos.keys()];
+    const BATCH = 5;
+    for (let i = 0; i < repos.length; i += BATCH) {
+      await Promise.all(repos.slice(i, i + BATCH).map((p) => this.refreshRepo(p)));
+    }
   }
 
   selectRepo(repoPath: string): void {
@@ -162,16 +179,21 @@ export class RepoManager implements vscode.Disposable {
   private startAutoRefresh(): void {
     if (this._refreshTimer) clearInterval(this._refreshTimer);
 
-    // Track window focus — skip polling when VS Code is not focused
     this._focusDisposable?.dispose();
     this._focusDisposable = vscode.window.onDidChangeWindowState((state) => {
       this._windowFocused = state.focused;
-      // Refresh immediately when regaining focus to catch external changes
       if (state.focused) {
+        // Refresh on regain and reset the timer to avoid double-refresh
         this.refreshAll();
+        this._resetTimer();
       }
     });
 
+    this._resetTimer();
+  }
+
+  private _resetTimer(): void {
+    if (this._refreshTimer) clearInterval(this._refreshTimer);
     const config = vscode.workspace.getConfiguration("diffchestrator");
     const interval = config.get<number>("autoRefreshInterval", 10);
     if (interval > 0) {

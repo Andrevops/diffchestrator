@@ -14,6 +14,10 @@ interface RunResult {
 }
 
 export class GitExecutor {
+  // Short-TTL cache for status() to deduplicate concurrent calls
+  private _statusCache = new Map<string, { result: RepoStatus; time: number }>();
+  private static readonly STATUS_CACHE_TTL = 500; // ms
+
   private async _run(args: string[], cwd: string): Promise<RunResult> {
     try {
       const { stdout, stderr } = await execFileAsync("git", args, {
@@ -50,6 +54,12 @@ export class GitExecutor {
   }
 
   async status(repoPath: string): Promise<RepoStatus> {
+    // Return cached result if fresh (deduplicates concurrent calls)
+    const cached = this._statusCache.get(repoPath);
+    if (cached && Date.now() - cached.time < GitExecutor.STATUS_CACHE_TTL) {
+      return cached.result;
+    }
+
     const result = await this._run(
       ["status", "--porcelain=v2", "--branch", "-unormal"],
       repoPath
@@ -139,26 +149,31 @@ export class GitExecutor {
       }
     }
 
-    return { branch, upstream, ahead, behind, staged, unstaged, untracked };
+    const statusResult = { branch, upstream, ahead, behind, staged, unstaged, untracked };
+    this._statusCache.set(repoPath, { result: statusResult, time: Date.now() });
+    return statusResult;
   }
 
   async shortStatus(
     repoPath: string
-  ): Promise<{ staged: number; unstaged: number; untracked: number }> {
+  ): Promise<{ staged: number; unstaged: number; untracked: number; branch: string }> {
     const result = await this._run(
-      ["status", "--porcelain=v2", "-unormal"],
+      ["status", "--porcelain=v2", "--branch", "-unormal"],
       repoPath
     );
 
     let staged = 0;
     let unstaged = 0;
     let untracked = 0;
+    let branch = "HEAD";
 
     for (const line of result.stdout.split("\n")) {
       if (!line) {
         continue;
       }
-      if (line.startsWith("1 ") || line.startsWith("2 ")) {
+      if (line.startsWith("# branch.head ")) {
+        branch = line.slice("# branch.head ".length);
+      } else if (line.startsWith("1 ") || line.startsWith("2 ")) {
         const xy = line.split(" ")[1];
         if (xy[0] !== ".") staged++;
         if (xy[1] !== ".") unstaged++;
@@ -169,7 +184,7 @@ export class GitExecutor {
       }
     }
 
-    return { staged, unstaged, untracked };
+    return { staged, unstaged, untracked, branch };
   }
 
   async diff(

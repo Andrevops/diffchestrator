@@ -20,6 +20,8 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   private _root: TreeNode | undefined;
   private _git = new GitExecutor();
   private _lastCommitCache = new Map<string, { message: string; date: string }>();
+  private _lastCommitRefreshTime = 0;
+  private static readonly COMMIT_CACHE_COOLDOWN = 60_000; // 60s
 
   constructor(private repoManager: RepoManager) {
     repoManager.onDidChangeRepos(() => {
@@ -28,25 +30,37 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       this._onDidChangeTreeData.fire();
     });
     repoManager.onDidChangeSelection(() => {
-      // Clear cached tree so getTreeItem runs fresh with new selection state
-      this._root = undefined;
+      // Don't clear _root — tree structure hasn't changed, only visual state
+      // VS Code will re-call getTreeItem for visible nodes on fire()
       this._onDidChangeTreeData.fire();
     });
   }
 
   private async _refreshLastCommits(): Promise<void> {
-    for (const repo of this.repoManager.repos) {
-      try {
-        const commits = await this._git.log(repo.path, 1);
-        if (commits.length > 0) {
-          this._lastCommitCache.set(repo.path, {
-            message: commits[0].message,
-            date: commits[0].date,
-          });
-        }
-      } catch {
-        // ignore
-      }
+    // Cooldown: skip if refreshed recently (tooltips don't need real-time data)
+    const now = Date.now();
+    if (now - this._lastCommitRefreshTime < RepoTreeProvider.COMMIT_CACHE_COOLDOWN) return;
+    this._lastCommitRefreshTime = now;
+
+    // Parallel with concurrency limit
+    const repos = this.repoManager.repos;
+    const BATCH = 5;
+    for (let i = 0; i < repos.length; i += BATCH) {
+      await Promise.all(
+        repos.slice(i, i + BATCH).map(async (repo) => {
+          try {
+            const commits = await this._git.log(repo.path, 1);
+            if (commits.length > 0) {
+              this._lastCommitCache.set(repo.path, {
+                message: commits[0].message,
+                date: commits[0].date,
+              });
+            }
+          } catch {
+            // ignore
+          }
+        })
+      );
     }
   }
 
