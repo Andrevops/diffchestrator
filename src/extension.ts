@@ -112,13 +112,13 @@ export function activate(context: vscode.ExtensionContext): void {
   // Cycle through active/recent repos
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.cycleActiveRepo, async () => {
-      const recent = repoManager.recentRepoPaths;
-      if (recent.length < 2) {
+      const nextPath = repoManager.cycleNextRepo();
+      if (!nextPath) {
         vscode.window.showInformationMessage("Diffchestrator: No other recent repos to cycle to.");
         return;
       }
-      // Current is recent[0], next is recent[1]
-      const nextPath = recent[1];
+      // Use viewDiff to switch terminal + open diff, but the MRU list
+      // is already rotated by cycleNextRepo so it won't re-sort.
       await vscode.commands.executeCommand(CMD.viewDiff, { path: nextPath });
     })
   );

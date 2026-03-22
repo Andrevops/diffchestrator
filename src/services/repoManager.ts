@@ -112,6 +112,21 @@ export class RepoManager implements vscode.Disposable {
     this._onDidChangeSelection.fire();
   }
 
+  /**
+   * Rotate the recent list: move current (index 0) to the end,
+   * select the new front. This cycles through all recent repos
+   * without the MRU re-sort that selectRepo does.
+   */
+  cycleNextRepo(): string | undefined {
+    if (this._recentRepoPaths.length < 2) return undefined;
+    const rotated = this._recentRepoPaths.shift()!;
+    this._recentRepoPaths.push(rotated);
+    this._selectedRepo = this._recentRepoPaths[0];
+    vscode.commands.executeCommand("setContext", CTX.hasSelectedRepo, true);
+    this._onDidChangeSelection.fire();
+    return this._selectedRepo;
+  }
+
   clearSelectedRepo(): void {
     this._selectedRepo = undefined;
     vscode.commands.executeCommand("setContext", CTX.hasSelectedRepo, false);
