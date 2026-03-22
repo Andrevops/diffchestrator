@@ -156,7 +156,7 @@ export class GitExecutor {
 
   async shortStatus(
     repoPath: string
-  ): Promise<{ staged: number; unstaged: number; untracked: number; branch: string; ahead: number; behind: number }> {
+  ): Promise<{ staged: number; unstaged: number; untracked: number; branch: string; ahead: number; behind: number; headOid: string }> {
     const result = await this._run(
       ["status", "--porcelain=v2", "--branch", "-unormal"],
       repoPath
@@ -168,12 +168,15 @@ export class GitExecutor {
     let branch = "HEAD";
     let ahead = 0;
     let behind = 0;
+    let headOid = "";
 
     for (const line of result.stdout.split("\n")) {
       if (!line) {
         continue;
       }
-      if (line.startsWith("# branch.head ")) {
+      if (line.startsWith("# branch.oid ")) {
+        headOid = line.slice("# branch.oid ".length);
+      } else if (line.startsWith("# branch.head ")) {
         branch = line.slice("# branch.head ".length);
       } else if (line.startsWith("# branch.ab ")) {
         const match = line.match(/\+(\d+)\s+-(\d+)/);
@@ -192,7 +195,7 @@ export class GitExecutor {
       }
     }
 
-    return { staged, unstaged, untracked, branch, ahead, behind };
+    return { staged, unstaged, untracked, branch, ahead, behind, headOid };
   }
 
   async diff(

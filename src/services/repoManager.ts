@@ -22,6 +22,14 @@ export class RepoManager implements vscode.Disposable {
   private _onDidChangeSelection = new vscode.EventEmitter<void>();
   readonly onDidChangeSelection = this._onDidChangeSelection.event;
 
+  // Fired when a new commit is detected in any repo
+  private _onDidDetectCommit = new vscode.EventEmitter<{ repoPath: string; repoName: string }>();
+  readonly onDidDetectCommit = this._onDidDetectCommit.event;
+
+  // Fired when a clean repo gets new changes (files modified externally)
+  private _onDidDetectChanges = new vscode.EventEmitter<{ repoPath: string; repoName: string; count: number }>();
+  readonly onDidDetectChanges = this._onDidDetectChanges.event;
+
   private _onDidScanProgress = new vscode.EventEmitter<{
     dirsScanned: number;
     reposFound: number;
@@ -95,10 +103,16 @@ export class RepoManager implements vscode.Disposable {
         existing.untrackedCount === s.untracked &&
         existing.branch === s.branch &&
         existing.ahead === s.ahead &&
-        existing.behind === s.behind
+        existing.behind === s.behind &&
+        existing.headOid === s.headOid
       ) {
         return; // nothing changed, skip cascade
       }
+
+      // Detect new commit (HEAD changed)
+      const newCommit = existing.headOid && s.headOid && existing.headOid !== s.headOid;
+      // Detect new changes on a previously clean repo
+      const newChanges = existing.totalChanges === 0 && totalChanges > 0;
 
       existing.stagedCount = s.staged;
       existing.unstagedCount = s.unstaged;
@@ -107,7 +121,17 @@ export class RepoManager implements vscode.Disposable {
       existing.branch = s.branch;
       existing.ahead = s.ahead;
       existing.behind = s.behind;
+      existing.headOid = s.headOid;
       this._onDidChangeRepos.fire();
+
+      // Fire specific notifications (after state update)
+      const repoName = existing.name;
+      if (newCommit) {
+        this._onDidDetectCommit.fire({ repoPath, repoName });
+      }
+      if (newChanges) {
+        this._onDidDetectChanges.fire({ repoPath, repoName, count: totalChanges });
+      }
     } catch {
       /* ignore */
     }
@@ -214,6 +238,8 @@ export class RepoManager implements vscode.Disposable {
     this._focusDisposable?.dispose();
     this._onDidChangeRepos.dispose();
     this._onDidChangeSelection.dispose();
+    this._onDidDetectCommit.dispose();
+    this._onDidDetectChanges.dispose();
     this._onDidScanProgress.dispose();
   }
 }

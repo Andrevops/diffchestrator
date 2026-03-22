@@ -111,6 +111,39 @@ export function activate(context: vscode.ExtensionContext): void {
   repoManager.onDidChangeRepos(updateViewInfo);
   repoManager.onDidChangeSelection(updateViewInfo);
 
+  // Notifications when Claude/external tools commit or modify files
+  const notifyGit = new GitExecutor();
+
+  repoManager.onDidDetectCommit(async ({ repoPath, repoName }) => {
+    try {
+      const commits = await notifyGit.log(repoPath, 1);
+      const msg = commits.length > 0 ? commits[0].message : "new commit";
+      const action = await vscode.window.showInformationMessage(
+        `Diffchestrator: Committed in ${repoName} — ${msg}`,
+        "Show Terminal",
+        "View Changes"
+      );
+      if (action === "Show Terminal") {
+        await showTerminalIfExists(repoPath);
+      } else if (action === "View Changes") {
+        await vscode.commands.executeCommand(CMD.viewDiff, { path: repoPath });
+      }
+    } catch { /* ignore */ }
+  });
+
+  repoManager.onDidDetectChanges(async ({ repoPath, repoName, count }) => {
+    const action = await vscode.window.showInformationMessage(
+      `Diffchestrator: ${count} new change${count !== 1 ? "s" : ""} in ${repoName}`,
+      "Show Terminal",
+      "View Changes"
+    );
+    if (action === "Show Terminal") {
+      await showTerminalIfExists(repoPath);
+    } else if (action === "View Changes") {
+      await vscode.commands.executeCommand(CMD.viewDiff, { path: repoPath });
+    }
+  });
+
   // Register command modules
   registerScanCommands(context, repoManager);
   registerStageCommands(context, repoManager);

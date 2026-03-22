@@ -100,7 +100,7 @@ export class Scanner extends EventEmitter {
         this.git.getRemoteUrl(repoPath).catch(() => undefined),
         this.git
           .shortStatus(repoPath)
-          .catch(() => ({ staged: 0, unstaged: 0, untracked: 0, branch: "HEAD", ahead: 0, behind: 0 })),
+          .catch(() => ({ staged: 0, unstaged: 0, untracked: 0, branch: "HEAD", ahead: 0, behind: 0, headOid: "" })),
       ]);
       return {
         path: repoPath,
@@ -113,6 +113,7 @@ export class Scanner extends EventEmitter {
         totalChanges: counts.staged + counts.unstaged + counts.untracked,
         ahead: counts.ahead,
         behind: counts.behind,
+        headOid: counts.headOid,
       };
     } catch {
       return null;

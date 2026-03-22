@@ -45,6 +45,7 @@ export interface RepoSummary {
   totalChanges: number;
   ahead: number;
   behind: number;
+  headOid: string;
 }
 
 export interface CommitEntry {
