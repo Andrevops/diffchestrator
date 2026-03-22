@@ -46,8 +46,16 @@ export function activate(context: vscode.ExtensionContext): void {
       if (uri.scheme === "file" && uri.fsPath.startsWith(repoPath)) {
         lastOpenFile.set(repoPath, uri);
       } else if (uri.scheme === "git-show") {
-        // Diff editor — track the URI so we can restore it
         lastOpenFile.set(repoPath, uri);
+      }
+    }),
+    // Clear remembered file when its tab is closed
+    vscode.workspace.onDidCloseTextDocument((doc) => {
+      const uri = doc.uri;
+      for (const [repo, remembered] of lastOpenFile) {
+        if (remembered.toString() === uri.toString()) {
+          lastOpenFile.delete(repo);
+        }
       }
     })
   );
