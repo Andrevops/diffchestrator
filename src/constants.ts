@@ -39,6 +39,8 @@ export const CMD = {
   favoriteCurrent: "diffchestrator.favoriteCurrent",
   searchInRepo: "diffchestrator.searchInRepo",
   grepInRepo: "diffchestrator.grepInRepo",
+  grepActiveRepos: "diffchestrator.grepActiveRepos",
+  grepAllRepos: "diffchestrator.grepAllRepos",
   stageCurrentFile: "diffchestrator.stageCurrentFile",
   unstageCurrentFile: "diffchestrator.unstageCurrentFile",
   cycleActiveRepo: "diffchestrator.cycleActiveRepo",

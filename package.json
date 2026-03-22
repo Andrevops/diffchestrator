@@ -90,6 +90,18 @@
         "icon": "$(search)"
       },
       {
+        "command": "diffchestrator.grepActiveRepos",
+        "title": "Search Active Repos",
+        "category": "Diffchestrator",
+        "icon": "$(search)"
+      },
+      {
+        "command": "diffchestrator.grepAllRepos",
+        "title": "Search All Repos",
+        "category": "Diffchestrator",
+        "icon": "$(search)"
+      },
+      {
         "command": "diffchestrator.searchInRepo",
         "title": "Open Repo in New Window",
         "category": "Diffchestrator",
@@ -500,6 +512,16 @@
         "command": "diffchestrator.grepInRepo",
         "key": "ctrl+d /",
         "mac": "cmd+d /"
+      },
+      {
+        "command": "diffchestrator.grepActiveRepos",
+        "key": "ctrl+d .",
+        "mac": "cmd+d ."
+      },
+      {
+        "command": "diffchestrator.grepAllRepos",
+        "key": "ctrl+d shift+/",
+        "mac": "cmd+d shift+/"
       },
       {
         "command": "diffchestrator.searchInRepo",
