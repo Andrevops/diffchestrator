@@ -69,6 +69,9 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       if (r.branch) parts.push(r.branch);
       if (r.totalChanges > 0) parts.push(`${r.totalChanges} changes`);
       item.description = parts.join(" · ");
+      // Unique id per state so VS Code resets selection on refresh
+      const state = isActive ? "active" : isMultiSelected ? "multi" : "idle";
+      item.id = `repo:${r.path}:${state}`;
       item.contextValue = "repo";
       (item as vscode.TreeItem & { path: string }).path = r.path;
       item.tooltip = this._buildTooltip(r);

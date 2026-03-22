@@ -60,6 +60,8 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
       item.iconPath = new vscode.ThemeIcon("history", new vscode.ThemeColor("foreground"));
     }
 
+    // Unique id per state so VS Code resets selection on refresh
+    item.id = `active:${r.path}:${element.role}`;
     item.contextValue = "repo";
     (item as vscode.TreeItem & { path: string }).path = r.path;
 

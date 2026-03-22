@@ -57,6 +57,8 @@ export class FavoritesTreeProvider
       item.description = "(not scanned)";
     }
 
+    // Unique id per state so VS Code resets selection on refresh
+    item.id = `fav:${element.repoPath}:${isActive ? "active" : "idle"}`;
     item.contextValue = "repo";
     (item as vscode.TreeItem & { path: string }).path = element.repoPath;
     item.tooltip = element.repoPath;
