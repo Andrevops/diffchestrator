@@ -96,6 +96,12 @@
         "icon": "$(star)"
       },
       {
+        "command": "diffchestrator.cycleActiveRepo",
+        "title": "Cycle Active Repo",
+        "category": "Diffchestrator",
+        "icon": "$(arrow-swap)"
+      },
+      {
         "command": "diffchestrator.viewDiff",
         "title": "View Diff",
         "category": "Diffchestrator",
@@ -483,6 +489,11 @@
         "command": "diffchestrator.searchInRepo",
         "key": "ctrl+d /",
         "mac": "cmd+d /"
+      },
+      {
+        "command": "diffchestrator.cycleActiveRepo",
+        "key": "ctrl+d tab",
+        "mac": "cmd+d tab"
       }
     ],
     "configuration": {

@@ -40,6 +40,7 @@ export const CMD = {
   searchInRepo: "diffchestrator.searchInRepo",
   stageCurrentFile: "diffchestrator.stageCurrentFile",
   unstageCurrentFile: "diffchestrator.unstageCurrentFile",
+  cycleActiveRepo: "diffchestrator.cycleActiveRepo",
 } as const;
 
 export const CONFIG = {

@@ -109,6 +109,20 @@ export function activate(context: vscode.ExtensionContext): void {
     )
   );
 
+  // Cycle through active/recent repos
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.cycleActiveRepo, async () => {
+      const recent = repoManager.recentRepoPaths;
+      if (recent.length < 2) {
+        vscode.window.showInformationMessage("Diffchestrator: No other recent repos to cycle to.");
+        return;
+      }
+      // Current is recent[0], next is recent[1]
+      const nextPath = recent[1];
+      await vscode.commands.executeCommand(CMD.viewDiff, { path: nextPath });
+    })
+  );
+
   // Stage/unstage the file currently open in the editor (editor title bar buttons)
   // Delegates to the same stageFile/unstageFile commands used by the sidebar tree,
   // resolving the file path from the active editor first.
