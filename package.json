@@ -317,13 +317,23 @@
     "menus": {
       "editor/title": [
         {
+          "command": "diffchestrator.prevChangedFile",
+          "group": "navigation@1",
+          "when": "diffchestrator.hasSelectedRepo"
+        },
+        {
+          "command": "diffchestrator.nextChangedFile",
+          "group": "navigation@2",
+          "when": "diffchestrator.hasSelectedRepo"
+        },
+        {
           "command": "diffchestrator.stageCurrentFile",
-          "group": "navigation",
+          "group": "navigation@3",
           "when": "resourceScheme == file && diffchestrator.hasSelectedRepo"
         },
         {
           "command": "diffchestrator.unstageCurrentFile",
-          "group": "navigation",
+          "group": "navigation@4",
           "when": "resourceScheme == file && diffchestrator.hasSelectedRepo"
         }
       ],
