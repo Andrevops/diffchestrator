@@ -58,14 +58,14 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // When user clicks a terminal tab, switch to that repo
+  // When user clicks a terminal tab, switch to that repo (full viewDiff flow)
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTerminal((terminal) => {
       if (!terminal || switchingRepo) return;
       const allPaths = repoManager.repos.map((r) => r.path);
       const repoPath = findRepoForTerminal(terminal, allPaths);
       if (repoPath && repoPath !== repoManager.selectedRepo) {
-        repoManager.selectRepo(repoPath);
+        vscode.commands.executeCommand(CMD.viewDiff, { path: repoPath });
       }
     })
   );
