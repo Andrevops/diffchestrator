@@ -78,30 +78,38 @@ function getAlive(repoPath: string, kind: TerminalKind): vscode.Terminal | undef
 }
 
 /**
- * Find which repo path a terminal belongs to (by map lookup or name pattern).
+ * Find which repo path a terminal belongs to.
+ * Pass allRepoPaths (from repoManager.repos) so we can match terminals
+ * that aren't in the tracking map yet.
  */
-export function findRepoForTerminal(terminal: vscode.Terminal): string | undefined {
+export function findRepoForTerminal(terminal: vscode.Terminal, allRepoPaths: string[]): string | undefined {
   // Check tracked map first
   for (const [k, t] of repoTerminals) {
     if (t === terminal) {
       return k.split("::")[0];
     }
   }
-  // Fallback: match terminal name against known patterns
+  // Fallback: extract repo name from terminal name and match against all known repos
   const name = terminal.name;
-  const patterns: { regex: RegExp; extract: (m: RegExpMatchArray) => string }[] = [
-    { regex: /^Claude:\s*(.+)$/i, extract: (m) => m[1] },
-    { regex: /^YOLO:\s*(.+)$/i, extract: (m) => m[1] },
-    { regex: /^DC:\s*(.+)$/i, extract: (m) => m[1] },
+  const patterns: RegExp[] = [
+    /^Claude:\s*(.+)$/i,
+    /^YOLO:\s*(.+)$/i,
+    /^DC:\s*(.+)$/i,
+    /^Claude Code\s*-\s*(.+)$/i,
   ];
-  for (const { regex, extract } of patterns) {
+  for (const regex of patterns) {
     const match = name.match(regex);
     if (match) {
-      const repoName = extract(match);
-      // Find a repo path ending with this name
-      for (const k of repoTerminals.keys()) {
-        const rp = k.split("::")[0];
-        if (path.basename(rp) === repoName) return rp;
+      const repoName = match[1].trim();
+      for (const rp of allRepoPaths) {
+        if (path.basename(rp) === repoName) {
+          // Adopt the terminal into the tracking map
+          const kind: TerminalKind =
+            /^Claude/i.test(name) ? "claude" :
+            /^YOLO/i.test(name) ? "yolo" : "shell";
+          repoTerminals.set(key(rp, kind), terminal);
+          return rp;
+        }
       }
     }
   }

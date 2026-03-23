@@ -62,7 +62,8 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTerminal((terminal) => {
       if (!terminal || switchingRepo) return;
-      const repoPath = findRepoForTerminal(terminal);
+      const allPaths = repoManager.repos.map((r) => r.path);
+      const repoPath = findRepoForTerminal(terminal, allPaths);
       if (repoPath && repoPath !== repoManager.selectedRepo) {
         repoManager.selectRepo(repoPath);
       }
