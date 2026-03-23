@@ -150,6 +150,7 @@ export function registerTerminalCommand(
           vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
           return;
         }
+        repoManager.selectRepo(targetPath);
         const terminal = getOrCreateTerminal(targetPath);
         terminal.show();
       }
@@ -167,6 +168,7 @@ export function registerTerminalCommand(
           return;
         }
 
+        repoManager.selectRepo(targetPath);
         const existing = getAlive(targetPath, "yolo");
         if (existing) {
           existing.show();

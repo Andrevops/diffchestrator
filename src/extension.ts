@@ -124,6 +124,7 @@ export function activate(context: vscode.ExtensionContext): void {
         "View Changes"
       );
       if (action === "Show Terminal") {
+        repoManager.selectRepo(repoPath);
         await showTerminalIfExists(repoPath);
       } else if (action === "View Changes") {
         await vscode.commands.executeCommand(CMD.viewDiff, { path: repoPath });
@@ -138,6 +139,7 @@ export function activate(context: vscode.ExtensionContext): void {
       "View Changes"
     );
     if (action === "Show Terminal") {
+      repoManager.selectRepo(repoPath);
       await showTerminalIfExists(repoPath);
     } else if (action === "View Changes") {
       await vscode.commands.executeCommand(CMD.viewDiff, { path: repoPath });
