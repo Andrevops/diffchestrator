@@ -99,11 +99,18 @@ export class RepoManager implements vscode.Disposable {
     const scanner = new Scanner(maxDepth, extraSkip);
     scanner.on("progress", (p) => this._onDidScanProgress.fire(p));
 
-    const repos = await scanner.scan(rootPath);
-    for (const r of repos) {
+    // Show repos incrementally — debounce tree updates to every 200ms
+    let scanDebounce: ReturnType<typeof setTimeout> | undefined;
+    scanner.on("repo", (r: RepoSummary) => {
       this._repos.set(r.path, r);
-    }
-    vscode.commands.executeCommand("setContext", CTX.hasRepos, this._repos.size > 0);
+      vscode.commands.executeCommand("setContext", CTX.hasRepos, true);
+      if (scanDebounce) clearTimeout(scanDebounce);
+      scanDebounce = setTimeout(() => this._onDidChangeRepos.fire(), 200);
+    });
+
+    await scanner.scan(rootPath);
+    // Final flush
+    if (scanDebounce) clearTimeout(scanDebounce);
     this._onDidChangeRepos.fire();
     this.startAutoRefresh();
   }

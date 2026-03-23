@@ -75,9 +75,9 @@ export class Scanner extends EventEmitter {
       }
     }
 
-    // Fetch metadata concurrently (max 5 at a time)
+    // Fetch metadata concurrently (higher concurrency for initial scan)
     const repos: RepoSummary[] = [];
-    const CONCURRENCY = 5;
+    const CONCURRENCY = 10;
     for (let i = 0; i < repoPaths.length; i += CONCURRENCY) {
       const batch = repoPaths.slice(i, i + CONCURRENCY);
       const results = await Promise.all(
@@ -95,8 +95,8 @@ export class Scanner extends EventEmitter {
 
   private async buildSummary(repoPath: string): Promise<RepoSummary | null> {
     try {
-      const [branch, remoteUrl, counts] = await Promise.all([
-        this.git.getBranch(repoPath).catch(() => "unknown"),
+      // shortStatus returns branch — no need for separate getBranch call
+      const [remoteUrl, counts] = await Promise.all([
         this.git.getRemoteUrl(repoPath).catch(() => undefined),
         this.git
           .shortStatus(repoPath)
@@ -105,7 +105,7 @@ export class Scanner extends EventEmitter {
       return {
         path: repoPath,
         name: path.basename(repoPath),
-        branch,
+        branch: counts.branch,
         remoteUrl,
         stagedCount: counts.staged,
         unstagedCount: counts.unstaged,
