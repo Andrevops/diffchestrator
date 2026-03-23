@@ -97,21 +97,22 @@ export class RepoManager implements vscode.Disposable {
     const extraSkip = config.get<string[]>("scanExtraSkipDirs", []);
 
     const scanner = new Scanner(maxDepth, extraSkip);
-    scanner.on("progress", (p) => this._onDidScanProgress.fire(p));
 
-    // Show repos incrementally — debounce tree updates to every 200ms
-    let scanDebounce: ReturnType<typeof setTimeout> | undefined;
-    scanner.on("repo", (r: RepoSummary) => {
+    // Phase 1: Fast BFS — no git calls, repos appear instantly
+    const repos = scanner.scanFast(rootPath);
+    for (const r of repos) {
       this._repos.set(r.path, r);
-      vscode.commands.executeCommand("setContext", CTX.hasRepos, true);
-      if (scanDebounce) clearTimeout(scanDebounce);
-      scanDebounce = setTimeout(() => this._onDidChangeRepos.fire(), 200);
-    });
-
-    await scanner.scan(rootPath);
-    // Final flush
-    if (scanDebounce) clearTimeout(scanDebounce);
+    }
+    vscode.commands.executeCommand("setContext", CTX.hasRepos, this._repos.size > 0);
     this._onDidChangeRepos.fire();
+
+    // Phase 2: Fetch git metadata in background, update tree as batches complete
+    const BATCH = 10;
+    for (let i = 0; i < repos.length; i += BATCH) {
+      await Promise.all(repos.slice(i, i + BATCH).map((r) => scanner.fetchMetadata(r)));
+      this._onDidChangeRepos.fire();
+    }
+
     this.startAutoRefresh();
   }
 

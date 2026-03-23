@@ -33,26 +33,37 @@ export class Scanner extends EventEmitter {
     this.extraSkipDirs = new Set([...SKIP_DIRS, ...extraSkipDirs]);
   }
 
-  async scan(rootPath: string): Promise<RepoSummary[]> {
+  /**
+   * Phase 1: Fast BFS to find .git directories. No git calls.
+   * Returns skeleton RepoSummary objects immediately.
+   */
+  scanFast(rootPath: string): RepoSummary[] {
     this.dirsScanned = 0;
-    const repoPaths: string[] = [];
-    // BFS
+    const repos: RepoSummary[] = [];
     const queue: Array<{ path: string; depth: number }> = [
       { path: rootPath, depth: 0 },
     ];
+
     while (queue.length > 0) {
       const { path: dirPath, depth } = queue.shift()!;
       this.dirsScanned++;
-      this.emit("progress", {
-        dirsScanned: this.dirsScanned,
-        reposFound: repoPaths.length,
-      });
 
       const gitDir = path.join(dirPath, ".git");
       try {
         if (fs.existsSync(gitDir) && fs.statSync(gitDir).isDirectory()) {
-          repoPaths.push(dirPath);
-          continue; // Don't recurse into git repos
+          repos.push({
+            path: dirPath,
+            name: path.basename(dirPath),
+            branch: "",
+            stagedCount: 0,
+            unstagedCount: 0,
+            untrackedCount: 0,
+            totalChanges: 0,
+            ahead: 0,
+            behind: 0,
+            headOid: "",
+          });
+          continue;
         }
       } catch {
         /* stat failure — skip */
@@ -75,48 +86,46 @@ export class Scanner extends EventEmitter {
       }
     }
 
-    // Fetch metadata concurrently (higher concurrency for initial scan)
-    const repos: RepoSummary[] = [];
-    const CONCURRENCY = 10;
-    for (let i = 0; i < repoPaths.length; i += CONCURRENCY) {
-      const batch = repoPaths.slice(i, i + CONCURRENCY);
-      const results = await Promise.all(
-        batch.map((p) => this.buildSummary(p))
-      );
-      for (const r of results) {
-        if (r) {
-          repos.push(r);
-          this.emit("repo", r);
-        }
-      }
-    }
     return repos;
   }
 
-  private async buildSummary(repoPath: string): Promise<RepoSummary | null> {
+  /**
+   * Phase 2: Fetch git metadata for a repo (branch, status, remote).
+   * Called in background after the tree is already visible.
+   */
+  async fetchMetadata(repo: RepoSummary): Promise<void> {
     try {
-      // shortStatus returns branch — no need for separate getBranch call
       const [remoteUrl, counts] = await Promise.all([
-        this.git.getRemoteUrl(repoPath).catch(() => undefined),
+        this.git.getRemoteUrl(repo.path).catch(() => undefined),
         this.git
-          .shortStatus(repoPath)
+          .shortStatus(repo.path)
           .catch(() => ({ staged: 0, unstaged: 0, untracked: 0, branch: "HEAD", ahead: 0, behind: 0, headOid: "" })),
       ]);
-      return {
-        path: repoPath,
-        name: path.basename(repoPath),
-        branch: counts.branch,
-        remoteUrl,
-        stagedCount: counts.staged,
-        unstagedCount: counts.unstaged,
-        untrackedCount: counts.untracked,
-        totalChanges: counts.staged + counts.unstaged + counts.untracked,
-        ahead: counts.ahead,
-        behind: counts.behind,
-        headOid: counts.headOid,
-      };
+      repo.branch = counts.branch;
+      repo.remoteUrl = remoteUrl;
+      repo.stagedCount = counts.staged;
+      repo.unstagedCount = counts.unstaged;
+      repo.untrackedCount = counts.untracked;
+      repo.totalChanges = counts.staged + counts.unstaged + counts.untracked;
+      repo.ahead = counts.ahead;
+      repo.behind = counts.behind;
+      repo.headOid = counts.headOid;
     } catch {
-      return null;
+      /* ignore — skeleton data stays */
     }
+  }
+
+  /**
+   * Legacy: full scan (BFS + metadata). Used by rescan.
+   */
+  async scan(rootPath: string): Promise<RepoSummary[]> {
+    const repos = this.scanFast(rootPath);
+    const CONCURRENCY = 10;
+    for (let i = 0; i < repos.length; i += CONCURRENCY) {
+      await Promise.all(
+        repos.slice(i, i + CONCURRENCY).map((r) => this.fetchMetadata(r))
+      );
+    }
+    return repos;
   }
 }
