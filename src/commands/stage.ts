@@ -91,7 +91,7 @@ export function registerStageCommands(
   context: vscode.ExtensionContext,
   repoManager: RepoManager
 ): void {
-  const git = new GitExecutor();
+  const git = repoManager.git;
 
   context.subscriptions.push(
     vscode.commands.registerCommand(

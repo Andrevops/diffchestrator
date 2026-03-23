@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
-import { GitExecutor } from "../git/gitExecutor";
+// Uses repoManager.git (shared GitExecutor with TTL cache)
 import type { FileChange } from "../types";
 import { ChangeType, FileStatus } from "../types";
 
@@ -24,8 +24,6 @@ interface FileNode {
 export class ChangedFilesProvider implements vscode.TreeDataProvider<TreeElement> {
   private _onDidChangeTreeData = new vscode.EventEmitter<TreeElement | undefined | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
-
-  private _git = new GitExecutor();
 
   constructor(private repoManager: RepoManager) {
     repoManager.onDidChangeSelection(() => {
@@ -139,7 +137,7 @@ export class ChangedFilesProvider implements vscode.TreeDataProvider<TreeElement
     if (!repoPath) return [];
 
     try {
-      const status = await this._git.status(repoPath);
+      const status = await this.repoManager.git.status(repoPath);
       const sections: SectionNode[] = [];
 
       if (status.staged.length > 0) {

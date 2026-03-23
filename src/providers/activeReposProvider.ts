@@ -28,13 +28,35 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
   private _onDidChangeTreeData = new vscode.EventEmitter<ActiveRepoNode | undefined | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
+  // Cache terminal kinds to avoid re-scanning on every tree rebuild
+  private _terminalCache = new Map<string, TerminalKind[]>();
+  private _terminalCacheDirty = true;
+
   constructor(private repoManager: RepoManager) {
     repoManager.onDidChangeSelection(() => this._onDidChangeTreeData.fire());
     repoManager.onDidChangeRepos(() => this._onDidChangeTreeData.fire());
 
-    // Refresh when terminals open/close to update terminal indicators
-    vscode.window.onDidOpenTerminal(() => this._onDidChangeTreeData.fire());
-    vscode.window.onDidCloseTerminal(() => this._onDidChangeTreeData.fire());
+    // Only invalidate terminal cache on terminal open/close, not full tree rebuild
+    vscode.window.onDidOpenTerminal(() => {
+      this._terminalCacheDirty = true;
+      this._onDidChangeTreeData.fire();
+    });
+    vscode.window.onDidCloseTerminal(() => {
+      this._terminalCacheDirty = true;
+      this._onDidChangeTreeData.fire();
+    });
+  }
+
+  private _getTerminalKinds(repoPath: string): TerminalKind[] {
+    if (this._terminalCacheDirty) {
+      // Rebuild entire cache once, not per-repo
+      this._terminalCache.clear();
+      for (const rp of this.repoManager.recentRepoPaths) {
+        this._terminalCache.set(rp, activeKinds(rp));
+      }
+      this._terminalCacheDirty = false;
+    }
+    return this._terminalCache.get(repoPath) ?? [];
   }
 
   getTreeItem(element: ActiveRepoNode): vscode.TreeItem {
@@ -100,7 +122,7 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
     if (activePath) {
       const repo = this.repoManager.getRepo(activePath);
       if (repo) {
-        nodes.push({ repo, role: "active", terminalKinds: activeKinds(activePath) });
+        nodes.push({ repo, role: "active", terminalKinds: this._getTerminalKinds(activePath) });
         seen.add(activePath);
       }
     }
@@ -109,7 +131,7 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
       if (seen.has(p)) continue;
       const repo = this.repoManager.getRepo(p);
       if (repo) {
-        nodes.push({ repo, role: "selected", terminalKinds: activeKinds(p) });
+        nodes.push({ repo, role: "selected", terminalKinds: this._getTerminalKinds(p) });
         seen.add(p);
       }
     }
@@ -118,7 +140,7 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
       if (seen.has(p)) continue;
       const repo = this.repoManager.getRepo(p);
       if (repo) {
-        nodes.push({ repo, role: "recent", terminalKinds: activeKinds(p) });
+        nodes.push({ repo, role: "recent", terminalKinds: this._getTerminalKinds(p) });
         seen.add(p);
       }
     }

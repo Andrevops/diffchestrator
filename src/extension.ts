@@ -25,7 +25,7 @@ import { FileWatcher } from "./services/fileWatcher";
 import { StatusBarManager } from "./services/statusBar";
 import { InlineBlameService } from "./services/inlineBlame";
 import { WorkspaceAutoScan } from "./services/workspaceAutoScan";
-import { GitExecutor } from "./git/gitExecutor";
+// GitExecutor accessed via repoManager.git (shared instance)
 import { showTerminalIfExists, findRepoForTerminal } from "./commands/terminal";
 import * as path from "path";
 
@@ -124,11 +124,11 @@ export function activate(context: vscode.ExtensionContext): void {
   repoManager.onDidChangeSelection(updateViewInfo);
 
   // Notifications when Claude/external tools commit or modify files
-  const notifyGit = new GitExecutor();
+  const sharedGit = repoManager.git;
 
   repoManager.onDidDetectCommit(async ({ repoPath, repoName }) => {
     try {
-      const commits = await notifyGit.log(repoPath, 1);
+      const commits = await sharedGit.log(repoPath, 1);
       const msg = commits.length > 0 ? commits[0].message : "new commit";
       const action = await vscode.window.showInformationMessage(
         `Diffchestrator: Committed in ${repoName} — ${msg}`,
@@ -250,12 +250,11 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   // Navigate changed files without staging
-  const navGit = new GitExecutor();
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.nextChangedFile, async () => {
       const repoPath = repoManager.selectedRepo;
       if (!repoPath) return;
-      const status = await navGit.status(repoPath);
+      const status = await sharedGit.status(repoPath);
       const allFiles = [...status.unstaged, ...status.untracked, ...status.staged];
       if (allFiles.length === 0) return;
 
@@ -273,7 +272,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(CMD.prevChangedFile, async () => {
       const repoPath = repoManager.selectedRepo;
       if (!repoPath) return;
-      const status = await navGit.status(repoPath);
+      const status = await sharedGit.status(repoPath);
       const allFiles = [...status.unstaged, ...status.untracked, ...status.staged];
       if (allFiles.length === 0) return;
 
@@ -292,7 +291,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Stage/unstage the file currently open in the editor (editor title bar buttons)
   // Delegates to the same stageFile/unstageFile commands used by the sidebar tree,
   // resolving the file path from the active editor first.
-  const gitForEditor = new GitExecutor();
+  // Reuse shared git instance for editor commands
 
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.stageCurrentFile, async () => {
@@ -304,9 +303,9 @@ export function activate(context: vscode.ExtensionContext): void {
       const rel = path.relative(repoPath, absFile);
       if (rel.startsWith("..")) return;
       try {
-        await gitForEditor.stage(repoPath, [rel]);
+        await sharedGit.stage(repoPath, [rel]);
         await repoManager.refreshRepo(repoPath);
-        await openNextPendingFile(gitForEditor, repoPath, rel);
+        await openNextPendingFile(sharedGit, repoPath, rel);
       } catch (err: unknown) {
         vscode.window.showErrorMessage(`Failed to stage: ${err instanceof Error ? err.message : err}`);
       }
@@ -320,7 +319,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const rel = path.relative(repoPath, absFile);
       if (rel.startsWith("..")) return;
       try {
-        await gitForEditor.unstage(repoPath, [rel]);
+        await sharedGit.unstage(repoPath, [rel]);
         await repoManager.refreshRepo(repoPath);
         vscode.window.showInformationMessage(`Unstaged: ${rel}`);
       } catch (err: unknown) {
@@ -424,37 +423,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
         // Priority: changed files first (review workflow), then remembered file
         try {
-          const git = new GitExecutor();
-          const status = await git.status(repoPath);
+          const status = await sharedGit.status(repoPath);
           const firstFile = status.unstaged[0] ?? status.untracked[0] ?? status.staged[0];
           if (firstFile) {
-            const filePath = firstFile.path;
-            if (firstFile.status === "untracked") {
-              await vscode.commands.executeCommand(
-                "vscode.open",
-                vscode.Uri.file(path.join(repoPath, filePath))
-              );
-            } else {
-              const staged = firstFile.status === "staged";
-              const leftUri = vscode.Uri.parse(
-                `git-show:${path.join(repoPath, filePath)}`
-              ).with({
-                query: JSON.stringify({ path: filePath, ref: "HEAD", repoPath }),
-              });
-              const rightUri = staged
-                ? vscode.Uri.parse(
-                    `git-show:${path.join(repoPath, filePath)}`
-                  ).with({
-                    query: JSON.stringify({ path: filePath, ref: ":0", repoPath }),
-                  })
-                : vscode.Uri.file(path.join(repoPath, filePath));
-              await vscode.commands.executeCommand(
-                "vscode.diff",
-                leftUri,
-                rightUri,
-                `${path.basename(filePath)} (${staged ? "Staged" : "Working Tree"})`
-              );
-            }
+            await openFileDiff(repoPath, firstFile);
           } else {
             // No changes — restore remembered file if we have one
             const remembered = lastOpenFile.get(repoPath);
@@ -471,7 +443,6 @@ export function activate(context: vscode.ExtensionContext): void {
                 await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
               }
             } else {
-              // Nothing to show — close stale editor
               await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
             }
           }
