@@ -3,7 +3,7 @@
   "displayName": "Diffchestrator",
   "description": "Multi-repo Git orchestration built for Claude Code — AI commits, diffs, and terminal integration",
   "version": "0.20.7",
-  "publisher": "Andrevops",
+  "publisher": "andrevops-com",
   "license": "MIT",
   "icon": "resources/icons/icon.png",
   "repository": {
