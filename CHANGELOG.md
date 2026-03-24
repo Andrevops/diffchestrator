@@ -2,6 +2,15 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.36.0
+
+### Features
+- 8 new features — auto-push, copy info, shortcuts, activity log, and more
+
+### Other
+- remove toast test file
+- verify commit toast actions
+
 ## 0.35.1
 
 ### Bug Fixes
