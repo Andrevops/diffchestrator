@@ -316,8 +316,9 @@ export function activate(context: vscode.ExtensionContext): void {
                 await sharedGit.fetch(r.path);
                 await repoManager.refreshRepo(r.path);
                 fetched++;
-              } catch {
+              } catch (err) {
                 failed++;
+                outputChannel.appendLine(`[fetch] ${r.name}: ${err instanceof Error ? err.message : err}`);
               }
             }));
           }
@@ -327,9 +328,13 @@ export function activate(context: vscode.ExtensionContext): void {
       const summary = behindRepos.length > 0
         ? `${behindRepos.length} repo${behindRepos.length > 1 ? "s" : ""} behind remote`
         : "all up to date";
-      vscode.window.showInformationMessage(
-        `Diffchestrator: Fetched ${fetched} repos (${failed > 0 ? `${failed} failed, ` : ""}${summary})`
-      );
+      const msg = `Diffchestrator: Fetched ${fetched} repos (${failed > 0 ? `${failed} failed, ` : ""}${summary})`;
+      if (failed > 0) {
+        const action = await vscode.window.showWarningMessage(msg, "Show Log");
+        if (action === "Show Log") outputChannel.show();
+      } else {
+        vscode.window.showInformationMessage(msg);
+      }
     }),
     // Bulk pull all repos
     vscode.commands.registerCommand(CMD.bulkPull, async () => {
@@ -355,15 +360,20 @@ export function activate(context: vscode.ExtensionContext): void {
               await sharedGit.pull(r.path);
               await repoManager.refreshRepo(r.path);
               success++;
-            } catch {
+            } catch (err) {
               failed++;
+              outputChannel.appendLine(`[pull] ${r.name}: ${err instanceof Error ? err.message : err}`);
             }
           }
         }
       );
-      vscode.window.showInformationMessage(
-        `Diffchestrator: Pulled ${success} repos${failed > 0 ? `, ${failed} failed` : ""}`
-      );
+      const pullMsg = `Diffchestrator: Pulled ${success} repos${failed > 0 ? `, ${failed} failed` : ""}`;
+      if (failed > 0) {
+        const action = await vscode.window.showWarningMessage(pullMsg, "Show Log");
+        if (action === "Show Log") outputChannel.show();
+      } else {
+        vscode.window.showInformationMessage(pullMsg);
+      }
     }),
     // Claude multi-repo review
     vscode.commands.registerCommand(CMD.claudeReviewAll, async () => {
