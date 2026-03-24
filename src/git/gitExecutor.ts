@@ -550,6 +550,22 @@ export class GitExecutor {
     return files;
   }
 
+  async mergedBranches(repoPath: string, mainBranch: string): Promise<string[]> {
+    const result = await this._run(["branch", "--merged", mainBranch, "--no-color"], repoPath);
+    if (result.code !== 0) return [];
+    return result.stdout
+      .split("\n")
+      .map((l) => l.trim().replace(/^\* /, ""))
+      .filter((b) => b && b !== mainBranch && b !== "main" && b !== "master" && b !== "develop");
+  }
+
+  async deleteBranch(repoPath: string, branch: string): Promise<void> {
+    const result = await this._run(["branch", "-d", branch], repoPath);
+    if (result.code !== 0) {
+      throw new Error(result.stderr || `Failed to delete branch ${branch}`);
+    }
+  }
+
   private _parseChangeType(code: string): ChangeType {
     switch (code) {
       case "M":

@@ -392,6 +392,60 @@
         "title": "Toggle Favorites",
         "category": "Diffchestrator",
         "icon": "$(star-empty)"
+      },
+      {
+        "command": "diffchestrator.copyRepoInfo",
+        "title": "Copy Repo Info",
+        "category": "Diffchestrator",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "diffchestrator.showShortcuts",
+        "title": "Show Keyboard Shortcuts",
+        "category": "Diffchestrator",
+        "icon": "$(keyboard)"
+      },
+      {
+        "command": "diffchestrator.activityLog",
+        "title": "Activity Log (All Repos)",
+        "category": "Diffchestrator",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "diffchestrator.branchCleanup",
+        "title": "Clean Up Merged Branches",
+        "category": "Diffchestrator",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "diffchestrator.openRemoteUrl",
+        "title": "Open Remote in Browser",
+        "category": "Diffchestrator",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "diffchestrator.setRepoTag",
+        "title": "Set Tags",
+        "category": "Diffchestrator",
+        "icon": "$(tag)"
+      },
+      {
+        "command": "diffchestrator.filterByTag",
+        "title": "Filter by Tag",
+        "category": "Diffchestrator",
+        "icon": "$(tag)"
+      },
+      {
+        "command": "diffchestrator.saveSnapshot",
+        "title": "Save Workspace Snapshot",
+        "category": "Diffchestrator",
+        "icon": "$(bookmark)"
+      },
+      {
+        "command": "diffchestrator.loadSnapshot",
+        "title": "Load Workspace Snapshot",
+        "category": "Diffchestrator",
+        "icon": "$(bookmark)"
       }
     ],
     "menus": {
@@ -551,9 +605,24 @@
           "group": "3_misc@1"
         },
         {
-          "command": "diffchestrator.selectRepo",
+          "command": "diffchestrator.copyRepoInfo",
           "when": "viewItem == repo",
           "group": "3_misc@2"
+        },
+        {
+          "command": "diffchestrator.openRemoteUrl",
+          "when": "viewItem == repo",
+          "group": "3_misc@3"
+        },
+        {
+          "command": "diffchestrator.setRepoTag",
+          "when": "viewItem == repo",
+          "group": "3_misc@4"
+        },
+        {
+          "command": "diffchestrator.selectRepo",
+          "when": "viewItem == repo",
+          "group": "3_misc@5"
         },
         {
           "command": "diffchestrator.stageFile",
@@ -767,6 +836,21 @@
           "type": "boolean",
           "default": false,
           "description": "Automatically git fetch during scan to show accurate ahead/behind counts"
+        },
+        "diffchestrator.autoPushAfterCommit": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically push after a successful commit via Ctrl+D, M"
+        },
+        "diffchestrator.repoTags": {
+          "type": "object",
+          "default": {},
+          "description": "Repo tags for filtering (managed by extension)"
+        },
+        "diffchestrator.snapshots": {
+          "type": "object",
+          "default": {},
+          "description": "Workspace snapshots (managed by extension)"
         },
         "diffchestrator.claudePermissionMode": {
           "type": "string",

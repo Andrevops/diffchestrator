@@ -57,13 +57,23 @@ export function registerCommitCommands(
         try {
           const output = await git.commit(repoPath, message.trim());
           await repoManager.refreshRepo(repoPath);
-          vscode.window.showInformationMessage(
-            `Diffchestrator: Committed to ${repoName}`
-          );
-          // Log output to output channel
-
           channel.appendLine(`[commit] ${repoName}`);
           channel.appendLine(output);
+
+          // Auto-push if enabled
+          const config = vscode.workspace.getConfiguration("diffchestrator");
+          if (config.get<boolean>("autoPushAfterCommit", false)) {
+            try {
+              await git.push(repoPath);
+              await repoManager.refreshRepo(repoPath);
+              vscode.window.showInformationMessage(`Diffchestrator: Committed and pushed ${repoName}`);
+            } catch (pushErr: unknown) {
+              const pushMsg = pushErr instanceof Error ? pushErr.message : String(pushErr);
+              vscode.window.showWarningMessage(`Diffchestrator: Committed ${repoName} but push failed: ${pushMsg}`);
+            }
+          } else {
+            vscode.window.showInformationMessage(`Diffchestrator: Committed to ${repoName}`);
+          }
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           vscode.window.showErrorMessage(

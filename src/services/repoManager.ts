@@ -63,7 +63,35 @@ export class RepoManager implements vscode.Disposable {
   }
 
   get repos(): RepoSummary[] {
+    const all = [...this._repos.values()];
+    if (!this._tagFilter) return all;
+    const config = vscode.workspace.getConfiguration("diffchestrator");
+    const tags: Record<string, string[]> = config.get("repoTags", {});
+    const tagged = new Set(tags[this._tagFilter] ?? []);
+    return all.filter((r) => tagged.has(r.path));
+  }
+
+  get allRepos(): RepoSummary[] {
     return [...this._repos.values()];
+  }
+
+  setTagFilter(tag: string | undefined): void {
+    this._tagFilter = tag;
+    this._onDidChangeRepos.fire();
+  }
+
+  get activeTagFilter(): string | undefined {
+    return this._tagFilter;
+  }
+
+  restoreRecent(recent: string[], selected?: string): void {
+    this._recentRepoPaths = recent;
+    this._selectedRepo = selected;
+    if (selected) {
+      vscode.commands.executeCommand("setContext", CTX.hasSelectedRepo, true);
+    }
+    this._persistState();
+    this._onDidChangeSelection.fire();
   }
   private _persistState(): void {
     if (!this._state) return;
@@ -94,6 +122,8 @@ export class RepoManager implements vscode.Disposable {
   get windowFocused(): boolean {
     return this._windowFocused;
   }
+
+  private _tagFilter: string | undefined;
 
   set fileWatcher(fw: { suppressRefresh(repoPath: string, ms?: number): void }) {
     this._fileWatcher = fw;

@@ -447,6 +447,304 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
+  // Copy repo info to clipboard (#33)
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.copyRepoInfo, async (item?: any) => {
+      const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+      if (!repoPath) {
+        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
+        return;
+      }
+      const repo = repoManager.getRepo(repoPath);
+      const items = [
+        { label: "$(file-directory) Path", description: repoPath, _value: repoPath },
+        { label: "$(git-branch) Branch", description: repo?.branch ?? "unknown", _value: repo?.branch ?? "" },
+      ];
+      if (repo?.remoteUrl) {
+        items.push({ label: "$(link) Remote URL", description: repo.remoteUrl, _value: repo.remoteUrl });
+      }
+      items.push({ label: "$(repo) Name", description: path.basename(repoPath), _value: path.basename(repoPath) });
+      const picked = await vscode.window.showQuickPick(items, { placeHolder: "Copy to clipboard" });
+      if (picked) {
+        await vscode.env.clipboard.writeText(picked._value);
+        vscode.window.showInformationMessage(`Copied: ${picked._value}`);
+      }
+    })
+  );
+
+  // Keyboard shortcut cheatsheet (#34)
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.showShortcuts, async () => {
+      const shortcuts = [
+        { label: "Ctrl+D, Tab", description: "Cycle through active repos" },
+        { label: "Ctrl+D, Shift+Tab", description: "Close all active repos" },
+        { label: "Ctrl+D, Q", description: "Close current active repo" },
+        { label: "Ctrl+D, N / Shift+N", description: "Next / Previous changed file" },
+        { label: "Ctrl+D, M", description: "Commit with message" },
+        { label: "Ctrl+D, C", description: "AI Commit (Claude)" },
+        { label: "Ctrl+D, L", description: "Open Claude Code" },
+        { label: "Ctrl+D, Y", description: "Yolo (Claude Sandbox)" },
+        { label: "Ctrl+D, S", description: "Scan for repositories" },
+        { label: "Ctrl+D, Shift+S", description: "Switch scan root" },
+        { label: "Ctrl+D, Shift+T", description: "Open terminal at root" },
+        { label: "Ctrl+D, T", description: "Open terminal at repo" },
+        { label: "Ctrl+D, R", description: "Switch active repo" },
+        { label: "Ctrl+D, F", description: "Browse files in repo" },
+        { label: "Ctrl+D, P", description: "Push" },
+        { label: "Ctrl+D, U", description: "Pull" },
+        { label: "Ctrl+D, D", description: "Toggle changed-only filter" },
+        { label: "Ctrl+D, H", description: "Commit history" },
+        { label: "Ctrl+D, B", description: "Switch branch" },
+        { label: "Ctrl+D, A", description: "Stash management" },
+        { label: "Ctrl+D, G", description: "Toggle inline blame" },
+        { label: "Ctrl+D, E", description: "Favorite current repo" },
+        { label: "Ctrl+D, /", description: "Search in repo (git grep)" },
+        { label: "Ctrl+D, .", description: "Search active repos" },
+        { label: "Ctrl+D, Shift+/", description: "Search all repos" },
+        { label: "Ctrl+D, W", description: "Open repo in new window" },
+      ];
+      await vscode.window.showQuickPick(shortcuts, {
+        placeHolder: "Diffchestrator Keyboard Shortcuts (Ctrl+D chord prefix)",
+        matchOnDescription: true,
+      });
+    })
+  );
+
+  // Cross-repo activity log (#35)
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.activityLog, async () => {
+      const repos = repoManager.repos;
+      if (repos.length === 0) {
+        vscode.window.showWarningMessage("Diffchestrator: No repos scanned.");
+        return;
+      }
+      type LogEntry = { label: string; description: string; detail: string };
+      const entries: LogEntry[] = [];
+      const BATCH = 5;
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Window, title: "Diffchestrator: Loading activity" },
+        async () => {
+          for (let i = 0; i < repos.length; i += BATCH) {
+            await Promise.all(repos.slice(i, i + BATCH).map(async (r) => {
+              try {
+                const commits = await sharedGit.log(r.path, 3);
+                for (const c of commits) {
+                  entries.push({
+                    label: `$(git-commit) ${c.message}`,
+                    description: `${r.name} · ${c.author}`,
+                    detail: `${c.shortHash} · ${c.date}`,
+                  });
+                }
+              } catch { /* skip */ }
+            }));
+          }
+        }
+      );
+      entries.sort((a, b) => b.detail.localeCompare(a.detail));
+      await vscode.window.showQuickPick(entries.slice(0, 50), {
+        placeHolder: "Recent commits across all repos",
+        matchOnDescription: true,
+        matchOnDetail: true,
+      });
+    })
+  );
+
+  // Branch cleanup (#36)
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.branchCleanup, async () => {
+      const repos = repoManager.repos;
+      if (repos.length === 0) return;
+      type CleanupItem = vscode.QuickPickItem & { _repo: string; _branch: string };
+      const items: CleanupItem[] = [];
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: "Diffchestrator: Finding merged branches" },
+        async () => {
+          for (const r of repos) {
+            try {
+              const merged = await sharedGit.mergedBranches(r.path, r.branch);
+              for (const b of merged) {
+                items.push({
+                  label: `$(git-branch) ${b}`,
+                  description: r.name,
+                  picked: true,
+                  _repo: r.path,
+                  _branch: b,
+                });
+              }
+            } catch { /* skip */ }
+          }
+        }
+      );
+      if (items.length === 0) {
+        vscode.window.showInformationMessage("Diffchestrator: No merged branches found.");
+        return;
+      }
+      const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: `${items.length} merged branches found — select to delete`,
+        canPickMany: true,
+      });
+      if (!selected || selected.length === 0) return;
+      let deleted = 0;
+      let failed = 0;
+      for (const s of selected) {
+        try {
+          await sharedGit.deleteBranch(s._repo, s._branch);
+          deleted++;
+        } catch {
+          failed++;
+        }
+      }
+      vscode.window.showInformationMessage(
+        `Diffchestrator: Deleted ${deleted} branches${failed > 0 ? `, ${failed} failed` : ""}`
+      );
+    })
+  );
+
+  // Open remote URL (#37)
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.openRemoteUrl, async (item?: any) => {
+      const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+      if (!repoPath) {
+        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
+        return;
+      }
+      const repo = repoManager.getRepo(repoPath);
+      let url = repo?.remoteUrl;
+      if (!url) {
+        vscode.window.showWarningMessage("Diffchestrator: No remote URL found for this repo.");
+        return;
+      }
+      // Convert git@ SSH URLs to HTTPS
+      if (url.startsWith("git@")) {
+        url = url.replace(/^git@([^:]+):/, "https://$1/").replace(/\.git$/, "");
+      } else if (url.endsWith(".git")) {
+        url = url.replace(/\.git$/, "");
+      }
+      await vscode.env.openExternal(vscode.Uri.parse(url));
+    })
+  );
+
+  // Repo tags (#38)
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.setRepoTag, async (item?: any) => {
+      const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+      if (!repoPath) {
+        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
+        return;
+      }
+      const config = vscode.workspace.getConfiguration("diffchestrator");
+      const tags: Record<string, string[]> = config.get("repoTags", {});
+      const currentTags = Object.entries(tags)
+        .filter(([, repos]) => repos.includes(repoPath))
+        .map(([tag]) => tag);
+
+      const input = await vscode.window.showInputBox({
+        prompt: `Tags for ${path.basename(repoPath)} (comma-separated)`,
+        value: currentTags.join(", "),
+        placeHolder: "frontend, shared, infra",
+      });
+      if (input === undefined) return;
+
+      // Remove repo from all existing tags
+      for (const [tag, repos] of Object.entries(tags)) {
+        tags[tag] = repos.filter((r) => r !== repoPath);
+        if (tags[tag].length === 0) delete tags[tag];
+      }
+      // Add to new tags
+      if (input.trim()) {
+        for (const tag of input.split(",").map((t) => t.trim()).filter(Boolean)) {
+          if (!tags[tag]) tags[tag] = [];
+          tags[tag].push(repoPath);
+        }
+      }
+      await config.update("repoTags", tags, vscode.ConfigurationTarget.Global);
+      vscode.window.showInformationMessage(`Diffchestrator: Tags updated for ${path.basename(repoPath)}`);
+    }),
+    vscode.commands.registerCommand(CMD.filterByTag, async () => {
+      const config = vscode.workspace.getConfiguration("diffchestrator");
+      const tags: Record<string, string[]> = config.get("repoTags", {});
+      const tagNames = Object.keys(tags);
+      if (tagNames.length === 0) {
+        vscode.window.showInformationMessage("Diffchestrator: No tags defined. Right-click a repo to add tags.");
+        return;
+      }
+      const items = [
+        { label: "$(close) Clear filter", description: "Show all repos", _tag: "" },
+        ...tagNames.map((t) => ({ label: `$(tag) ${t}`, description: `${tags[t].length} repos`, _tag: t })),
+      ];
+      const picked = await vscode.window.showQuickPick(items, { placeHolder: "Filter repos by tag" });
+      if (!picked) return;
+      // Store active tag filter in context for repoTreeProvider
+      vscode.commands.executeCommand("setContext", "diffchestrator.activeTagFilter", picked._tag);
+      repoManager.setTagFilter(picked._tag || undefined);
+    })
+  );
+
+  // Workspace snapshots (#39)
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.saveSnapshot, async () => {
+      const name = await vscode.window.showInputBox({
+        prompt: "Snapshot name",
+        placeHolder: "e.g., Frontend work, Infra day",
+      });
+      if (!name) return;
+      const config = vscode.workspace.getConfiguration("diffchestrator");
+      const snapshots: Record<string, { root?: string; favorites: string[]; recent: string[]; selected?: string }> = config.get("snapshots", {});
+      snapshots[name] = {
+        root: repoManager.currentRoot,
+        favorites: config.get<string[]>("favorites", []),
+        recent: repoManager.recentRepoPaths,
+        selected: repoManager.selectedRepo,
+      };
+      await config.update("snapshots", snapshots, vscode.ConfigurationTarget.Global);
+      vscode.window.showInformationMessage(`Diffchestrator: Snapshot "${name}" saved`);
+    }),
+    vscode.commands.registerCommand(CMD.loadSnapshot, async () => {
+      const config = vscode.workspace.getConfiguration("diffchestrator");
+      const snapshots: Record<string, { root?: string; favorites: string[]; recent: string[]; selected?: string }> = config.get("snapshots", {});
+      const names = Object.keys(snapshots);
+      if (names.length === 0) {
+        vscode.window.showInformationMessage("Diffchestrator: No snapshots saved.");
+        return;
+      }
+      const items = [
+        ...names.map((n) => ({
+          label: `$(bookmark) ${n}`,
+          description: snapshots[n].root ? path.basename(snapshots[n].root!) : "",
+          _name: n,
+          _delete: false,
+        })),
+        ...names.map((n) => ({
+          label: `$(trash) Delete "${n}"`,
+          description: "",
+          _name: n,
+          _delete: true,
+        })),
+      ];
+      const picked = await vscode.window.showQuickPick(items, { placeHolder: "Load or delete a snapshot" });
+      if (!picked) return;
+
+      if (picked._delete) {
+        delete snapshots[picked._name];
+        await config.update("snapshots", snapshots, vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage(`Diffchestrator: Snapshot "${picked._name}" deleted`);
+        return;
+      }
+
+      const snap = snapshots[picked._name];
+      // Restore favorites
+      await config.update("favorites", snap.favorites, vscode.ConfigurationTarget.Global);
+      // Restore recent repos + selection
+      if (snap.recent) repoManager.restoreRecent(snap.recent, snap.selected);
+      // Scan the root
+      if (snap.root) {
+        await repoManager.scan(snap.root);
+        fileWatcher.watchAll();
+      }
+      vscode.window.showInformationMessage(`Diffchestrator: Loaded snapshot "${picked._name}"`);
+    })
+  );
+
   // Toggle changed only
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.toggleChangedOnly, () =>

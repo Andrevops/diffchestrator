@@ -57,6 +57,15 @@ export const CMD = {
   bulkPull: "diffchestrator.bulkPull",
   claudeReviewAll: "diffchestrator.claudeReviewAll",
   openRootTerminal: "diffchestrator.openRootTerminal",
+  copyRepoInfo: "diffchestrator.copyRepoInfo",
+  showShortcuts: "diffchestrator.showShortcuts",
+  activityLog: "diffchestrator.activityLog",
+  branchCleanup: "diffchestrator.branchCleanup",
+  openRemoteUrl: "diffchestrator.openRemoteUrl",
+  filterByTag: "diffchestrator.filterByTag",
+  setRepoTag: "diffchestrator.setRepoTag",
+  saveSnapshot: "diffchestrator.saveSnapshot",
+  loadSnapshot: "diffchestrator.loadSnapshot",
 } as const;
 
 export const CONFIG = {
@@ -71,6 +80,9 @@ export const CONFIG = {
   showInlineBlame: "diffchestrator.showInlineBlame",
   showFavorites: "diffchestrator.showFavorites",
   fetchOnScan: "diffchestrator.fetchOnScan",
+  autoPushAfterCommit: "diffchestrator.autoPushAfterCommit",
+  repoTags: "diffchestrator.repoTags",
+  snapshots: "diffchestrator.snapshots",
 } as const;
 
 export const CTX = {
