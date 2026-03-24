@@ -249,13 +249,17 @@ export class RepoManager implements vscode.Disposable {
     this._onDidChangeSelection.fire();
   }
 
+  private _freezeMru = false;
+
   selectRepo(repoPath: string): void {
     this._selectedRepo = repoPath;
-    // Track recent repos (MRU order, capped at 10)
-    this._recentRepoPaths = [
-      repoPath,
-      ...this._recentRepoPaths.filter((p) => p !== repoPath),
-    ].slice(0, 10);
+    // Track recent repos (MRU order, capped at 10) — skip re-sort during cycle
+    if (!this._freezeMru) {
+      this._recentRepoPaths = [
+        repoPath,
+        ...this._recentRepoPaths.filter((p) => p !== repoPath),
+      ].slice(0, 10);
+    }
     vscode.commands.executeCommand("setContext", CTX.hasSelectedRepo, true);
     this._persistState();
     this._onDidChangeSelection.fire();
@@ -279,6 +283,10 @@ export class RepoManager implements vscode.Disposable {
 
     const currentIdx = cyclePaths.indexOf(this._selectedRepo ?? "");
     const nextIdx = currentIdx >= 0 ? (currentIdx + 1) % cyclePaths.length : 0;
+    // Freeze MRU so the subsequent selectRepo (from viewDiff) doesn't re-sort
+    this._freezeMru = true;
+    setTimeout(() => { this._freezeMru = false; }, 500);
+
     this._selectedRepo = cyclePaths[nextIdx];
     vscode.commands.executeCommand("setContext", CTX.hasSelectedRepo, true);
     this._persistState();
