@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.29.3
+
+### Bug Fixes
+- clear selected repo when switching scan roots
+
 ## 0.29.2
 
 ### Bug Fixes
