@@ -114,6 +114,7 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     } else {
       item.contextValue = "directory";
       item.iconPath = vscode.ThemeIcon.Folder;
+      (item as vscode.TreeItem & { fullPath: string }).fullPath = element.fullPath;
     }
 
     return item;

@@ -498,17 +498,17 @@
         },
         {
           "command": "diffchestrator.openTerminal",
-          "when": "viewItem == repo",
+          "when": "viewItem == repo || viewItem == directory",
           "group": "2_tools@1"
         },
         {
           "command": "diffchestrator.openClaudeCode",
-          "when": "viewItem == repo",
+          "when": "viewItem == repo || viewItem == directory",
           "group": "2_tools@2"
         },
         {
           "command": "diffchestrator.yolo",
-          "when": "viewItem == repo",
+          "when": "viewItem == repo || viewItem == directory",
           "group": "2_tools@3"
         },
         {
