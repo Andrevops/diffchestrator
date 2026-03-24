@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
-import { registerRepoTerminal, getRepoTerminal } from "./terminal";
+import { registerRepoTerminal, getRepoTerminal, validateCli } from "./terminal";
 
 export function registerClaudeCommands(
   context: vscode.ExtensionContext,
@@ -11,7 +11,9 @@ export function registerClaudeCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.openClaudeCode,
-      (item?: any) => {
+      async (item?: any) => {
+        if (!(await validateCli("claude"))) return;
+
         const selectedPaths = repoManager.selectedRepoPaths;
         const singlePath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
 

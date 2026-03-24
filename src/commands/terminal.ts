@@ -1,9 +1,59 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 
+const execFileAsync = promisify(execFile);
+
 export type TerminalKind = "shell" | "claude" | "yolo";
+
+/**
+ * Check if a command exists on the system.
+ */
+async function commandExists(cmd: string): Promise<boolean> {
+  try {
+    await execFileAsync("which", [cmd]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validate that required CLI tools are available before running a command.
+ * Returns true if all tools are available, false otherwise (shows warning).
+ */
+export async function validateCli(kind: "claude" | "yolo"): Promise<boolean> {
+  if (kind === "yolo") {
+    // yolo alias requires both docker and claude
+    const [hasDocker, hasClaude] = await Promise.all([
+      commandExists("docker"),
+      commandExists("claude"),
+    ]);
+    const missing: string[] = [];
+    if (!hasDocker) missing.push("docker");
+    if (!hasClaude) missing.push("claude");
+    if (missing.length > 0) {
+      vscode.window.showErrorMessage(
+        `Diffchestrator: Yolo requires ${missing.join(" and ")} to be installed.`
+      );
+      return false;
+    }
+    return true;
+  }
+
+  // claude / aiCommit
+  const hasClaude = await commandExists("claude");
+  if (!hasClaude) {
+    vscode.window.showErrorMessage(
+      "Diffchestrator: Claude Code CLI is not installed. Install it from https://docs.anthropic.com/en/docs/claude-code"
+    );
+    return false;
+  }
+  return true;
+}
 
 /** Map key: `${repoPath}::${kind}` */
 const repoTerminals = new Map<string, vscode.Terminal>();
@@ -203,7 +253,7 @@ export function registerTerminalCommand(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.yolo,
-      (item?: any) => {
+      async (item?: any) => {
         const targetPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
         if (!targetPath) {
           vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
@@ -216,6 +266,8 @@ export function registerTerminalCommand(
           existing.show();
           return;
         }
+
+        if (!(await validateCli("yolo"))) return;
 
         const name = path.basename(targetPath);
         const terminal = vscode.window.createTerminal({

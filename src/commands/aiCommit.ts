@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
-import { getOrCreateTerminal } from "./terminal";
+import { getOrCreateTerminal, validateCli } from "./terminal";
 
 const AI_COMMIT_PROMPT =
   "Review the current git changes and create an appropriate commit. " +
@@ -24,6 +24,8 @@ export function registerAiCommitCommands(
           );
           return;
         }
+
+        if (!(await validateCli("claude"))) return;
 
         const config = vscode.workspace.getConfiguration("diffchestrator");
         const permissionMode = config.get<string>(
