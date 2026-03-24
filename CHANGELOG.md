@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.38.0
+
+### Features
+- add Ctrl+D shortcuts for branch cleanup and tag filter
+
 ## 0.37.0
 
 ### Features
