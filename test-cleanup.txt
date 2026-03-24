@@ -1,1 +1,3 @@
 # Test file for diff refresh
+This line was added to create a diff.
+Commit from CLI and the diff tab should auto-close.
