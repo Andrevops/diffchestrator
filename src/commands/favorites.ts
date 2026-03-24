@@ -42,7 +42,7 @@ export function registerFavoriteCommands(
     vscode.commands.registerCommand(
       CMD.toggleFavorite,
       async (item?: any) => {
-        const itemPath = item?.repo?.path ?? item?.fullPath ?? item?.path;
+        const itemPath = item?.repo?.path ?? item?.fullPath ?? item?.repoPath ?? item?.path;
         if (!itemPath) {
           vscode.window.showWarningMessage(
             "Diffchestrator: No item selected to favorite."
