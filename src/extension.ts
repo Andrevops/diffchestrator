@@ -98,10 +98,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider("git-show", gitContentProvider),
+    gitContentProvider,
     activeReposView,
     repoTreeView,
     changedFilesView,
   );
+
+  // Refresh git content provider when repos change (invalidates stale diffs)
+  repoManager.onDidChangeRepos(() => gitContentProvider.refresh());
 
   // Update view descriptions + badge when state changes
   const updateViewInfo = () => {
