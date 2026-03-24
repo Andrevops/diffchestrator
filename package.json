@@ -791,6 +791,16 @@
         "command": "diffchestrator.showShortcuts",
         "key": "ctrl+d k",
         "mac": "cmd+d k"
+      },
+      {
+        "command": "diffchestrator.branchCleanup",
+        "key": "ctrl+d x",
+        "mac": "cmd+d x"
+      },
+      {
+        "command": "diffchestrator.filterByTag",
+        "key": "ctrl+d i",
+        "mac": "cmd+d i"
       }
     ],
     "configuration": {
