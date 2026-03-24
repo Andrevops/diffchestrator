@@ -88,6 +88,10 @@ export class RepoManager implements vscode.Disposable {
     return this._git;
   }
 
+  get windowFocused(): boolean {
+    return this._windowFocused;
+  }
+
   set fileWatcher(fw: { suppressRefresh(repoPath: string, ms?: number): void }) {
     this._fileWatcher = fw;
   }
