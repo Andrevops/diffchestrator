@@ -105,7 +105,29 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   // Refresh git content provider when repos change (invalidates stale diffs)
-  repoManager.onDidChangeRepos(() => gitContentProvider.refresh());
+  // Also close diff tabs for files that are no longer changed
+  repoManager.onDidChangeRepos(async () => {
+    gitContentProvider.refresh();
+
+    // Close stale diff tabs for the selected repo
+    const repoPath = repoManager.selectedRepo;
+    if (!repoPath) return;
+    const repo = repoManager.getRepo(repoPath);
+    if (!repo || repo.totalChanges > 0) return; // still has changes, don't close
+
+    // Repo is clean — close any open git-show tabs for it
+    for (const tab of vscode.window.tabGroups.all.flatMap((g) => g.tabs)) {
+      const uri = (tab.input as any)?.uri ?? (tab.input as any)?.original ?? (tab.input as any)?.modified;
+      if (uri?.scheme === "git-show") {
+        try {
+          const params = JSON.parse(uri.query);
+          if (params.repoPath === repoPath) {
+            await vscode.window.tabGroups.close(tab);
+          }
+        } catch { /* ignore */ }
+      }
+    }
+  });
 
   // Update view descriptions + badge when state changes
   const updateViewInfo = () => {

@@ -1,6 +1,0 @@
-This file tests that the diff viewer refreshes after a CLI commit.
-If you can see this in the Changed Files view, click it to open the diff.
-Then commit from the terminal and verify the diff closes/updates.
-
-This line was added to test the diff refresh.
-Commit this from the CLI and watch the diff viewer update.
