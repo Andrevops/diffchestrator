@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.31.1
+
+### Bug Fixes
+- log fetch/pull errors per repo with Show Log action
+
 ## 0.31.0
 
 ### Features
