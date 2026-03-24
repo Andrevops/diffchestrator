@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.39.1
+
+### Bug Fixes
+- clone snapshots config before mutating on delete
+
 ## 0.39.0
 
 ### Features
