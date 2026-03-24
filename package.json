@@ -361,7 +361,13 @@
         "command": "diffchestrator.toggleShowFavorites",
         "title": "Toggle Favorites",
         "category": "Diffchestrator",
-        "icon": "$(star)"
+        "icon": "$(star-full)"
+      },
+      {
+        "command": "diffchestrator.toggleShowFavoritesOff",
+        "title": "Toggle Favorites",
+        "category": "Diffchestrator",
+        "icon": "$(star-empty)"
       }
     ],
     "menus": {
@@ -390,7 +396,12 @@
       "view/title": [
         {
           "command": "diffchestrator.toggleShowFavorites",
-          "when": "view == diffchestrator.activeRepos",
+          "when": "view == diffchestrator.activeRepos && diffchestrator.showFavorites",
+          "group": "navigation@1"
+        },
+        {
+          "command": "diffchestrator.toggleShowFavoritesOff",
+          "when": "view == diffchestrator.activeRepos && !diffchestrator.showFavorites",
           "group": "navigation@1"
         },
         {

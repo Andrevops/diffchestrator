@@ -253,16 +253,22 @@ export function activate(context: vscode.ExtensionContext): void {
     )
   );
 
-  // Toggle favorites visibility in Active Repos
+  // Toggle favorites visibility in Active Repos (two commands for icon swap)
+  const updateFavContext = () => {
+    const show = vscode.workspace.getConfiguration("diffchestrator").get<boolean>("showFavorites", true);
+    vscode.commands.executeCommand("setContext", "diffchestrator.showFavorites", show);
+  };
+  updateFavContext();
+
+  const toggleFavHandler = async () => {
+    const config = vscode.workspace.getConfiguration("diffchestrator");
+    const current = config.get<boolean>("showFavorites", true);
+    await config.update("showFavorites", !current, vscode.ConfigurationTarget.Global);
+    updateFavContext();
+  };
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.toggleShowFavorites, async () => {
-      const config = vscode.workspace.getConfiguration("diffchestrator");
-      const current = config.get<boolean>("showFavorites", true);
-      await config.update("showFavorites", !current, vscode.ConfigurationTarget.Global);
-      vscode.window.showInformationMessage(
-        `Diffchestrator: Favorites ${!current ? "shown" : "hidden"} in Active Repos`
-      );
-    })
+    vscode.commands.registerCommand(CMD.toggleShowFavorites, toggleFavHandler),
+    vscode.commands.registerCommand(CMD.toggleShowFavoritesOff, toggleFavHandler)
   );
 
   // Cycle through active/recent repos

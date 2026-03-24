@@ -52,6 +52,7 @@ export const CMD = {
   addScanRoot: "diffchestrator.addScanRoot",
   removeScanRoot: "diffchestrator.removeScanRoot",
   toggleShowFavorites: "diffchestrator.toggleShowFavorites",
+  toggleShowFavoritesOff: "diffchestrator.toggleShowFavoritesOff",
 } as const;
 
 export const CONFIG = {
@@ -73,4 +74,5 @@ export const CTX = {
   hasSelectedRepo: "diffchestrator.hasSelectedRepo",
   hasMultiSelection: "diffchestrator.hasMultiSelection",
   changedOnly: "diffchestrator.changedOnly",
+  showFavorites: "diffchestrator.showFavorites",
 } as const;
