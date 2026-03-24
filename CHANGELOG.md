@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.30.0
+
+### Features
+- queue notifications when unfocused, show grouped summary on refocus
+
 ## 0.29.3
 
 ### Bug Fixes
