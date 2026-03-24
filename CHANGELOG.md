@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.29.1
+
+### Other
+- cleanup dead code, update docs, auto-changelog, commit shortcut
+
 ## 0.29.0
 
 ### Features
