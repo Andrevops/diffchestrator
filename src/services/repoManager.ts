@@ -266,27 +266,14 @@ export class RepoManager implements vscode.Disposable {
    * filtered by current root). Cycles without MRU re-sort.
    */
   cycleNextRepo(): string | undefined {
-    // Build the same ordered list the Active Repos view shows
-    const config = vscode.workspace.getConfiguration("diffchestrator");
-    const favorites = config.get<string[]>("favorites", []);
     const root = this._currentRoot;
-
-    const cyclePaths: string[] = [];
-    const seen = new Set<string>();
     const isUnderRoot = (p: string) => !root || p.startsWith(root + path.sep);
 
-    for (const p of favorites) {
-      if (isUnderRoot(p) && !seen.has(p)) {
-        cyclePaths.push(p);
-        seen.add(p);
-      }
-    }
-    for (const p of this._recentRepoPaths) {
-      if (isUnderRoot(p) && !seen.has(p) && this._repos.has(p)) {
-        cyclePaths.push(p);
-        seen.add(p);
-      }
-    }
+    // Cycle through all recently opened repos (which includes any opened favorites),
+    // filtered by current root
+    const cyclePaths = this._recentRepoPaths.filter(
+      (p) => isUnderRoot(p) && this._repos.has(p)
+    );
 
     if (cyclePaths.length < 2) return undefined;
 
