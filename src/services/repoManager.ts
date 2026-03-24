@@ -301,12 +301,6 @@ export class RepoManager implements vscode.Disposable {
     return this._selectedRepo;
   }
 
-  clearSelectedRepo(): void {
-    this._selectedRepo = undefined;
-    vscode.commands.executeCommand("setContext", CTX.hasSelectedRepo, false);
-    this._onDidChangeSelection.fire();
-  }
-
   toggleRepoSelection(repoPath: string): void {
     if (this._selectedRepoPaths.has(repoPath)) {
       this._selectedRepoPaths.delete(repoPath);
