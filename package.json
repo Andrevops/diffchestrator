@@ -42,9 +42,7 @@
   "activationEvents": [
     "onView:diffchestrator.repos",
     "onView:diffchestrator.activeRepos",
-    "onView:diffchestrator.favorites",
     "onView:diffchestrator.changedFiles",
-    "onView:diffchestrator.scanRoots",
     "onStartupFinished"
   ],
   "main": "./dist/extension.js",
@@ -69,16 +67,8 @@
           "name": "Changed Files"
         },
         {
-          "id": "diffchestrator.favorites",
-          "name": "Favorites"
-        },
-        {
           "id": "diffchestrator.repos",
           "name": "Repositories"
-        },
-        {
-          "id": "diffchestrator.scanRoots",
-          "name": "Scan Roots"
         }
       ]
     },
@@ -408,6 +398,11 @@
           "group": "navigation@3"
         },
         {
+          "command": "diffchestrator.switchRoot",
+          "when": "view == diffchestrator.repos",
+          "group": "navigation@4"
+        },
+        {
           "command": "diffchestrator.stageAll",
           "when": "view == diffchestrator.changedFiles && diffchestrator.hasSelectedRepo",
           "group": "navigation@1"
@@ -421,19 +416,9 @@
           "command": "diffchestrator.discardAll",
           "when": "view == diffchestrator.changedFiles && diffchestrator.hasSelectedRepo",
           "group": "navigation@3"
-        },
-        {
-          "command": "diffchestrator.addScanRoot",
-          "when": "view == diffchestrator.scanRoots",
-          "group": "navigation@1"
         }
       ],
       "view/item/context": [
-        {
-          "command": "diffchestrator.removeScanRoot",
-          "when": "viewItem == scanRoot",
-          "group": "inline@1"
-        },
         {
           "command": "diffchestrator.viewDiff",
           "when": "viewItem == repo",

@@ -6,10 +6,11 @@ import { CMD } from "../constants";
 import { getRepoTerminal } from "../commands/terminal";
 import type { TerminalKind } from "../commands/terminal";
 
-type Role = "active" | "selected" | "recent";
+type Role = "favorite" | "active" | "selected" | "recent";
 
 interface ActiveRepoNode {
-  repo: RepoSummary;
+  repo?: RepoSummary;
+  repoPath: string;
   role: Role;
   terminalKinds: TerminalKind[];
 }
@@ -46,13 +47,23 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
       this._terminalCacheDirty = true;
       this._onDidChangeTreeData.fire();
     });
+
+    // Refresh when favorites config changes
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("diffchestrator.favorites")) {
+        this._onDidChangeTreeData.fire();
+      }
+    });
   }
 
   private _getTerminalKinds(repoPath: string): TerminalKind[] {
     if (this._terminalCacheDirty) {
-      // Rebuild entire cache once, not per-repo
       this._terminalCache.clear();
-      for (const rp of this.repoManager.recentRepoPaths) {
+      const allPaths = new Set([
+        ...this.repoManager.recentRepoPaths,
+        ...this._getFavoritePaths(),
+      ]);
+      for (const rp of allPaths) {
         this._terminalCache.set(rp, activeKinds(rp));
       }
       this._terminalCacheDirty = false;
@@ -60,24 +71,40 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
     return this._terminalCache.get(repoPath) ?? [];
   }
 
+  private _getFavoritePaths(): string[] {
+    const config = vscode.workspace.getConfiguration("diffchestrator");
+    return config.get<string[]>("favorites", []);
+  }
+
   getTreeItem(element: ActiveRepoNode): vscode.TreeItem {
+    const name = element.repo?.name ?? path.basename(element.repoPath);
+    const item = new vscode.TreeItem(name, vscode.TreeItemCollapsibleState.None);
     const r = element.repo;
-    const item = new vscode.TreeItem(r.name, vscode.TreeItemCollapsibleState.None);
+    const isActive = element.repoPath === this.repoManager.selectedRepo;
 
     const parts: string[] = [];
-    if (r.branch) parts.push(r.branch);
-    // Ahead/behind remote
-    const sync: string[] = [];
-    if (r.ahead > 0) sync.push(`↑${r.ahead}`);
-    if (r.behind > 0) sync.push(`↓${r.behind}`);
-    if (sync.length > 0) parts.push(sync.join(" "));
-    if (r.totalChanges > 0) parts.push(`${r.totalChanges} changes`);
+    if (r) {
+      if (r.branch) parts.push(r.branch);
+      const sync: string[] = [];
+      if (r.ahead > 0) sync.push(`↑${r.ahead}`);
+      if (r.behind > 0) sync.push(`↓${r.behind}`);
+      if (sync.length > 0) parts.push(sync.join(" "));
+      if (r.totalChanges > 0) parts.push(`${r.totalChanges} changes`);
+    } else {
+      parts.push("(not scanned)");
+    }
 
-    // Terminal indicator: show which sessions are active
+    // Terminal indicator
     const termLabels = element.terminalKinds.map((k) => KIND_LABELS[k]);
     const termTag = termLabels.length > 0 ? `$(terminal) ${termLabels.join("+")} ` : "";
 
-    if (element.role === "active") {
+    if (element.role === "favorite") {
+      const activeMarker = isActive ? "● " : "";
+      item.description = `${termTag}${activeMarker}${parts.join(" · ")}`;
+      item.iconPath = isActive
+        ? new vscode.ThemeIcon("star-full", new vscode.ThemeColor("charts.blue"))
+        : new vscode.ThemeIcon("star-full", new vscode.ThemeColor("charts.yellow"));
+    } else if (element.role === "active") {
       item.description = `${termTag}● ${parts.join(" · ")}`;
       item.iconPath = new vscode.ThemeIcon("repo", new vscode.ThemeColor("charts.blue"));
     } else if (element.role === "selected") {
@@ -88,17 +115,18 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
       item.iconPath = new vscode.ThemeIcon("history", new vscode.ThemeColor("foreground"));
     }
 
-    // Unique id per state so VS Code resets selection on refresh
-    item.id = `active:${r.path}:${element.role}`;
+    item.id = `active:${element.repoPath}:${element.role}:${isActive ? "a" : "i"}`;
     item.contextValue = "repo";
-    (item as vscode.TreeItem & { path: string }).path = r.path;
+    (item as vscode.TreeItem & { path: string; repoPath: string }).path = element.repoPath;
+    (item as vscode.TreeItem & { repoPath: string }).repoPath = element.repoPath;
 
-    const lines = [
-      r.path,
-      `Branch: ${r.branch}`,
-      r.totalChanges > 0 ? `Changes: ${r.totalChanges}` : "Clean",
-    ];
-    if (element.role === "active") lines.push("● Active repo");
+    const lines = [element.repoPath];
+    if (r) {
+      lines.push(`Branch: ${r.branch}`);
+      lines.push(r.totalChanges > 0 ? `Changes: ${r.totalChanges}` : "Clean");
+    }
+    if (element.role === "favorite") lines.push("★ Favorite");
+    else if (element.role === "active") lines.push("● Active repo");
     else if (element.role === "selected") lines.push("✓ Multi-selected");
     else lines.push("Recently opened");
     if (termLabels.length > 0) lines.push(`Terminals: ${termLabels.join(", ")}`);
@@ -107,7 +135,7 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
     item.command = {
       command: CMD.viewDiff,
       title: "View Diff",
-      arguments: [{ path: r.path }],
+      arguments: [{ path: element.repoPath }],
     };
 
     return item;
@@ -125,28 +153,40 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
     const recentPaths = this.repoManager.recentRepoPaths;
     const seen = new Set<string>();
 
-    if (activePath && this._isUnderRoot(activePath)) {
+    // Favorites first (filtered by root)
+    const favorites = this._getFavoritePaths();
+    for (const favPath of favorites) {
+      if (!this._isUnderRoot(favPath)) continue;
+      const repo = this.repoManager.getRepo(favPath);
+      nodes.push({ repo, repoPath: favPath, role: "favorite", terminalKinds: this._getTerminalKinds(favPath) });
+      seen.add(favPath);
+    }
+
+    // Active repo
+    if (activePath && this._isUnderRoot(activePath) && !seen.has(activePath)) {
       const repo = this.repoManager.getRepo(activePath);
       if (repo) {
-        nodes.push({ repo, role: "active", terminalKinds: this._getTerminalKinds(activePath) });
+        nodes.push({ repo, repoPath: activePath, role: "active", terminalKinds: this._getTerminalKinds(activePath) });
         seen.add(activePath);
       }
     }
 
+    // Multi-selected
     for (const p of multiPaths) {
       if (seen.has(p) || !this._isUnderRoot(p)) continue;
       const repo = this.repoManager.getRepo(p);
       if (repo) {
-        nodes.push({ repo, role: "selected", terminalKinds: this._getTerminalKinds(p) });
+        nodes.push({ repo, repoPath: p, role: "selected", terminalKinds: this._getTerminalKinds(p) });
         seen.add(p);
       }
     }
 
+    // Recent
     for (const p of recentPaths) {
       if (seen.has(p) || !this._isUnderRoot(p)) continue;
       const repo = this.repoManager.getRepo(p);
       if (repo) {
-        nodes.push({ repo, role: "recent", terminalKinds: this._getTerminalKinds(p) });
+        nodes.push({ repo, repoPath: p, role: "recent", terminalKinds: this._getTerminalKinds(p) });
         seen.add(p);
       }
     }

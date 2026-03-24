@@ -1,9 +1,8 @@
 import * as vscode from "vscode";
 import { RepoManager } from "./services/repoManager";
 import { RepoTreeProvider } from "./providers/repoTreeProvider";
-import { FavoritesTreeProvider } from "./providers/favoritesTreeProvider";
 import { ChangedFilesProvider } from "./providers/changedFilesProvider";
-import { CMD, VIEW_ACTIVE_REPOS, VIEW_REPOS, VIEW_FAVORITES, VIEW_CHANGED_FILES, VIEW_SCAN_ROOTS } from "./constants";
+import { CMD, VIEW_ACTIVE_REPOS, VIEW_REPOS, VIEW_CHANGED_FILES } from "./constants";
 import { registerScanCommands } from "./commands/scan";
 import { registerStageCommands, openNextPendingFile, openFileDiff } from "./commands/stage";
 import { registerCommitCommands } from "./commands/commit";
@@ -19,7 +18,6 @@ import { registerDiscardCommands } from "./commands/discard";
 import { registerSwitchBranchCommands } from "./commands/switchBranch";
 import { registerStashCommands } from "./commands/stash";
 import { ActiveReposProvider } from "./providers/activeReposProvider";
-import { ScanRootsProvider } from "./providers/scanRootsProvider";
 import { GitContentProvider } from "./providers/gitContentProvider";
 import { DiffWebviewPanel } from "./views/diffWebviewPanel";
 import { FileWatcher } from "./services/fileWatcher";
@@ -89,26 +87,20 @@ export function activate(context: vscode.ExtensionContext): void {
   // Tree views
   const activeRepos = new ActiveReposProvider(repoManager);
   const repoTree = new RepoTreeProvider(repoManager);
-  const favTree = new FavoritesTreeProvider(repoManager);
   const changedFiles = new ChangedFilesProvider(repoManager);
-  const scanRoots = new ScanRootsProvider(repoManager);
 
   // Git content provider for diff URIs
   const gitContentProvider = new GitContentProvider(repoManager.git);
   // Create tree views (not just providers) so we can set description + badge
   const activeReposView = vscode.window.createTreeView(VIEW_ACTIVE_REPOS, { treeDataProvider: activeRepos });
   const repoTreeView = vscode.window.createTreeView(VIEW_REPOS, { treeDataProvider: repoTree });
-  const favTreeView = vscode.window.createTreeView(VIEW_FAVORITES, { treeDataProvider: favTree });
   const changedFilesView = vscode.window.createTreeView(VIEW_CHANGED_FILES, { treeDataProvider: changedFiles });
-  const scanRootsView = vscode.window.createTreeView(VIEW_SCAN_ROOTS, { treeDataProvider: scanRoots });
 
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider("git-show", gitContentProvider),
     activeReposView,
     repoTreeView,
-    favTreeView,
     changedFilesView,
-    scanRootsView,
   );
 
   // Update view descriptions + badge when state changes
@@ -203,11 +195,29 @@ export function activate(context: vscode.ExtensionContext): void {
   // Scan Roots commands
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.switchRoot, async (rootPath?: string) => {
-      if (!rootPath) return;
+      if (!rootPath) {
+        // Show quick pick of configured roots
+        const config = vscode.workspace.getConfiguration("diffchestrator");
+        const roots = config.get<string[]>("scanRoots", []);
+        if (roots.length === 0) {
+          vscode.window.showWarningMessage("Diffchestrator: No scan roots configured. Use the + button to add one.");
+          return;
+        }
+        const items = roots.map((r) => ({
+          label: `${r === repoManager.currentRoot ? "$(folder-opened) " : "$(folder) "}${path.basename(r)}`,
+          description: r === repoManager.currentRoot ? "active" : "",
+          _path: r,
+        }));
+        const picked = await vscode.window.showQuickPick(items, {
+          placeHolder: "Switch scan root",
+        });
+        if (!picked) return;
+        rootPath = picked._path;
+      }
       await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: `Diffchestrator: Scanning ${path.basename(rootPath)}` },
         async () => {
-          await repoManager.scan(rootPath);
+          await repoManager.scan(rootPath!);
           fileWatcher.watchAll();
         }
       );
