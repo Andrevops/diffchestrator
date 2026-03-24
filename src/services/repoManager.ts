@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as path from "path";
 import { Scanner } from "../git/scanner";
 import { GitExecutor } from "../git/gitExecutor";
 import type { RepoSummary } from "../types";
