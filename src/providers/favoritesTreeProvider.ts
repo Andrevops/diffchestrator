@@ -86,11 +86,14 @@ export class FavoritesTreeProvider
 
     const config = vscode.workspace.getConfiguration("diffchestrator");
     const favorites = config.get<string[]>("favorites", []);
+    const root = this.repoManager.currentRoot;
 
-    return favorites.map((favPath) => ({
-      label: path.basename(favPath),
-      repoPath: favPath,
-    }));
+    return favorites
+      .filter((favPath) => !root || favPath.startsWith(root + path.sep))
+      .map((favPath) => ({
+        label: path.basename(favPath),
+        repoPath: favPath,
+      }));
   }
 
   private _updateContext(): void {
