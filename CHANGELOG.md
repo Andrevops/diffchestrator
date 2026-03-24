@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.33.0
+
+### Features
+- show current root name in Active Repos view description
+
 ## 0.32.0
 
 ### Features
