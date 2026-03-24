@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.29.2
+
+### Bug Fixes
+- handle non-string argument in switchRoot command
+
 ## 0.29.1
 
 ### Other
