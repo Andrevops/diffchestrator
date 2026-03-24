@@ -2,6 +2,15 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.31.4
+
+### Bug Fixes
+- auto-close stale diff tabs when repo becomes clean after commit
+
+### Other
+- verify diff refresh after CLI commit
+- add diff refresh test file
+
 ## 0.31.3
 
 ### Bug Fixes
