@@ -51,6 +51,7 @@ export const CMD = {
   switchRoot: "diffchestrator.switchRoot",
   addScanRoot: "diffchestrator.addScanRoot",
   removeScanRoot: "diffchestrator.removeScanRoot",
+  toggleShowFavorites: "diffchestrator.toggleShowFavorites",
 } as const;
 
 export const CONFIG = {
@@ -63,6 +64,7 @@ export const CONFIG = {
   favorites: "diffchestrator.favorites",
   claudePermissionMode: "diffchestrator.claudePermissionMode",
   showInlineBlame: "diffchestrator.showInlineBlame",
+  showFavorites: "diffchestrator.showFavorites",
 } as const;
 
 export const CTX = {

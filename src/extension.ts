@@ -253,6 +253,18 @@ export function activate(context: vscode.ExtensionContext): void {
     )
   );
 
+  // Toggle favorites visibility in Active Repos
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.toggleShowFavorites, async () => {
+      const config = vscode.workspace.getConfiguration("diffchestrator");
+      const current = config.get<boolean>("showFavorites", true);
+      await config.update("showFavorites", !current, vscode.ConfigurationTarget.Global);
+      vscode.window.showInformationMessage(
+        `Diffchestrator: Favorites ${!current ? "shown" : "hidden"} in Active Repos`
+      );
+    })
+  );
+
   // Cycle through active/recent repos
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.cycleActiveRepo, async () => {

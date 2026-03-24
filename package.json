@@ -356,6 +356,12 @@
         "title": "Remove Scan Root",
         "category": "Diffchestrator",
         "icon": "$(remove)"
+      },
+      {
+        "command": "diffchestrator.toggleShowFavorites",
+        "title": "Toggle Favorites",
+        "category": "Diffchestrator",
+        "icon": "$(star)"
       }
     ],
     "menus": {
@@ -382,6 +388,11 @@
         }
       ],
       "view/title": [
+        {
+          "command": "diffchestrator.toggleShowFavorites",
+          "when": "view == diffchestrator.activeRepos",
+          "group": "navigation@1"
+        },
         {
           "command": "diffchestrator.scan",
           "when": "view == diffchestrator.repos",
@@ -691,6 +702,11 @@
           },
           "default": [],
           "description": "Favorited repository paths"
+        },
+        "diffchestrator.showFavorites": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show favorites in the Active Repos view"
         },
         "diffchestrator.claudePermissionMode": {
           "type": "string",

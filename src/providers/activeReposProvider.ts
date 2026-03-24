@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import type { RepoSummary } from "../types";
-import { CMD } from "../constants";
+import { CMD, CONFIG } from "../constants";
 import { getRepoTerminal } from "../commands/terminal";
 import type { TerminalKind } from "../commands/terminal";
 
@@ -48,9 +48,10 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
       this._onDidChangeTreeData.fire();
     });
 
-    // Refresh when favorites config changes
+    // Refresh when favorites or showFavorites config changes
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("diffchestrator.favorites")) {
+      if (e.affectsConfiguration("diffchestrator.favorites") ||
+          e.affectsConfiguration(CONFIG.showFavorites)) {
         this._onDidChangeTreeData.fire();
       }
     });
@@ -153,16 +154,21 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
     const recentPaths = this.repoManager.recentRepoPaths;
     const seen = new Set<string>();
 
-    // Favorites first (filtered by root)
-    const favorites = this._getFavoritePaths();
-    for (const favPath of favorites) {
-      if (!this._isUnderRoot(favPath)) continue;
-      const repo = this.repoManager.getRepo(favPath);
-      nodes.push({ repo, repoPath: favPath, role: "favorite", terminalKinds: this._getTerminalKinds(favPath) });
-      seen.add(favPath);
+    // Favorites first (if shown)
+    const config = vscode.workspace.getConfiguration("diffchestrator");
+    const showFavorites = config.get<boolean>("showFavorites", true);
+    const favoritePaths = new Set(this._getFavoritePaths());
+
+    if (showFavorites) {
+      for (const favPath of favoritePaths) {
+        if (!this._isUnderRoot(favPath)) continue;
+        const repo = this.repoManager.getRepo(favPath);
+        nodes.push({ repo, repoPath: favPath, role: "favorite", terminalKinds: this._getTerminalKinds(favPath) });
+        seen.add(favPath);
+      }
     }
 
-    // Active repo
+    // Active repo (show even if it's a hidden favorite — just as "active" role)
     if (activePath && this._isUnderRoot(activePath) && !seen.has(activePath)) {
       const repo = this.repoManager.getRepo(activePath);
       if (repo) {
