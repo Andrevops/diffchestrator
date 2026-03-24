@@ -2,6 +2,16 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.32.0
+
+### Features
+- show current root name in Repositories view description
+
+### Other
+- remove diff test file
+- diff auto-close
+- add file for diff refresh test
+
 ## 0.31.4
 
 ### Bug Fixes
