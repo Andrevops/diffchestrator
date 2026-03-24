@@ -175,7 +175,7 @@ export function activate(context: vscode.ExtensionContext): void {
       ? `Committed in ${n.repoName} — ${n.message ?? "new commit"}`
       : `${n.count} new change${n.count !== 1 ? "s" : ""} in ${n.repoName}`;
     const actions = n.type === "commit"
-      ? ["Push", "Show Terminal", "View Changes"]
+      ? ["Push", "Show Terminal"]
       : ["Show Terminal", "View Changes"];
     const action = await vscode.window.showInformationMessage(
       `Diffchestrator: ${text}`,
