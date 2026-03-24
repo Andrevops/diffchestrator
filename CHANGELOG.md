@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.34.0
+
+### Features
+- persist current root across reloads
+
 ## 0.33.0
 
 ### Features
