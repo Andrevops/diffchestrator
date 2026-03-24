@@ -1,7 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { RepoManager } from "../services/repoManager";
-import { GitExecutor } from "../git/gitExecutor";
 import type { RepoStatus } from "../types";
 
 export class DiffWebviewPanel {
@@ -10,7 +9,7 @@ export class DiffWebviewPanel {
   private readonly _extensionUri: vscode.Uri;
   private _disposables: vscode.Disposable[] = [];
   private _repoManager: RepoManager;
-  private _git = new GitExecutor();
+  private _git;
 
   static createOrShow(
     extensionUri: vscode.Uri,
@@ -56,6 +55,7 @@ export class DiffWebviewPanel {
     this._panel = panel;
     this._extensionUri = extensionUri;
     this._repoManager = repoManager;
+    this._git = repoManager.git;
 
     // Set the webview content
     this._panel.webview.html = this._getWebviewContent();

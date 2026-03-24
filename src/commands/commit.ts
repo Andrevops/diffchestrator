@@ -1,14 +1,14 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import { GitExecutor } from "../git/gitExecutor";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 
 export function registerCommitCommands(
   context: vscode.ExtensionContext,
-  repoManager: RepoManager
+  repoManager: RepoManager,
+  channel: vscode.OutputChannel
 ): void {
-  const git = new GitExecutor();
+  const git = repoManager.git;
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
@@ -43,7 +43,7 @@ export function registerCommitCommands(
             `Diffchestrator: Committed to ${repoName}`
           );
           // Log output to output channel
-          const channel = vscode.window.createOutputChannel("Diffchestrator");
+
           channel.appendLine(`[commit] ${repoName}`);
           channel.appendLine(output);
         } catch (err: unknown) {

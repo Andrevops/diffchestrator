@@ -1,14 +1,14 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import { GitExecutor } from "../git/gitExecutor";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 
 export function registerPushCommands(
   context: vscode.ExtensionContext,
-  repoManager: RepoManager
+  repoManager: RepoManager,
+  channel: vscode.OutputChannel
 ): void {
-  const git = new GitExecutor();
+  const git = repoManager.git;
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
@@ -33,7 +33,7 @@ export function registerPushCommands(
             },
             async () => {
               const output = await git.push(repoPath);
-              const channel = vscode.window.createOutputChannel("Diffchestrator");
+
               channel.appendLine(`[push] ${repoName}`);
               channel.appendLine(output);
             }
@@ -70,7 +70,6 @@ export function registerPushCommands(
 
       if (confirm !== "Push") return;
 
-      const channel = vscode.window.createOutputChannel("Diffchestrator");
       channel.show();
 
       let success = 0;

@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { EventEmitter } from "events";
-import { GitExecutor } from "./gitExecutor";
+import type { GitExecutor } from "./gitExecutor";
 import type { RepoSummary } from "../types";
 
 const SKIP_DIRS = new Set([
@@ -22,12 +22,11 @@ const SKIP_DIRS = new Set([
 ]);
 
 export class Scanner extends EventEmitter {
-  private git = new GitExecutor();
   private maxDepth: number;
   private extraSkipDirs: Set<string>;
   dirsScanned = 0;
 
-  constructor(maxDepth: number, extraSkipDirs: string[] = []) {
+  constructor(private git: GitExecutor, maxDepth: number, extraSkipDirs: string[] = []) {
     super();
     this.maxDepth = maxDepth;
     this.extraSkipDirs = new Set([...SKIP_DIRS, ...extraSkipDirs]);

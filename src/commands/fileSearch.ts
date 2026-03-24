@@ -1,6 +1,5 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import { GitExecutor } from "../git/gitExecutor";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 
@@ -8,7 +7,7 @@ export function registerFileSearchCommand(
   context: vscode.ExtensionContext,
   repoManager: RepoManager
 ): void {
-  const git = new GitExecutor();
+  const git = repoManager.git;
 
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.searchFiles, async () => {

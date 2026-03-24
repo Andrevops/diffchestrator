@@ -1,9 +1,9 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import { GitExecutor } from "../git/gitExecutor";
 import type { RepoManager } from "../services/repoManager";
 import type { RepoSummary } from "../types";
 import { CMD } from "../constants";
+import { timeAgo } from "../utils/time";
 
 interface TreeNode {
   label: string;
@@ -18,20 +18,20 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private _root: TreeNode | undefined;
-  private _git = new GitExecutor();
+  private _git;
   private _lastCommitCache = new Map<string, { message: string; date: string }>();
   private _lastCommitRefreshTime = 0;
   private static readonly COMMIT_CACHE_COOLDOWN = 60_000; // 60s
 
   constructor(private repoManager: RepoManager) {
+    this._git = repoManager.git;
     repoManager.onDidChangeRepos(() => {
       this._root = undefined;
-      this._refreshLastCommits();
       this._onDidChangeTreeData.fire();
     });
     repoManager.onDidChangeSelection(() => {
-      // Don't clear _root — tree structure hasn't changed, only visual state
-      // VS Code will re-call getTreeItem for visible nodes on fire()
+      // Refresh last commit tooltips lazily on user interaction, not on every scan batch
+      this._refreshLastCommits();
       this._onDidChangeTreeData.fire();
     });
   }
@@ -260,29 +260,11 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
     const lastCommit = this._lastCommitCache.get(r.path);
     if (lastCommit) {
-      const relDate = this._timeAgo(lastCommit.date);
+      const relDate = timeAgo(lastCommit.date);
       lines.push(`Last commit: ${lastCommit.message} (${relDate})`);
     }
 
     return lines.join("\n");
   }
 
-  private _timeAgo(dateStr: string): string {
-    const date = new Date(dateStr);
-    const now = Date.now();
-    const diffMs = now - date.getTime();
-    const seconds = Math.floor(diffMs / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-    const weeks = Math.floor(days / 7);
-    const months = Math.floor(days / 30);
-
-    if (months > 0) return `${months} month${months > 1 ? "s" : ""} ago`;
-    if (weeks > 0) return `${weeks} week${weeks > 1 ? "s" : ""} ago`;
-    if (days > 0) return `${days} day${days > 1 ? "s" : ""} ago`;
-    if (hours > 0) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
-    if (minutes > 0) return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
-    return "just now";
-  }
 }

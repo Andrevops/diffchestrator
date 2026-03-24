@@ -1,36 +1,18 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import { GitExecutor } from "../git/gitExecutor";
 import type { RepoManager } from "./repoManager";
 import { CMD, CONFIG } from "../constants";
-
-function timeAgo(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = Date.now();
-  const diffMs = now - date.getTime();
-  const seconds = Math.floor(diffMs / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-  const weeks = Math.floor(days / 7);
-  const months = Math.floor(days / 30);
-
-  if (months > 0) return `${months}mo ago`;
-  if (weeks > 0) return `${weeks}w ago`;
-  if (days > 0) return `${days}d ago`;
-  if (hours > 0) return `${hours}h ago`;
-  if (minutes > 0) return `${minutes}m ago`;
-  return "just now";
-}
+import { timeAgoShort } from "../utils/time";
 
 export class InlineBlameService implements vscode.Disposable {
-  private _git = new GitExecutor();
+  private _git;
   private _disposables: vscode.Disposable[] = [];
   private _decorationType: vscode.TextEditorDecorationType;
   private _debounceTimer: ReturnType<typeof setTimeout> | undefined;
   private _enabled: boolean;
 
   constructor(private _repoManager: RepoManager) {
+    this._git = _repoManager.git;
     const config = vscode.workspace.getConfiguration("diffchestrator");
     this._enabled = config.get<boolean>("showInlineBlame", true);
 
@@ -150,7 +132,7 @@ export class InlineBlameService implements vscode.Disposable {
         range: new vscode.Range(line - 1, 0, line - 1, 0),
         renderOptions: {
           after: {
-            contentText: `  ${blame.author}, ${timeAgo(blame.date)} — ${blame.summary}`,
+            contentText: `  ${blame.author}, ${timeAgoShort(blame.date)} — ${blame.summary}`,
           },
         },
       };

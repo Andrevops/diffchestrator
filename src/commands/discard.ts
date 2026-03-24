@@ -1,6 +1,5 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import { GitExecutor } from "../git/gitExecutor";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 import { FileStatus } from "../types";
@@ -17,7 +16,7 @@ export function registerDiscardCommands(
   context: vscode.ExtensionContext,
   repoManager: RepoManager
 ): void {
-  const git = new GitExecutor();
+  const git = repoManager.git;
 
   // Discard single file
   context.subscriptions.push(

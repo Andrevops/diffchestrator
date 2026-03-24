@@ -33,6 +33,10 @@ export function activate(context: vscode.ExtensionContext): void {
   const repoManager = new RepoManager(context.workspaceState);
   context.subscriptions.push(repoManager);
 
+  // Shared output channel for logging
+  const outputChannel = vscode.window.createOutputChannel("Diffchestrator");
+  context.subscriptions.push(outputChannel);
+
   // Track last open file per repo so switching back restores context
   const lastOpenFile = new Map<string, vscode.Uri>();
   let switchingRepo = false; // flag to ignore editor changes during repo switch
@@ -77,7 +81,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const changedFiles = new ChangedFilesProvider(repoManager);
 
   // Git content provider for diff URIs
-  const gitContentProvider = new GitContentProvider();
+  const gitContentProvider = new GitContentProvider(repoManager.git);
   // Create tree views (not just providers) so we can set description + badge
   const activeReposView = vscode.window.createTreeView(VIEW_ACTIVE_REPOS, { treeDataProvider: activeRepos });
   const repoTreeView = vscode.window.createTreeView(VIEW_REPOS, { treeDataProvider: repoTree });
@@ -141,7 +145,9 @@ export function activate(context: vscode.ExtensionContext): void {
       } else if (action === "View Changes") {
         await vscode.commands.executeCommand(CMD.viewDiff, { path: repoPath });
       }
-    } catch { /* ignore */ }
+    } catch (err) {
+      outputChannel.appendLine(`[commit notification] ${repoName}: ${err instanceof Error ? err.message : err}`);
+    }
   });
 
   repoManager.onDidDetectChanges(async ({ repoPath, repoName, count }) => {
@@ -161,9 +167,9 @@ export function activate(context: vscode.ExtensionContext): void {
   // Register command modules
   registerScanCommands(context, repoManager);
   registerStageCommands(context, repoManager);
-  registerCommitCommands(context, repoManager);
-  registerPushCommands(context, repoManager);
-  registerPullCommands(context, repoManager);
+  registerCommitCommands(context, repoManager, outputChannel);
+  registerPushCommands(context, repoManager, outputChannel);
+  registerPullCommands(context, repoManager, outputChannel);
   registerAiCommitCommands(context, repoManager);
   registerClaudeCommands(context, repoManager);
   registerFavoriteCommands(context, repoManager);
@@ -438,7 +444,8 @@ export function activate(context: vscode.ExtensionContext): void {
                   const doc = await vscode.workspace.openTextDocument(remembered);
                   await vscode.window.showTextDocument(doc, { preview: false });
                 }
-              } catch {
+              } catch (err) {
+                outputChannel.appendLine(`[restore file] ${err instanceof Error ? err.message : err}`);
                 lastOpenFile.delete(repoPath);
                 await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
               }
@@ -446,8 +453,8 @@ export function activate(context: vscode.ExtensionContext): void {
               await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
             }
           }
-        } catch {
-          // Non-critical — file list still works
+        } catch (err) {
+          outputChannel.appendLine(`[viewDiff] ${err instanceof Error ? err.message : err}`);
         }
       }
     )

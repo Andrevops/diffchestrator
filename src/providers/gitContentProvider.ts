@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { GitExecutor } from "../git/gitExecutor";
+import type { GitExecutor } from "../git/gitExecutor";
 
 /**
  * TextDocumentContentProvider for the `git-show` URI scheme.
@@ -8,7 +8,7 @@ import { GitExecutor } from "../git/gitExecutor";
  * URI format: git-show:/path/to/file?{"path":"file.ts","ref":"HEAD","repoPath":"/repo"}
  */
 export class GitContentProvider implements vscode.TextDocumentContentProvider {
-  private _git = new GitExecutor();
+  constructor(private _git: GitExecutor) {}
 
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     try {

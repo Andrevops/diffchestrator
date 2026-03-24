@@ -96,7 +96,7 @@ export class RepoManager implements vscode.Disposable {
     const maxDepth = config.get<number>("scanMaxDepth", 6);
     const extraSkip = config.get<string[]>("scanExtraSkipDirs", []);
 
-    const scanner = new Scanner(maxDepth, extraSkip);
+    const scanner = new Scanner(this._git, maxDepth, extraSkip);
 
     // Phase 1: Fast BFS — no git calls, repos appear instantly
     const repos = scanner.scanFast(rootPath);
@@ -108,10 +108,16 @@ export class RepoManager implements vscode.Disposable {
 
     // Phase 2: Fetch git metadata in background, update tree as batches complete
     const BATCH = 10;
-    for (let i = 0; i < repos.length; i += BATCH) {
-      await Promise.all(repos.slice(i, i + BATCH).map((r) => scanner.fetchMetadata(r)));
-      this._onDidChangeRepos.fire();
-    }
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: "Diffchestrator: Scanning repos" },
+      async (progress) => {
+        for (let i = 0; i < repos.length; i += BATCH) {
+          progress.report({ message: `${Math.min(i + BATCH, repos.length)}/${repos.length}` });
+          await Promise.all(repos.slice(i, i + BATCH).map((r) => scanner.fetchMetadata(r)));
+          this._onDidChangeRepos.fire();
+        }
+      }
+    );
 
     this.startAutoRefresh();
   }
@@ -185,12 +191,18 @@ export class RepoManager implements vscode.Disposable {
   }
 
   async refreshAll(): Promise<void> {
-    // Limit concurrency to 5 to avoid spawning too many git processes
     const repos = [...this._repos.keys()];
+    if (repos.length === 0) return;
     const BATCH = 5;
-    for (let i = 0; i < repos.length; i += BATCH) {
-      await Promise.all(repos.slice(i, i + BATCH).map((p) => this.refreshRepo(p)));
-    }
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: "Diffchestrator: Refreshing" },
+      async (progress) => {
+        for (let i = 0; i < repos.length; i += BATCH) {
+          progress.report({ message: `${Math.min(i + BATCH, repos.length)}/${repos.length}` });
+          await Promise.all(repos.slice(i, i + BATCH).map((p) => this.refreshRepo(p)));
+        }
+      }
+    );
   }
 
   /**
