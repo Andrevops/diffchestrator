@@ -134,10 +134,12 @@ export function activate(context: vscode.ExtensionContext): void {
     const repos = repoManager.repos;
     const totalChanges = repos.reduce((sum, r) => sum + r.totalChanges, 0);
 
-    // Repos view: show count
-    repoTreeView.description = repoManager.changedOnly
+    // Repos view: show root name + count
+    const rootName = repoManager.currentRoot ? path.basename(repoManager.currentRoot) : "";
+    const countLabel = repoManager.changedOnly
       ? `${repos.filter(r => r.totalChanges > 0).length} changed`
       : `${repos.length} repos`;
+    repoTreeView.description = rootName ? `${rootName} — ${countLabel}` : countLabel;
 
     // Activity bar badge: total changes across all repos
     repoTreeView.badge = totalChanges > 0
