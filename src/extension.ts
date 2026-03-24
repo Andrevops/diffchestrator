@@ -194,8 +194,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Scan Roots commands
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.switchRoot, async (rootPath?: string) => {
-      if (!rootPath) {
+    vscode.commands.registerCommand(CMD.switchRoot, async (rootPath?: string | object) => {
+      if (!rootPath || typeof rootPath !== "string") {
         // Show quick pick of configured roots
         const config = vscode.workspace.getConfiguration("diffchestrator");
         const roots = config.get<string[]>("scanRoots", []);
