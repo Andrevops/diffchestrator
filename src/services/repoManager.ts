@@ -108,6 +108,9 @@ export class RepoManager implements vscode.Disposable {
   async scan(rootPath: string): Promise<void> {
     this._currentRoot = rootPath;
     this._repos.clear();
+    this._selectedRepo = undefined;
+    vscode.commands.executeCommand("setContext", CTX.hasSelectedRepo, false);
+    this._onDidChangeSelection.fire();
     const config = vscode.workspace.getConfiguration("diffchestrator");
     const maxDepth = config.get<number>("scanMaxDepth", 6);
     const extraSkip = config.get<string[]>("scanExtraSkipDirs", []);
