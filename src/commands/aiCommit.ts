@@ -4,6 +4,7 @@ import * as fs from "fs";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 import { getOrCreateTerminal, validateCli } from "./terminal";
+import { escapeForTerminal } from "../utils/shell";
 
 const AI_COMMIT_PROMPT =
   "Review the current git changes and create an appropriate commit. " +
@@ -38,7 +39,7 @@ export function registerAiCommitCommands(
         const terminal = getOrCreateTerminal(repoPath);
         terminal.show();
 
-        const cmd = `claude --permission-mode ${permissionMode} "${AI_COMMIT_PROMPT}"`;
+        const cmd = `claude --permission-mode ${permissionMode} ${escapeForTerminal(AI_COMMIT_PROMPT)}`;
         terminal.sendText(cmd);
 
         // Watch .git directory for changes (commits, staging) instead of blind timers

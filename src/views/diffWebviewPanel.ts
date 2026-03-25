@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import { RepoManager } from "../services/repoManager";
 import type { RepoStatus } from "../types";
+import { escapeForTerminal } from "../utils/shell";
 
 export class DiffWebviewPanel {
   public static currentPanel: DiffWebviewPanel | undefined;
@@ -247,8 +248,8 @@ export class DiffWebviewPanel {
 
         // Send claude with context about the hunk
         const prompt = `Explain this change in ${filePath}:\n${hunkContent}`;
-        const escaped = prompt.replace(/'/g, "'\\''");
-        terminal.sendText(`claude -p '${escaped}'`);
+        const escaped = escapeForTerminal(prompt);
+        terminal.sendText(`claude -p ${escaped}`);
         break;
       }
     }
