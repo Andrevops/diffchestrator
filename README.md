@@ -72,12 +72,15 @@ Claude Code works best when you can see what it changed, across every repo it to
 - **Stage / Unstage** individual files or all files (inline buttons + context menu + editor title bar)
 - **Discard changes** — revert a single file, delete an untracked file, or discard all changes with confirmation dialog
 - **Commit** with conventional commit prefix picker (feat/fix/chore/refactor/docs/test/ci) (`Ctrl+D, M`)
+- **Undo last commit** (`Ctrl+D, Z`) — soft reset keeping changes staged, with confirmation showing the commit message
 - **Auto-push after commit** — optionally push immediately after a successful commit
 - **Push** with progress notification (`Ctrl+D, P`)
 - **Pull** with progress notification (`Ctrl+D, U`)
+- **Fetch** — single-repo fetch via right-click context menu, or bulk fetch all from title bar
 - **Bulk commit/push** across multiple selected repos
 - **Copy repo info** — right-click to copy path, branch, remote URL, or name to clipboard
 - **Open remote URL** — right-click to open the repo's GitHub/GitLab page in browser (auto-converts `git@` SSH URLs to HTTPS)
+- **Git detection** — shows error with install link if git isn't available on PATH
 
 ### Branch & Stash Management
 - **Branch Switcher** (`Ctrl+D, B`) — QuickPick listing all local branches with current branch marked, plus "Create new branch..." option
@@ -153,6 +156,9 @@ All shortcuts use **Ctrl+D** as a chord prefix — press `Ctrl+D`, release, then
 | `Ctrl+D, K` | Show keyboard shortcut cheatsheet |
 | `Ctrl+D, X` | Clean up merged branches |
 | `Ctrl+D, I` | Filter repos by tag |
+| `Ctrl+D, Z` | Undo last commit (soft reset) |
+| `Ctrl+D, Shift+B` | Save workspace snapshot |
+| `Ctrl+D, Shift+L` | Load workspace snapshot |
 
 > On macOS, use `Cmd+D` instead of `Ctrl+D`.
 
@@ -160,7 +166,7 @@ All shortcuts use **Ctrl+D** as a chord prefix — press `Ctrl+D`, release, then
 
 Right-click a **repository** in the tree:
 
-- View Diff / Commit / Push / Pull / AI Commit
+- View Diff / Commit / Push / Pull / Fetch / AI Commit / Undo Commit
 - Commit History / Switch Branch / Stash Management
 - Browse Files / Open Repo in New Window
 - Open Terminal / Open Claude Code / Yolo
