@@ -3,6 +3,7 @@ import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 import { registerRepoTerminal, getRepoTerminal, validateCli } from "./terminal";
+import { escapeForTerminal } from "../utils/shell";
 
 export function registerClaudeCommands(
   context: vscode.ExtensionContext,
@@ -20,7 +21,7 @@ export function registerClaudeCommands(
         if (selectedPaths.size > 1) {
           // Multi-repo mode: open claude with --add-dir for each selected repo
           const addDirArgs = [...selectedPaths]
-            .map((p) => `--add-dir "${p}"`)
+            .map((p) => `--add-dir ${escapeForTerminal(p)}`)
             .join(" ");
 
           const terminal = vscode.window.createTerminal({

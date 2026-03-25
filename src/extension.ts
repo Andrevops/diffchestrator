@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { RepoManager } from "./services/repoManager";
 import { RepoTreeProvider } from "./providers/repoTreeProvider";
 import { ChangedFilesProvider } from "./providers/changedFilesProvider";
+import { escapeForTerminal } from "./utils/shell";
 import { CMD, VIEW_ACTIVE_REPOS, VIEW_REPOS, VIEW_CHANGED_FILES } from "./constants";
 import { registerScanCommands } from "./commands/scan";
 import { registerStageCommands, openNextPendingFile, openFileDiff } from "./commands/stage";
@@ -439,13 +440,14 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showInformationMessage("Diffchestrator: No repos with changes to review.");
         return;
       }
-      const addDirArgs = changedRepos.map((r) => `--add-dir "${r.path}"`).join(" ");
+      const addDirArgs = changedRepos.map((r) => `--add-dir ${escapeForTerminal(r.path)}`).join(" ");
       const terminal = vscode.window.createTerminal({
         name: "Claude: Multi-Repo Review",
         cwd: repoManager.currentRoot,
       });
       terminal.show();
-      terminal.sendText(`claude ${addDirArgs} "Review the changes across all these repositories. Summarize what changed, flag any issues, and suggest improvements."`);
+      const prompt = "Review the changes across all these repositories. Summarize what changed, flag any issues, and suggest improvements.";
+      terminal.sendText(`claude ${addDirArgs} ${escapeForTerminal(prompt)}`);
     })
   );
 
