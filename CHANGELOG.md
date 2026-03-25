@@ -2,6 +2,14 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.40.0
+
+### Features
+- git detection, undo commit, single fetch, snapshot shortcuts, contributing guide
+
+### Other
+- exclude pnpm-lock, .jules, and test dirs from vsix
+
 ## 0.39.2
 
 ### Performance
