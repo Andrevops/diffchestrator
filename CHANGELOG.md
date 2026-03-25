@@ -2,6 +2,21 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.39.2
+
+### Performance
+- optimize active repos resolution in file watcher and repo manager
+
+### Other
+- 🧪 Add test for resolveFileItem
+- Optimize allMatches array construction in file search
+- 🧪 test(paths): add edge cases for basename function
+- ⚡ perf: optimize active repos resolution in file watcher
+- 🛡️ Sentinel: [CRITICAL] Fix terminal command injection
+- ⚡ Optimize bulkCommit to process repositories concurrently
+- add unit tests for paths utility
+- comprehensive README update with all v0.39 features
+
 ## 0.39.1
 
 ### Bug Fixes
