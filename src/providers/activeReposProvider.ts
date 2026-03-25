@@ -60,14 +60,10 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
   private _getTerminalKinds(repoPath: string): TerminalKind[] {
     if (this._terminalCacheDirty) {
       this._terminalCache.clear();
-      const allPaths = new Set([
-        ...this.repoManager.recentRepoPaths,
-        ...this._getFavoritePaths(),
-      ]);
-      for (const rp of allPaths) {
-        this._terminalCache.set(rp, activeKinds(rp));
-      }
       this._terminalCacheDirty = false;
+    }
+    if (!this._terminalCache.has(repoPath)) {
+      this._terminalCache.set(repoPath, activeKinds(repoPath));
     }
     return this._terminalCache.get(repoPath) ?? [];
   }
