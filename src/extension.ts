@@ -117,16 +117,20 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!repo || repo.totalChanges > 0) return; // still has changes, don't close
 
     // Repo is clean — close any open git-show tabs for it
+    const tabsToClose: vscode.Tab[] = [];
     for (const tab of vscode.window.tabGroups.all.flatMap((g) => g.tabs)) {
       const uri = (tab.input as any)?.uri ?? (tab.input as any)?.original ?? (tab.input as any)?.modified;
       if (uri?.scheme === "git-show") {
         try {
           const params = JSON.parse(uri.query);
           if (params.repoPath === repoPath) {
-            await vscode.window.tabGroups.close(tab);
+            tabsToClose.push(tab);
           }
         } catch { /* ignore */ }
       }
+    }
+    if (tabsToClose.length > 0) {
+      await vscode.window.tabGroups.close(tabsToClose);
     }
   });
 
@@ -968,6 +972,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Close editors that belong to a specific repo path
   async function closeEditorsForRepo(repoPath: string): Promise<void> {
+    const tabsToClose: vscode.Tab[] = [];
     for (const group of vscode.window.tabGroups.all) {
       for (const tab of group.tabs) {
         let belongsToRepo = false;
@@ -982,9 +987,12 @@ export function activate(context: vscode.ExtensionContext): void {
             uriBelongsToRepo(input.modified, repoPath);
         }
         if (belongsToRepo) {
-          await vscode.window.tabGroups.close(tab);
+          tabsToClose.push(tab);
         }
       }
+    }
+    if (tabsToClose.length > 0) {
+      await vscode.window.tabGroups.close(tabsToClose);
     }
   }
 
