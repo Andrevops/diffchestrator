@@ -80,9 +80,13 @@ export class RepoManager implements vscode.Disposable {
         const config = vscode.workspace.getConfiguration("diffchestrator");
         const tags: Record<string, string[]> = config.get("repoTags", {});
         const tagged = new Set(tags[this._tagFilter] ?? []);
-        this._activeRepoPathsCache = new Set(
-          [...this._repos.keys()].filter((path) => tagged.has(path))
-        );
+        const active = new Set<string>();
+        for (const path of this._repos.keys()) {
+          if (tagged.has(path)) {
+            active.add(path);
+          }
+        }
+        this._activeRepoPathsCache = active;
       }
     }
     return this._activeRepoPathsCache;

@@ -82,6 +82,8 @@ export class FileWatcher implements vscode.Disposable {
   private _syncWatchers(): void {
     const currentPaths = this._repoManager.activeRepoPaths;
 
+    if (currentPaths.size === 0 && this._watchers.size === 0) return;
+
     // Remove watchers for repos that no longer exist
     for (const [watchedPath, watcher] of this._watchers) {
       if (!currentPaths.has(watchedPath)) {
