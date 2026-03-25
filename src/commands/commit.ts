@@ -107,25 +107,45 @@ export function registerCommitCommands(
 
       if (!message) return;
 
-      const channel = vscode.window.createOutputChannel("Diffchestrator");
       channel.show();
 
       let success = 0;
       let failed = 0;
+      const paths = [...selectedPaths];
+      const BATCH_SIZE = 5;
 
-      for (const repoPath of selectedPaths) {
-        const name = path.basename(repoPath);
-        try {
-          const output = await git.commit(repoPath, message.trim());
-          channel.appendLine(`[OK] ${name}: ${output.trim()}`);
-          await repoManager.refreshRepo(repoPath);
-          success++;
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          channel.appendLine(`[FAIL] ${name}: ${msg}`);
-          failed++;
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Diffchestrator: Bulk committing...",
+          cancellable: false,
+        },
+        async (progress) => {
+          for (let i = 0; i < paths.length; i += BATCH_SIZE) {
+            const batch = paths.slice(i, i + BATCH_SIZE);
+            progress.report({
+              message: `${Math.min(i + BATCH_SIZE, paths.length)}/${paths.length} repos`,
+              increment: (batch.length / paths.length) * 100,
+            });
+
+            await Promise.all(
+              batch.map(async (repoPath) => {
+                const name = path.basename(repoPath);
+                try {
+                  const output = await git.commit(repoPath, message.trim());
+                  channel.appendLine(`[OK] ${name}: ${output.trim()}`);
+                  await repoManager.refreshRepo(repoPath);
+                  success++;
+                } catch (err: unknown) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  channel.appendLine(`[FAIL] ${name}: ${msg}`);
+                  failed++;
+                }
+              })
+            );
+          }
         }
-      }
+      );
 
       vscode.window.showInformationMessage(
         `Diffchestrator: Bulk commit complete. ${success} succeeded, ${failed} failed.`
