@@ -23,17 +23,33 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   private _lastCommitRefreshTime = 0;
   private static readonly COMMIT_CACHE_COOLDOWN = 60_000; // 60s
 
+  private _repoTagsCache: Record<string, string[]> | undefined;
+
   constructor(private repoManager: RepoManager) {
     this._git = repoManager.git;
     repoManager.onDidChangeRepos(() => {
       this._root = undefined;
+      this._repoTagsCache = undefined;
       this._onDidChangeTreeData.fire();
     });
     repoManager.onDidChangeSelection(() => {
-      // Refresh last commit tooltips lazily on user interaction, not on every scan batch
       this._refreshLastCommits();
       this._onDidChangeTreeData.fire();
     });
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("diffchestrator.repoTags")) {
+        this._repoTagsCache = undefined;
+        this._onDidChangeTreeData.fire();
+      }
+    });
+  }
+
+  private _getRepoTags(): Record<string, string[]> {
+    if (!this._repoTagsCache) {
+      const config = vscode.workspace.getConfiguration("diffchestrator");
+      this._repoTagsCache = config.get("repoTags", {});
+    }
+    return this._repoTagsCache;
   }
 
   private async _refreshLastCommits(): Promise<void> {
@@ -87,9 +103,8 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       if (sync.length > 0) parts.push(sync.join(" "));
       if (r.totalChanges > 0) parts.push(`${r.totalChanges} changes`);
       if (r.stashCount > 0) parts.push(`$(archive) ${r.stashCount}`);
-      // Show tags for this repo
-      const config = vscode.workspace.getConfiguration("diffchestrator");
-      const repoTags: Record<string, string[]> = config.get("repoTags", {});
+      // Show tags for this repo (cached)
+      const repoTags = this._getRepoTags();
       const tags = Object.entries(repoTags)
         .filter(([, repos]) => repos.includes(r.path))
         .map(([tag]) => `#${tag}`);

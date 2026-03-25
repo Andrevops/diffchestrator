@@ -63,13 +63,17 @@ export class RepoManager implements vscode.Disposable {
     }
   }
 
+  private _taggedPathsCache: Set<string> | undefined;
+
   get repos(): RepoSummary[] {
     const all = [...this._repos.values()];
     if (!this._tagFilter) return all;
-    const config = vscode.workspace.getConfiguration("diffchestrator");
-    const tags: Record<string, string[]> = config.get("repoTags", {});
-    const tagged = new Set(tags[this._tagFilter] ?? []);
-    return all.filter((r) => tagged.has(r.path));
+    if (!this._taggedPathsCache) {
+      const config = vscode.workspace.getConfiguration("diffchestrator");
+      const tags: Record<string, string[]> = config.get("repoTags", {});
+      this._taggedPathsCache = new Set(tags[this._tagFilter] ?? []);
+    }
+    return all.filter((r) => this._taggedPathsCache!.has(r.path));
   }
 
   get activeRepoPaths(): Set<string> {
@@ -98,6 +102,7 @@ export class RepoManager implements vscode.Disposable {
 
   setTagFilter(tag: string | undefined): void {
     this._tagFilter = tag;
+    this._taggedPathsCache = undefined;
     this._activeRepoPathsCache = undefined;
     this._onDidChangeRepos.fire();
   }
