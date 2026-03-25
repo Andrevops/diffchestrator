@@ -112,7 +112,7 @@ export function registerCommitCommands(
       let success = 0;
       let failed = 0;
       const paths = [...selectedPaths];
-      const BATCH_SIZE = 5;
+      const BATCH_SIZE = 10;
 
       await vscode.window.withProgress(
         {
