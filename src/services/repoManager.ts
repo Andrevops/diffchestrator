@@ -11,6 +11,7 @@ const STATE_CURRENT_ROOT = "diffchestrator.currentRoot";
 
 export class RepoManager implements vscode.Disposable {
   private _repos = new Map<string, RepoSummary>();
+  private _activeRepoPathsCache: Set<string> | undefined;
   private _selectedRepo: string | undefined;
   private _selectedRepoPaths = new Set<string>();
   private _recentRepoPaths: string[] = [];
@@ -71,12 +72,29 @@ export class RepoManager implements vscode.Disposable {
     return all.filter((r) => tagged.has(r.path));
   }
 
+  get activeRepoPaths(): Set<string> {
+    if (!this._activeRepoPathsCache) {
+      if (!this._tagFilter) {
+        this._activeRepoPathsCache = new Set(this._repos.keys());
+      } else {
+        const config = vscode.workspace.getConfiguration("diffchestrator");
+        const tags: Record<string, string[]> = config.get("repoTags", {});
+        const tagged = new Set(tags[this._tagFilter] ?? []);
+        this._activeRepoPathsCache = new Set(
+          [...this._repos.keys()].filter((path) => tagged.has(path))
+        );
+      }
+    }
+    return this._activeRepoPathsCache;
+  }
+
   get allRepos(): RepoSummary[] {
     return [...this._repos.values()];
   }
 
   setTagFilter(tag: string | undefined): void {
     this._tagFilter = tag;
+    this._activeRepoPathsCache = undefined;
     this._onDidChangeRepos.fire();
   }
 
@@ -145,6 +163,7 @@ export class RepoManager implements vscode.Disposable {
   async scan(rootPath: string): Promise<void> {
     this._currentRoot = rootPath;
     this._repos.clear();
+    this._activeRepoPathsCache = undefined;
     this._selectedRepo = undefined;
     vscode.commands.executeCommand("setContext", CTX.hasSelectedRepo, false);
     this._onDidChangeSelection.fire();
@@ -159,6 +178,7 @@ export class RepoManager implements vscode.Disposable {
     for (const r of repos) {
       this._repos.set(r.path, r);
     }
+    this._activeRepoPathsCache = undefined;
     vscode.commands.executeCommand("setContext", CTX.hasRepos, this._repos.size > 0);
     this._onDidChangeRepos.fire();
 

@@ -29,8 +29,8 @@ export class FileWatcher implements vscode.Disposable {
   watchAll(): void {
     this.disposeWatchers();
 
-    for (const repo of this._repoManager.repos) {
-      this._watchRepo(repo.path);
+    for (const repoPath of this._repoManager.activeRepoPaths) {
+      this._watchRepo(repoPath);
     }
 
     // Also re-watch when the repo list changes
@@ -80,7 +80,7 @@ export class FileWatcher implements vscode.Disposable {
   }
 
   private _syncWatchers(): void {
-    const currentPaths = new Set(this._repoManager.repos.map((r) => r.path));
+    const currentPaths = this._repoManager.activeRepoPaths;
 
     // Remove watchers for repos that no longer exist
     for (const [watchedPath, watcher] of this._watchers) {
