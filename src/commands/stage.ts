@@ -5,18 +5,7 @@ import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 import { FileStatus, ChangeType } from "../types";
 import type { FileChange } from "../types";
-
-/**
- * Extract repoPath and filePath from various argument shapes:
- * - FileNode from tree: { type: "file", repoPath: "...", fileChange: { path: "..." } }
- * - TreeItem with attached props: { repoPath: "...", filePath: "..." }
- */
-function resolveFileItem(item: any): { repoPath: string; filePath: string } | undefined {
-  const repoPath = item?.repoPath;
-  const filePath = item?.fileChange?.path ?? item?.filePath;
-  if (repoPath && filePath) return { repoPath, filePath };
-  return undefined;
-}
+import { resolveFileItem } from "../utils/fileItem";
 
 /**
  * Open the diff (or plain file) for a given FileChange — same logic as
