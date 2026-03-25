@@ -2,6 +2,12 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.40.1
+
+### Other
+- validate git refs, harden branch commands, cache hot paths
+- update README with undo commit, single fetch, snapshot shortcuts, git detection
+
 ## 0.40.0
 
 ### Features
