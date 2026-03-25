@@ -24,12 +24,15 @@ interface FileNode {
 export class ChangedFilesProvider implements vscode.TreeDataProvider<TreeElement> {
   private _onDidChangeTreeData = new vscode.EventEmitter<TreeElement | undefined | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+  private _diffStatCache = new Map<string, { additions: number; deletions: number }>();
 
   constructor(private repoManager: RepoManager) {
     repoManager.onDidChangeSelection(() => {
+      this._diffStatCache.clear();
       this._onDidChangeTreeData.fire();
     });
     repoManager.onDidChangeRepos(() => {
+      this._diffStatCache.clear();
       this._onDidChangeTreeData.fire();
     });
   }
@@ -181,7 +184,12 @@ export class ChangedFilesProvider implements vscode.TreeDataProvider<TreeElement
     if (fc.status === FileStatus.Untracked) return item;
     try {
       const staged = fc.status === FileStatus.Staged;
-      const stats = await this.repoManager.git.diffStatFile(element.repoPath, fc.path, staged);
+      const cacheKey = `${element.repoPath}:${fc.path}:${staged}`;
+      let stats = this._diffStatCache.get(cacheKey);
+      if (!stats) {
+        stats = await this.repoManager.git.diffStatFile(element.repoPath, fc.path, staged);
+        this._diffStatCache.set(cacheKey, stats);
+      }
       if (stats.additions > 0 || stats.deletions > 0) {
         const statStr = `+${stats.additions} -${stats.deletions}`;
         item.tooltip = `${fc.path} (${fc.changeType}) ${statStr}`;

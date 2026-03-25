@@ -25,23 +25,31 @@ export class GitContentProvider implements vscode.TextDocumentContentProvider {
     }
   }
 
+  /** Validate a git ref to prevent flag/command injection */
+  private _isValidRef(ref: string): boolean {
+    // Allow: HEAD, :0, commit hashes, branch names, stash@{N}, tag names
+    // Block: anything starting with - (flag injection), shell metacharacters
+    return typeof ref === "string" && ref.length > 0 && ref.length < 256
+      && !ref.startsWith("-") && !/[;&|`$(){}]/.test(ref);
+  }
+
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     try {
       const params = JSON.parse(uri.query);
       const { path: filePath, ref, repoPath, fullShow } = params;
 
       if (!ref) {
-        // Empty ref = empty content (for new files being staged)
         return "";
       }
 
-      // Full show mode: git show <ref> (used for commit history)
+      if (!this._isValidRef(ref)) return "";
+
       if (fullShow) {
         return await this._git.show(repoPath, ref);
       }
 
-      // git show REF:path
       const gitRef = ref === "HEAD" ? "HEAD" : ref;
+      if (filePath && !this._isValidRef(filePath)) return "";
       const result = await this._git.show(repoPath, `${gitRef}:${filePath}`);
       return result;
     } catch {

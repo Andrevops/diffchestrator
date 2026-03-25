@@ -334,7 +334,8 @@ export class GitExecutor {
   }
 
   async show(repoPath: string, ref: string): Promise<string> {
-    const result = await this._run(["show", ref], repoPath);
+    if (ref.startsWith("-")) return ""; // block flag injection
+    const result = await this._run(["show", "--", ref], repoPath);
     if (result.code !== 0) {
       return "";
     }
@@ -558,7 +559,8 @@ export class GitExecutor {
   }
 
   async mergedBranches(repoPath: string, mainBranch: string): Promise<string[]> {
-    const result = await this._run(["branch", "--merged", mainBranch, "--no-color"], repoPath);
+    // Use -- to prevent branch names from being interpreted as flags
+    const result = await this._run(["branch", "--merged", "--no-color", "--", mainBranch], repoPath);
     if (result.code !== 0) return [];
     return result.stdout
       .split("\n")
@@ -567,7 +569,8 @@ export class GitExecutor {
   }
 
   async deleteBranch(repoPath: string, branch: string): Promise<void> {
-    const result = await this._run(["branch", "-d", branch], repoPath);
+    if (branch.startsWith("-")) throw new Error("Invalid branch name");
+    const result = await this._run(["branch", "-d", "--", branch], repoPath);
     if (result.code !== 0) {
       throw new Error(result.stderr || `Failed to delete branch ${branch}`);
     }
