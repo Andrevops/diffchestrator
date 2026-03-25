@@ -10,3 +10,7 @@ esbuild.mjs
 .vscode-test/**
 resources/icons/icon.svg
 scripts/**
+pnpm-lock.yaml
+.jules/**
+test/**
+__tests__/**
