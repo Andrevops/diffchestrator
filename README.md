@@ -9,21 +9,21 @@ Claude Code works best when you can see what it changed, across every repo it to
 ## Features
 
 ### Claude Code Integration
-- **AI Commit** — runs `claude --permission-mode acceptEdits` in the repo's terminal for real-time output (`Ctrl+D, C`)
-- **Open Claude Code** — launches `claude -c` to continue the previous session, or `claude --add-dir` for multiple selected repos (`Ctrl+D, L`)
-- **Yolo** — opens terminal and runs the `yolo` alias from claude-sandbox (`Ctrl+D, Y`)
+- **AI Commit** — runs `claude --permission-mode acceptEdits` in the repo's terminal for real-time output (`Alt+D, C`)
+- **Open Claude Code** — launches `claude -c` to continue the previous session, or `claude --add-dir` for multiple selected repos (`Alt+D, L`)
+- **Yolo** — opens terminal and runs the `yolo` alias from claude-sandbox (`Alt+D, Y`)
 - **Claude Multi-Repo Review** — opens Claude with `--add-dir` for all repos with changes and a review prompt
 - **Ask Claude** button per diff hunk in the multi-repo diff webview
 - **Per-repo terminal tracking** — each repo tracks its own Claude, Yolo, and shell terminals independently. Switching repos auto-switches the terminal panel to the correct session
-- **Terminal reuse** — `Ctrl+D, L` and `Ctrl+D, Y` reuse existing sessions instead of spawning new ones
+- **Terminal reuse** — `Alt+D, L` and `Alt+D, Y` reuse existing sessions instead of spawning new ones
 - **CLI validation** — checks that `claude` and `docker` are installed before launching terminals
 
 ### Active Repos & Workspace Switching
 - **Active Repos view** — unified sidebar section showing favorites (star icons) + recent repos (MRU, up to 10) with live terminal status indicators
 - **Toggle favorites** — star button in Active Repos title bar shows/hides favorites (filled star = visible, empty star = hidden). Hidden favorites that are active/recent remain visible as their non-favorite role
 - **Persisted across reloads** — active repos, selection, and current scan root survive VS Code restarts
-- **Cycle repos** — `Ctrl+D, Tab` cycles through all opened repos including favorites, switching the changed files view, terminal, and diff editor in one keystroke
-- **Close active repos** — `Ctrl+D, Q` closes current, `Ctrl+D, Shift+Q` picks which to close, `Ctrl+D, Shift+Tab` closes all
+- **Cycle repos** — `Alt+D, Tab` cycles through all opened repos including favorites, switching the changed files view, terminal, and diff editor in one keystroke
+- **Close active repos** — `Alt+D, Q` closes current, `Alt+D, Shift+Q` picks which to close, `Alt+D, Shift+Tab` closes all
 - **Terminal indicators** — each repo shows which terminal types are running (Claude, Yolo, Shell)
 - **Auto-switch terminal** — clicking a repo in Active Repos or Repositories auto-surfaces that repo's terminal (priority: Claude > Yolo > Shell)
 - **Terminal tab sync** — clicking a terminal tab (Claude, Yolo, shell) auto-selects the repo in the sidebar, opens its changed files, and adds it to Active Repos if not already there
@@ -33,20 +33,20 @@ Claude Code works best when you can see what it changed, across every repo it to
 
 ### Repository Discovery & Organization
 - **Auto-scan** a root directory to discover all git repos (BFS, configurable depth)
-- **Switch scan root** — `Ctrl+D, Shift+S` quick pick dropdown to switch between configured roots; also available as a button in the Repositories title bar
+- **Switch scan root** — `Alt+D, Shift+S` quick pick dropdown to switch between configured roots; also available as a button in the Repositories title bar
 - **Root name in view titles** — Active Repos and Repositories views show the current root name
 - **Auto-scan workspace folders** on startup if no roots configured, and when new folders are added
 - **Skip directories** like `node_modules`, `.terraform`, `vendor`, `build`, etc. (configurable)
-- **Changed-only filter** — toggle to show only repos with uncommitted changes (`Ctrl+D, D`)
+- **Changed-only filter** — toggle to show only repos with uncommitted changes (`Alt+D, D`)
 - **Changed repos sort first** in the tree for quick access
 - **Progress indication** — shows scanning/refreshing progress in the status bar for large repo counts
-- **Repo tags** — tag repos with labels (e.g., `frontend`, `infra`, `shared`), then filter the tree by tag with `Ctrl+D, I`. Tags appear as `#tag` in repo descriptions
+- **Repo tags** — tag repos with labels (e.g., `frontend`, `infra`, `shared`), then filter the tree by tag with `Alt+D, I`. Tags appear as `#tag` in repo descriptions
 - **Bulk fetch** — fetch all repos at once from the Repositories title bar; distinguishes local-only repos from real failures
 - **Bulk pull** — pull all repos that are behind remote with confirmation
 - **Auto-fetch on scan** — optionally run `git fetch` during scan for accurate ahead/behind counts
 
 ### Sidebar Views (3 sections)
-- **Active Repos** — favorites (yellow/blue stars) + recently opened repos with terminal status, active repo highlighted in blue. Pin repos with `Ctrl+D, E`
+- **Active Repos** — favorites (yellow/blue stars) + recently opened repos with terminal status, active repo highlighted in blue. Pin repos with `Alt+D, E`
 - **Changed Files** — staged/unstaged/untracked files for the selected repo, grouped by status. Shows diff stats (`+N -M`) per file
 - **Repositories** — hierarchical tree with common path prefix collapsing, change count badges, tag indicators, root switcher button
 - **View descriptions** — active repo name + branch shown next to "Changed Files" title; root name + tag filter + repo count next to "Repositories"
@@ -58,7 +58,7 @@ Claude Code works best when you can see what it changed, across every repo it to
 
 ### Diff Viewing & Review Workflow
 - Click a changed file to open VS Code's **native diff editor** (split view with syntax highlighting)
-- **Navigate changed files** — `Ctrl+D, N` / `Shift+N` or ↑↓ buttons in editor title bar to browse files without staging
+- **Navigate changed files** — `Alt+D, N` / `Shift+N` or ↑↓ buttons in editor title bar to browse files without staging
 - **Auto-advance on stage** — staging a file automatically opens the next pending file's diff, enabling a review-then-stage workflow
 - **Works from sidebar and editor title bar** — both stage buttons advance to the next file
 - **Auto-close stale diffs** — switching to a repo with no changes closes the previous repo's diff; committing a repo's last change auto-closes the diff tab
@@ -66,16 +66,16 @@ Claude Code works best when you can see what it changed, across every repo it to
 - **Context restore** — switching back to a repo reopens the last file you were viewing (changes take priority over remembered files)
 - **Multi-repo diff webview** — aggregated diffs across multiple selected repos with react-diff-view
 - Per-file stage/unstage controls in the diff view
-- **Inline blame** — GitLens-style current-line blame showing author, date, and commit message (`Ctrl+D, G` to toggle)
+- **Inline blame** — GitLens-style current-line blame showing author, date, and commit message (`Alt+D, G` to toggle)
 
 ### Git Operations
 - **Stage / Unstage** individual files or all files (inline buttons + context menu + editor title bar)
 - **Discard changes** — revert a single file, delete an untracked file, or discard all changes with confirmation dialog
-- **Commit** with conventional commit prefix picker (feat/fix/chore/refactor/docs/test/ci) (`Ctrl+D, M`)
-- **Undo last commit** (`Ctrl+D, Z`) — soft reset keeping changes staged, with confirmation showing the commit message
+- **Commit** with conventional commit prefix picker (feat/fix/chore/refactor/docs/test/ci) (`Alt+D, M`)
+- **Undo last commit** (`Alt+D, Z`) — soft reset keeping changes staged, with confirmation showing the commit message
 - **Auto-push after commit** — optionally push immediately after a successful commit
-- **Push** with progress notification (`Ctrl+D, P`)
-- **Pull** with progress notification (`Ctrl+D, U`)
+- **Push** with progress notification (`Alt+D, P`)
+- **Pull** with progress notification (`Alt+D, U`)
 - **Fetch** — single-repo fetch via right-click context menu, or bulk fetch all from title bar
 - **Bulk commit/push** across multiple selected repos
 - **Copy repo info** — right-click to copy path, branch, remote URL, or name to clipboard
@@ -83,20 +83,20 @@ Claude Code works best when you can see what it changed, across every repo it to
 - **Git detection** — shows error with install link if git isn't available on PATH
 
 ### Branch & Stash Management
-- **Branch Switcher** (`Ctrl+D, B`) — QuickPick listing all local branches with current branch marked, plus "Create new branch..." option
-- **Branch Cleanup** (`Ctrl+D, X`) — find merged branches across all repos and delete them in bulk
-- **Stash Management** (`Ctrl+D, A`) — stash push (with message), list stashes, pop latest, apply specific stash, view stash diffs
-- **Commit History** (`Ctrl+D, H`) — QuickPick showing last 15 commits, select to view full diff in editor
+- **Branch Switcher** (`Alt+D, B`) — QuickPick listing all local branches with current branch marked, plus "Create new branch..." option
+- **Branch Cleanup** (`Alt+D, X`) — find merged branches across all repos and delete them in bulk
+- **Stash Management** (`Alt+D, A`) — stash push (with message), list stashes, pop latest, apply specific stash, view stash diffs
+- **Commit History** (`Alt+D, H`) — QuickPick showing last 15 commits, select to view full diff in editor
 - **Cross-repo Activity Log** — recent commits across ALL repos sorted by date
 
 ### Search & Navigation
-- **Search in Repo** (`Ctrl+D, /`) — live git grep QuickPick scoped to the selected repo, opens file at matched line
-- **Search Active Repos** (`Ctrl+D, .`) — git grep across all recent/active repos with `[repo-name]` badges
-- **Search All Repos** (`Ctrl+D, Shift+/`) — git grep across every scanned repo
+- **Search in Repo** (`Alt+D, /`) — live git grep QuickPick scoped to the selected repo, opens file at matched line
+- **Search Active Repos** (`Alt+D, .`) — git grep across all recent/active repos with `[repo-name]` badges
+- **Search All Repos** (`Alt+D, Shift+/`) — git grep across every scanned repo
 - Selecting a search result from a different repo auto-switches to it (terminal, changed files, everything)
-- **Browse Files** (`Ctrl+D, F`) — QuickPick with all files in a repo via `git ls-files`, instant filtering
-- **Switch Repo** (`Ctrl+D, R`) — QuickPick sorted by changes, current repo first
-- **Open in New Window** (`Ctrl+D, W`) — opens the selected repo in a new VS Code window for full native search
+- **Browse Files** (`Alt+D, F`) — QuickPick with all files in a repo via `git ls-files`, instant filtering
+- **Switch Repo** (`Alt+D, R`) — QuickPick sorted by changes, current repo first
+- **Open in New Window** (`Alt+D, W`) — opens the selected repo in a new VS Code window for full native search
 
 ### File Watcher
 - Watches `.git/` directories per repo (HEAD, index, refs changes) with 500ms debounce
@@ -121,46 +121,46 @@ Claude Code works best when you can see what it changed, across every repo it to
 
 ## Keyboard Shortcuts
 
-All shortcuts use **Ctrl+D** as a chord prefix — press `Ctrl+D`, release, then press the key:
+All shortcuts use **Alt+D** as a chord prefix — press `Alt+D`, release, then press the key:
 
 | Chord | Action |
 |-------|--------|
-| `Ctrl+D, Tab` | Cycle through recent active repos |
-| `Ctrl+D, Shift+Tab` | Close all active repos |
-| `Ctrl+D, Q` | Close current active repo |
-| `Ctrl+D, Shift+Q` | Pick which active repo to close |
-| `Ctrl+D, N` | Next changed file |
-| `Ctrl+D, Shift+N` | Previous changed file |
-| `Ctrl+D, M` | Commit with message (conventional prefix picker) |
-| `Ctrl+D, C` | AI Commit (Claude) |
-| `Ctrl+D, L` | Open Claude Code (continues session) |
-| `Ctrl+D, Y` | Yolo (Claude Sandbox) |
-| `Ctrl+D, S` | Scan for repositories |
-| `Ctrl+D, Shift+S` | Switch scan root |
-| `Ctrl+D, Shift+T` | Open terminal at scan root |
-| `Ctrl+D, T` | Open terminal at repo |
-| `Ctrl+D, R` | Switch active repo |
-| `Ctrl+D, F` | Browse files in repo |
-| `Ctrl+D, P` | Push |
-| `Ctrl+D, U` | Pull |
-| `Ctrl+D, D` | Toggle changed-only filter |
-| `Ctrl+D, H` | Commit history |
-| `Ctrl+D, B` | Switch branch |
-| `Ctrl+D, A` | Stash management |
-| `Ctrl+D, G` | Toggle inline blame |
-| `Ctrl+D, E` | Favorite current repo |
-| `Ctrl+D, /` | Search in repo (git grep) |
-| `Ctrl+D, .` | Search active repos |
-| `Ctrl+D, Shift+/` | Search all repos |
-| `Ctrl+D, W` | Open repo in new VS Code window |
-| `Ctrl+D, K` | Show keyboard shortcut cheatsheet |
-| `Ctrl+D, X` | Clean up merged branches |
-| `Ctrl+D, I` | Filter repos by tag |
-| `Ctrl+D, Z` | Undo last commit (soft reset) |
-| `Ctrl+D, Shift+B` | Save workspace snapshot |
-| `Ctrl+D, Shift+L` | Load workspace snapshot |
+| `Alt+D, Tab` | Cycle through recent active repos |
+| `Alt+D, Shift+Tab` | Close all active repos |
+| `Alt+D, Q` | Close current active repo |
+| `Alt+D, Shift+Q` | Pick which active repo to close |
+| `Alt+D, N` | Next changed file |
+| `Alt+D, Shift+N` | Previous changed file |
+| `Alt+D, M` | Commit with message (conventional prefix picker) |
+| `Alt+D, C` | AI Commit (Claude) |
+| `Alt+D, L` | Open Claude Code (continues session) |
+| `Alt+D, Y` | Yolo (Claude Sandbox) |
+| `Alt+D, S` | Scan for repositories |
+| `Alt+D, Shift+S` | Switch scan root |
+| `Alt+D, Shift+T` | Open terminal at scan root |
+| `Alt+D, T` | Open terminal at repo |
+| `Alt+D, R` | Switch active repo |
+| `Alt+D, F` | Browse files in repo |
+| `Alt+D, P` | Push |
+| `Alt+D, U` | Pull |
+| `Alt+D, D` | Toggle changed-only filter |
+| `Alt+D, H` | Commit history |
+| `Alt+D, B` | Switch branch |
+| `Alt+D, A` | Stash management |
+| `Alt+D, G` | Toggle inline blame |
+| `Alt+D, E` | Favorite current repo |
+| `Alt+D, /` | Search in repo (git grep) |
+| `Alt+D, .` | Search active repos |
+| `Alt+D, Shift+/` | Search all repos |
+| `Alt+D, W` | Open repo in new VS Code window |
+| `Alt+D, K` | Show keyboard shortcut cheatsheet |
+| `Alt+D, X` | Clean up merged branches |
+| `Alt+D, I` | Filter repos by tag |
+| `Alt+D, Z` | Undo last commit (soft reset) |
+| `Alt+D, Shift+B` | Save workspace snapshot |
+| `Alt+D, Shift+L` | Load workspace snapshot |
 
-> On macOS, use `Cmd+D` instead of `Ctrl+D`.
+> On macOS, use `Alt+D` instead of `Alt+D`.
 
 ## Context Menu Actions
 
@@ -206,7 +206,7 @@ Right-click a **changed file**:
 | `diffchestrator.showInlineBlame` | `true` | Show inline git blame on current line |
 | `diffchestrator.showFavorites` | `true` | Show favorites in Active Repos view |
 | `diffchestrator.fetchOnScan` | `false` | Auto-fetch during scan for accurate ahead/behind counts |
-| `diffchestrator.autoPushAfterCommit` | `false` | Auto-push after successful commit via `Ctrl+D, M` |
+| `diffchestrator.autoPushAfterCommit` | `false` | Auto-push after successful commit via `Alt+D, M` |
 | `diffchestrator.favorites` | `[]` | Persisted favorite paths (managed by extension) |
 | `diffchestrator.repoTags` | `{}` | Repo tags for filtering (managed by extension) |
 | `diffchestrator.snapshots` | `{}` | Workspace snapshots (managed by extension) |
@@ -223,8 +223,8 @@ Right-click a **changed file**:
    Or just open a folder — the extension auto-detects workspace folders if no roots are configured.
 3. The extension auto-scans on startup and populates the sidebar
 4. Click a repo to see its changed files, click a file to see the diff
-5. Use `Ctrl+D, C` to AI commit with Claude, `Ctrl+D, L` to open Claude Code
-6. Press `Ctrl+D, K` to see all keyboard shortcuts
+5. Use `Alt+D, C` to AI commit with Claude, `Alt+D, L` to open Claude Code
+6. Press `Alt+D, K` to see all keyboard shortcuts
 
 ## Release
 
