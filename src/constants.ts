@@ -68,6 +68,8 @@ export const CMD = {
   loadSnapshot: "diffchestrator.loadSnapshot",
   undoCommit: "diffchestrator.undoCommit",
   fetchRepo: "diffchestrator.fetchRepo",
+  selectAllActive: "diffchestrator.selectAllActive",
+  deselectAll: "diffchestrator.deselectAll",
 } as const;
 
 export const CONFIG = {

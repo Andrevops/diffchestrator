@@ -197,8 +197,11 @@ export function activate(context: vscode.ExtensionContext): void {
     const text = n.type === "commit"
       ? `Committed in ${n.repoName} — ${n.message ?? "new commit"}`
       : `${n.count} new change${n.count !== 1 ? "s" : ""} in ${n.repoName}`;
+    // Only show Push for commits where the repo is ahead (local commits, not pulled ones)
+    const repo = repoManager.getRepo(n.repoPath);
+    const showPush = n.type === "commit" && repo && repo.ahead > 0;
     const actions = n.type === "commit"
-      ? ["Push", "Show Terminal"]
+      ? (showPush ? ["Push", "Show Terminal"] : ["Show Terminal"])
       : ["Show Terminal", "View Changes"];
     const action = await vscode.window.showInformationMessage(
       `Diffchestrator: ${text}`,
@@ -1019,6 +1022,20 @@ export function activate(context: vscode.ExtensionContext): void {
   // Clear multi-selection
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.clearSelection, () =>
+      repoManager.clearMultiSelection()
+    )
+  );
+
+  // Select all active/recent repos
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.selectAllActive, () => {
+      for (const p of repoManager.recentRepoPaths) {
+        if (!repoManager.selectedRepoPaths.has(p)) {
+          repoManager.toggleRepoSelection(p);
+        }
+      }
+    }),
+    vscode.commands.registerCommand(CMD.deselectAll, () =>
       repoManager.clearMultiSelection()
     )
   );

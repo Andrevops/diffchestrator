@@ -454,6 +454,18 @@
         "icon": "$(discard)"
       },
       {
+        "command": "diffchestrator.selectAllActive",
+        "title": "Select All Active Repos",
+        "category": "Diffchestrator",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "diffchestrator.deselectAll",
+        "title": "Deselect All",
+        "category": "Diffchestrator",
+        "icon": "$(close-all)"
+      },
+      {
         "command": "diffchestrator.fetchRepo",
         "title": "Fetch",
         "category": "Diffchestrator",
@@ -493,6 +505,16 @@
           "command": "diffchestrator.toggleShowFavoritesOff",
           "when": "view == diffchestrator.activeRepos && !diffchestrator.showFavorites",
           "group": "navigation@1"
+        },
+        {
+          "command": "diffchestrator.selectAllActive",
+          "when": "view == diffchestrator.activeRepos",
+          "group": "navigation@2"
+        },
+        {
+          "command": "diffchestrator.deselectAll",
+          "when": "view == diffchestrator.activeRepos && diffchestrator.hasMultiSelection",
+          "group": "navigation@3"
         },
         {
           "command": "diffchestrator.scan",
