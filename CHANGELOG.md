@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.42.1
+
+### Bug Fixes
+- show all untracked files instead of collapsing directories
+
 ## 0.42.0
 
 ### Features
