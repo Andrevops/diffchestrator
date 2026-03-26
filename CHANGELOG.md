@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.42.0
+
+### Features
+- change keyboard chord prefix from Ctrl+D to Alt+D
+
 ## 0.41.0
 
 ### Features
