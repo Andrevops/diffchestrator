@@ -76,7 +76,7 @@ export class GitExecutor {
 
   private async _statusUncached(repoPath: string): Promise<RepoStatus> {
     const result = await this._run(
-      ["status", "--porcelain=v2", "--branch", "-unormal"],
+      ["status", "--porcelain=v2", "--branch", "-uall"],
       repoPath
     );
 
@@ -173,7 +173,7 @@ export class GitExecutor {
     repoPath: string
   ): Promise<{ staged: number; unstaged: number; untracked: number; branch: string; ahead: number; behind: number; headOid: string }> {
     const result = await this._run(
-      ["status", "--porcelain=v2", "--branch", "-unormal"],
+      ["status", "--porcelain=v2", "--branch", "-uall"],
       repoPath
     );
 
