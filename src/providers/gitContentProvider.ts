@@ -34,25 +34,36 @@ export class GitContentProvider implements vscode.TextDocumentContentProvider {
   }
 
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
+    const channel = vscode.window.createOutputChannel("Diffchestrator Debug", { log: true });
     try {
       const params = JSON.parse(uri.query);
       const { path: filePath, ref, repoPath, fullShow } = params;
+      channel.appendLine(`[git-show] ref="${ref}" path="${filePath}" repo="${repoPath}"`);
 
       if (!ref) {
+        channel.appendLine(`[git-show] BAIL: ref is falsy`);
         return "";
       }
 
-      if (!this._isValidRef(ref)) return "";
+      if (!this._isValidRef(ref)) {
+        channel.appendLine(`[git-show] BAIL: ref failed validation`);
+        return "";
+      }
 
       if (fullShow) {
         return await this._git.show(repoPath, ref);
       }
 
       const gitRef = ref === "HEAD" ? "HEAD" : ref;
-      if (filePath && !this._isValidRef(filePath)) return "";
+      if (filePath && !this._isValidRef(filePath)) {
+        channel.appendLine(`[git-show] BAIL: filePath failed validation: "${filePath}"`);
+        return "";
+      }
       const result = await this._git.show(repoPath, `${gitRef}:${filePath}`);
+      channel.appendLine(`[git-show] OK: got ${result.length} chars for ${gitRef}:${filePath}`);
       return result;
-    } catch {
+    } catch (err) {
+      channel.appendLine(`[git-show] ERROR: ${err}`);
       return "";
     }
   }
