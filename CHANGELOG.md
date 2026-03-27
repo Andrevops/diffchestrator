@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.42.2
+
+### Bug Fixes
+- show proper diff for unstaged files instead of all-green
+
 ## 0.42.1
 
 ### Bug Fixes
