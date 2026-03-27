@@ -231,15 +231,6 @@ export class GitExecutor {
     return result.stdout;
   }
 
-  async diffUntracked(repoPath: string, file: string): Promise<string> {
-    this._validateFilePath(repoPath, file);
-    const result = await this._run(
-      ["diff", "--no-color", "--no-index", "--", "/dev/null", file],
-      repoPath
-    );
-    return result.stdout;
-  }
-
   async stage(repoPath: string, files: string[]): Promise<void> {
     for (const f of files) {
       this._validateFilePath(repoPath, f);
