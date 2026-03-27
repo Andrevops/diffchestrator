@@ -245,6 +245,7 @@ export class GitExecutor {
       this._validateFilePath(repoPath, f);
     }
     await this._run(["add", "--", ...files], repoPath);
+    this._statusCache.delete(repoPath);
   }
 
   async unstage(repoPath: string, files: string[]): Promise<void> {
@@ -252,10 +253,12 @@ export class GitExecutor {
       this._validateFilePath(repoPath, f);
     }
     await this._run(["reset", "HEAD", "--", ...files], repoPath);
+    this._statusCache.delete(repoPath);
   }
 
   async commit(repoPath: string, message: string): Promise<string> {
     const result = await this._run(["commit", "-m", message], repoPath);
+    this._statusCache.delete(repoPath);
     if (result.code !== 0) {
       throw new Error(result.stderr || "Commit failed");
     }
