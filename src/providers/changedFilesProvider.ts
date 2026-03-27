@@ -232,8 +232,8 @@ export class ChangedFilesProvider implements vscode.TreeDataProvider<TreeElement
   }
 
   private _gitUri(repoPath: string, filePath: string, staged: boolean): vscode.Uri {
-    // Use git show to display HEAD version
-    const ref = staged ? "HEAD" : "";
+    // Staged: compare against HEAD; Unstaged: compare against index (:0)
+    const ref = staged ? "HEAD" : ":0";
     return vscode.Uri.parse(
       `git-show:${path.join(repoPath, filePath)}`
     ).with({
