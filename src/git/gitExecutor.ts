@@ -335,7 +335,7 @@ export class GitExecutor {
 
   async show(repoPath: string, ref: string): Promise<string> {
     if (ref.startsWith("-")) return ""; // block flag injection
-    const result = await this._run(["show", "--", ref], repoPath);
+    const result = await this._run(["show", ref], repoPath);
     if (result.code !== 0) {
       return "";
     }

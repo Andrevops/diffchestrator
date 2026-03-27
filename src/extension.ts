@@ -104,7 +104,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Tree views
   const activeRepos = new ActiveReposProvider(repoManager);
   const repoTree = new RepoTreeProvider(repoManager);
-  const changedFiles = new ChangedFilesProvider(repoManager, channel);
+  const changedFiles = new ChangedFilesProvider(repoManager);
 
   // Git content provider for diff URIs
   const gitContentProvider = new GitContentProvider(repoManager.git);
