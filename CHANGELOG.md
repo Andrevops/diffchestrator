@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.42.3
+
+### Other
+- add logging to git content provider for diff investigation
+
 ## 0.42.2
 
 ### Bug Fixes
