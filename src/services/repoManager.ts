@@ -130,9 +130,6 @@ export class RepoManager implements vscode.Disposable {
   get selectedRepo(): string | undefined {
     return this._selectedRepo;
   }
-  get selectedRepoPaths(): Set<string> {
-    return this._selectedRepoPaths;
-  }
   get recentRepoPaths(): readonly string[] {
     return this._recentRepoPaths;
   }
