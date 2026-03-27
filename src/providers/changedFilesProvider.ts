@@ -26,7 +26,10 @@ export class ChangedFilesProvider implements vscode.TreeDataProvider<TreeElement
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
   private _diffStatCache = new Map<string, { additions: number; deletions: number }>();
 
-  constructor(private repoManager: RepoManager) {
+  private _channel: vscode.OutputChannel;
+
+  constructor(private repoManager: RepoManager, channel?: vscode.OutputChannel) {
+    this._channel = channel ?? vscode.window.createOutputChannel("Diffchestrator Debug");
     repoManager.onDidChangeSelection(() => {
       this._diffStatCache.clear();
       this._onDidChangeTreeData.fire();
@@ -101,6 +104,10 @@ export class ChangedFilesProvider implements vscode.TreeDataProvider<TreeElement
       const rightUri = staged
         ? this._indexUri(element.repoPath, fc.path)
         : vscode.Uri.file(path.join(element.repoPath, fc.path));
+
+      this._channel.appendLine(`[diff] file="${fc.path}" status="${fc.status}" staged=${staged}`);
+      this._channel.appendLine(`[diff] leftUri=${leftUri.toString()}`);
+      this._channel.appendLine(`[diff] rightUri=${rightUri.toString()}`);
 
       if (fc.changeType === ChangeType.Deleted) {
         item.command = {
