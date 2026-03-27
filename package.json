@@ -2,7 +2,7 @@
   "name": "diffchestrator",
   "displayName": "Diffchestrator",
   "description": "Multi-repo Git orchestration built for Claude Code — AI commits, diffs, and terminal integration",
-  "version": "0.40.1",
+  "version": "0.42.2",
   "publisher": "andrevops-com",
   "license": "MIT",
   "icon": "resources/icons/icon.png",
@@ -454,6 +454,18 @@
         "icon": "$(discard)"
       },
       {
+        "command": "diffchestrator.selectAllActive",
+        "title": "Select All Active Repos",
+        "category": "Diffchestrator",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "diffchestrator.deselectAll",
+        "title": "Deselect All",
+        "category": "Diffchestrator",
+        "icon": "$(close-all)"
+      },
+      {
         "command": "diffchestrator.fetchRepo",
         "title": "Fetch",
         "category": "Diffchestrator",
@@ -493,6 +505,16 @@
           "command": "diffchestrator.toggleShowFavoritesOff",
           "when": "view == diffchestrator.activeRepos && !diffchestrator.showFavorites",
           "group": "navigation@1"
+        },
+        {
+          "command": "diffchestrator.selectAllActive",
+          "when": "view == diffchestrator.activeRepos",
+          "group": "navigation@2"
+        },
+        {
+          "command": "diffchestrator.deselectAll",
+          "when": "view == diffchestrator.activeRepos && diffchestrator.hasMultiSelection",
+          "group": "navigation@3"
         },
         {
           "command": "diffchestrator.scan",
@@ -671,173 +693,173 @@
     "keybindings": [
       {
         "command": "diffchestrator.scan",
-        "key": "ctrl+d s",
-        "mac": "cmd+d s"
+        "key": "alt+d s",
+        "mac": "alt+d s"
       },
       {
         "command": "diffchestrator.switchRepo",
-        "key": "ctrl+d r",
-        "mac": "cmd+d r"
+        "key": "alt+d r",
+        "mac": "alt+d r"
       },
       {
         "command": "diffchestrator.browseFiles",
-        "key": "ctrl+d f",
-        "mac": "cmd+d f"
+        "key": "alt+d f",
+        "mac": "alt+d f"
       },
       {
         "command": "diffchestrator.aiCommit",
-        "key": "ctrl+d c",
-        "mac": "cmd+d c"
+        "key": "alt+d c",
+        "mac": "alt+d c"
       },
       {
         "command": "diffchestrator.push",
-        "key": "ctrl+d p",
-        "mac": "cmd+d p"
+        "key": "alt+d p",
+        "mac": "alt+d p"
       },
       {
         "command": "diffchestrator.pull",
-        "key": "ctrl+d u",
-        "mac": "cmd+d u"
+        "key": "alt+d u",
+        "mac": "alt+d u"
       },
       {
         "command": "diffchestrator.openTerminal",
-        "key": "ctrl+d t",
-        "mac": "cmd+d t"
+        "key": "alt+d t",
+        "mac": "alt+d t"
       },
       {
         "command": "diffchestrator.openRootTerminal",
-        "key": "ctrl+d shift+t",
-        "mac": "cmd+d shift+t"
+        "key": "alt+d shift+t",
+        "mac": "alt+d shift+t"
       },
       {
         "command": "diffchestrator.openClaudeCode",
-        "key": "ctrl+d l",
-        "mac": "cmd+d l"
+        "key": "alt+d l",
+        "mac": "alt+d l"
       },
       {
         "command": "diffchestrator.yolo",
-        "key": "ctrl+d y",
-        "mac": "cmd+d y"
+        "key": "alt+d y",
+        "mac": "alt+d y"
       },
       {
         "command": "diffchestrator.toggleChangedOnly",
-        "key": "ctrl+d d",
-        "mac": "cmd+d d"
+        "key": "alt+d d",
+        "mac": "alt+d d"
       },
       {
         "command": "diffchestrator.commitHistory",
-        "key": "ctrl+d h",
-        "mac": "cmd+d h"
+        "key": "alt+d h",
+        "mac": "alt+d h"
       },
       {
         "command": "diffchestrator.switchBranch",
-        "key": "ctrl+d b",
-        "mac": "cmd+d b"
+        "key": "alt+d b",
+        "mac": "alt+d b"
       },
       {
         "command": "diffchestrator.stash",
-        "key": "ctrl+d a",
-        "mac": "cmd+d a"
+        "key": "alt+d a",
+        "mac": "alt+d a"
       },
       {
         "command": "diffchestrator.toggleBlame",
-        "key": "ctrl+d g",
-        "mac": "cmd+d g"
+        "key": "alt+d g",
+        "mac": "alt+d g"
       },
       {
         "command": "diffchestrator.favoriteCurrent",
-        "key": "ctrl+d e",
-        "mac": "cmd+d e"
+        "key": "alt+d e",
+        "mac": "alt+d e"
       },
       {
         "command": "diffchestrator.grepInRepo",
-        "key": "ctrl+d /",
-        "mac": "cmd+d /"
+        "key": "alt+d /",
+        "mac": "alt+d /"
       },
       {
         "command": "diffchestrator.grepActiveRepos",
-        "key": "ctrl+d .",
-        "mac": "cmd+d ."
+        "key": "alt+d .",
+        "mac": "alt+d ."
       },
       {
         "command": "diffchestrator.grepAllRepos",
-        "key": "ctrl+d shift+/",
-        "mac": "cmd+d shift+/"
+        "key": "alt+d shift+/",
+        "mac": "alt+d shift+/"
       },
       {
         "command": "diffchestrator.searchInRepo",
-        "key": "ctrl+d w",
-        "mac": "cmd+d w"
+        "key": "alt+d w",
+        "mac": "alt+d w"
       },
       {
         "command": "diffchestrator.cycleActiveRepo",
-        "key": "ctrl+d tab",
-        "mac": "cmd+d tab"
+        "key": "alt+d tab",
+        "mac": "alt+d tab"
       },
       {
         "command": "diffchestrator.closeActiveRepo",
-        "key": "ctrl+d q",
-        "mac": "cmd+d q"
+        "key": "alt+d q",
+        "mac": "alt+d q"
       },
       {
         "command": "diffchestrator.closePickedRepo",
-        "key": "ctrl+d shift+q",
-        "mac": "cmd+d shift+q"
+        "key": "alt+d shift+q",
+        "mac": "alt+d shift+q"
       },
       {
         "command": "diffchestrator.closeAllActiveRepos",
-        "key": "ctrl+d shift+tab",
-        "mac": "cmd+d shift+tab"
+        "key": "alt+d shift+tab",
+        "mac": "alt+d shift+tab"
       },
       {
         "command": "diffchestrator.nextChangedFile",
-        "key": "ctrl+d n",
-        "mac": "cmd+d n"
+        "key": "alt+d n",
+        "mac": "alt+d n"
       },
       {
         "command": "diffchestrator.prevChangedFile",
-        "key": "ctrl+d shift+n",
-        "mac": "cmd+d shift+n"
+        "key": "alt+d shift+n",
+        "mac": "alt+d shift+n"
       },
       {
         "command": "diffchestrator.switchRoot",
-        "key": "ctrl+d shift+s",
-        "mac": "cmd+d shift+s"
+        "key": "alt+d shift+s",
+        "mac": "alt+d shift+s"
       },
       {
         "command": "diffchestrator.commit",
-        "key": "ctrl+d m",
-        "mac": "cmd+d m"
+        "key": "alt+d m",
+        "mac": "alt+d m"
       },
       {
         "command": "diffchestrator.showShortcuts",
-        "key": "ctrl+d k",
-        "mac": "cmd+d k"
+        "key": "alt+d k",
+        "mac": "alt+d k"
       },
       {
         "command": "diffchestrator.branchCleanup",
-        "key": "ctrl+d x",
-        "mac": "cmd+d x"
+        "key": "alt+d x",
+        "mac": "alt+d x"
       },
       {
         "command": "diffchestrator.filterByTag",
-        "key": "ctrl+d i",
-        "mac": "cmd+d i"
+        "key": "alt+d i",
+        "mac": "alt+d i"
       },
       {
         "command": "diffchestrator.undoCommit",
-        "key": "ctrl+d z",
-        "mac": "cmd+d z"
+        "key": "alt+d z",
+        "mac": "alt+d z"
       },
       {
         "command": "diffchestrator.saveSnapshot",
-        "key": "ctrl+d shift+b",
-        "mac": "cmd+d shift+b"
+        "key": "alt+d shift+b",
+        "mac": "alt+d shift+b"
       },
       {
         "command": "diffchestrator.loadSnapshot",
-        "key": "ctrl+d shift+l",
-        "mac": "cmd+d shift+l"
+        "key": "alt+d shift+l",
+        "mac": "alt+d shift+l"
       }
     ],
     "configuration": {

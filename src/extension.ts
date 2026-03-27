@@ -197,8 +197,11 @@ export function activate(context: vscode.ExtensionContext): void {
     const text = n.type === "commit"
       ? `Committed in ${n.repoName} — ${n.message ?? "new commit"}`
       : `${n.count} new change${n.count !== 1 ? "s" : ""} in ${n.repoName}`;
+    // Only show Push for commits where the repo is ahead (local commits, not pulled ones)
+    const repo = repoManager.getRepo(n.repoPath);
+    const showPush = n.type === "commit" && repo && repo.ahead > 0;
     const actions = n.type === "commit"
-      ? ["Push", "Show Terminal"]
+      ? (showPush ? ["Push", "Show Terminal"] : ["Show Terminal"])
       : ["Show Terminal", "View Changes"];
     const action = await vscode.window.showInformationMessage(
       `Diffchestrator: ${text}`,
@@ -500,41 +503,41 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.showShortcuts, async () => {
       const shortcuts = [
-        { label: "Ctrl+D, Tab", description: "Cycle through active repos" },
-        { label: "Ctrl+D, Shift+Tab", description: "Close all active repos" },
-        { label: "Ctrl+D, Q", description: "Close current active repo" },
-        { label: "Ctrl+D, N / Shift+N", description: "Next / Previous changed file" },
-        { label: "Ctrl+D, M", description: "Commit with message" },
-        { label: "Ctrl+D, C", description: "AI Commit (Claude)" },
-        { label: "Ctrl+D, L", description: "Open Claude Code" },
-        { label: "Ctrl+D, Y", description: "Yolo (Claude Sandbox)" },
-        { label: "Ctrl+D, S", description: "Scan for repositories" },
-        { label: "Ctrl+D, Shift+S", description: "Switch scan root" },
-        { label: "Ctrl+D, Shift+T", description: "Open terminal at root" },
-        { label: "Ctrl+D, T", description: "Open terminal at repo" },
-        { label: "Ctrl+D, R", description: "Switch active repo" },
-        { label: "Ctrl+D, F", description: "Browse files in repo" },
-        { label: "Ctrl+D, P", description: "Push" },
-        { label: "Ctrl+D, U", description: "Pull" },
-        { label: "Ctrl+D, D", description: "Toggle changed-only filter" },
-        { label: "Ctrl+D, H", description: "Commit history" },
-        { label: "Ctrl+D, B", description: "Switch branch" },
-        { label: "Ctrl+D, A", description: "Stash management" },
-        { label: "Ctrl+D, G", description: "Toggle inline blame" },
-        { label: "Ctrl+D, E", description: "Favorite current repo" },
-        { label: "Ctrl+D, /", description: "Search in repo (git grep)" },
-        { label: "Ctrl+D, .", description: "Search active repos" },
-        { label: "Ctrl+D, Shift+/", description: "Search all repos" },
-        { label: "Ctrl+D, W", description: "Open repo in new window" },
-        { label: "Ctrl+D, K", description: "Show this cheatsheet" },
-        { label: "Ctrl+D, X", description: "Clean up merged branches" },
-        { label: "Ctrl+D, I", description: "Filter repos by tag" },
-        { label: "Ctrl+D, Z", description: "Undo last commit (soft reset)" },
-        { label: "Ctrl+D, Shift+B", description: "Save workspace snapshot" },
-        { label: "Ctrl+D, Shift+L", description: "Load workspace snapshot" },
+        { label: "Alt+D, Tab", description: "Cycle through active repos" },
+        { label: "Alt+D, Shift+Tab", description: "Close all active repos" },
+        { label: "Alt+D, Q", description: "Close current active repo" },
+        { label: "Alt+D, N / Shift+N", description: "Next / Previous changed file" },
+        { label: "Alt+D, M", description: "Commit with message" },
+        { label: "Alt+D, C", description: "AI Commit (Claude)" },
+        { label: "Alt+D, L", description: "Open Claude Code" },
+        { label: "Alt+D, Y", description: "Yolo (Claude Sandbox)" },
+        { label: "Alt+D, S", description: "Scan for repositories" },
+        { label: "Alt+D, Shift+S", description: "Switch scan root" },
+        { label: "Alt+D, Shift+T", description: "Open terminal at root" },
+        { label: "Alt+D, T", description: "Open terminal at repo" },
+        { label: "Alt+D, R", description: "Switch active repo" },
+        { label: "Alt+D, F", description: "Browse files in repo" },
+        { label: "Alt+D, P", description: "Push" },
+        { label: "Alt+D, U", description: "Pull" },
+        { label: "Alt+D, D", description: "Toggle changed-only filter" },
+        { label: "Alt+D, H", description: "Commit history" },
+        { label: "Alt+D, B", description: "Switch branch" },
+        { label: "Alt+D, A", description: "Stash management" },
+        { label: "Alt+D, G", description: "Toggle inline blame" },
+        { label: "Alt+D, E", description: "Favorite current repo" },
+        { label: "Alt+D, /", description: "Search in repo (git grep)" },
+        { label: "Alt+D, .", description: "Search active repos" },
+        { label: "Alt+D, Shift+/", description: "Search all repos" },
+        { label: "Alt+D, W", description: "Open repo in new window" },
+        { label: "Alt+D, K", description: "Show this cheatsheet" },
+        { label: "Alt+D, X", description: "Clean up merged branches" },
+        { label: "Alt+D, I", description: "Filter repos by tag" },
+        { label: "Alt+D, Z", description: "Undo last commit (soft reset)" },
+        { label: "Alt+D, Shift+B", description: "Save workspace snapshot" },
+        { label: "Alt+D, Shift+L", description: "Load workspace snapshot" },
       ];
       await vscode.window.showQuickPick(shortcuts, {
-        placeHolder: "Diffchestrator Keyboard Shortcuts (Ctrl+D chord prefix)",
+        placeHolder: "Diffchestrator Keyboard Shortcuts (Alt+D chord prefix)",
         matchOnDescription: true,
       });
     })
@@ -1019,6 +1022,20 @@ export function activate(context: vscode.ExtensionContext): void {
   // Clear multi-selection
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.clearSelection, () =>
+      repoManager.clearMultiSelection()
+    )
+  );
+
+  // Select all active/recent repos
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.selectAllActive, () => {
+      for (const p of repoManager.recentRepoPaths) {
+        if (!repoManager.selectedRepoPaths.has(p)) {
+          repoManager.toggleRepoSelection(p);
+        }
+      }
+    }),
+    vscode.commands.registerCommand(CMD.deselectAll, () =>
       repoManager.clearMultiSelection()
     )
   );
