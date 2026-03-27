@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.42.4
+
+### Other
+- add logging to changedFilesProvider diff URIs
+
 ## 0.42.3
 
 ### Other
