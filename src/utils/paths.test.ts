@@ -46,4 +46,17 @@ test("dirname", () => {
   // Current/Parent directory
   assert.strictEqual(dirname("."), ".");
   assert.strictEqual(dirname(".."), ".");
+
+  // Root paths
+  assert.strictEqual(dirname("/"), "/");
+  assert.strictEqual(dirname("///"), "/");
+
+  // Multi-slashes
+  // Note: path.dirname preserves trailing slash from intermediate components in Node.js
+  assert.strictEqual(dirname("foo//bar"), "foo/");
+
+  // Hidden files and directories
+  assert.strictEqual(dirname(".hidden"), ".");
+  assert.strictEqual(dirname("foo/.hidden"), "foo");
+  assert.strictEqual(dirname(".hidden/bar"), ".hidden");
 });
