@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.42.6
+
+### Bug Fixes
+- invalidate status cache after stage/unstage/commit
+
 ## 0.42.5
 
 ### Bug Fixes
