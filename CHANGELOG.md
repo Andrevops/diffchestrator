@@ -2,6 +2,22 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.42.7
+
+### Bug Fixes
+- restore selectedRepoPaths getter removed by PR #20, delete stray benchmark.ts
+- invalidate status cache after stage/unstage/commit
+- remove -- from git show that broke diff view
+
+### Other
+- add logging to changedFilesProvider diff URIs
+- add logging to git content provider for diff investigation
+- remove unused selectedRepoPaths method
+- Add more comprehensive tests for dirname function
+- Remove unused diffUntracked method from GitExecutor
+- add tests for DisposableStore
+- Add test for timeAgo function
+
 ## 0.42.6
 
 ### Bug Fixes
