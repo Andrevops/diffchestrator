@@ -9,9 +9,20 @@ export class DisposableStore {
   }
 
   dispose(): void {
-    for (const d of this._disposables) {
-      d.dispose();
+    const errors: any[] = [];
+    while (this._disposables.length > 0) {
+      const d = this._disposables.pop();
+      try {
+        d?.dispose();
+      } catch (e) {
+        errors.push(e);
+      }
     }
-    this._disposables = [];
+    if (errors.length > 0) {
+      if (errors.length === 1) {
+        throw errors[0];
+      }
+      throw new AggregateError(errors, "Errors occurred while disposing");
+    }
   }
 }

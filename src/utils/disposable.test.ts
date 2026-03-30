@@ -62,4 +62,73 @@ test("DisposableStore", async (t) => {
 
     assert.strictEqual(disposedCount, 1);
   });
+
+  await t.test("dispose() should dispose items in reverse order of addition", () => {
+    const store = new DisposableStore();
+    const order: number[] = [];
+
+    store.add({ dispose: () => order.push(1) });
+    store.add({ dispose: () => order.push(2) });
+    store.add({ dispose: () => order.push(3) });
+
+    store.dispose();
+
+    assert.deepStrictEqual(order, [3, 2, 1]);
+  });
+
+  await t.test("dispose() should continue disposing even if one throws", () => {
+    const store = new DisposableStore();
+    let disposed1 = false;
+    let disposed3 = false;
+
+    store.add({
+      dispose: () => {
+        disposed1 = true;
+      },
+    });
+
+    store.add({
+      dispose: () => {
+        throw new Error("Dispose failed");
+      },
+    });
+
+    store.add({
+      dispose: () => {
+        disposed3 = true;
+      },
+    });
+
+    assert.throws(() => {
+      store.dispose();
+    }, /Dispose failed/);
+
+    assert.strictEqual(disposed1, true);
+    assert.strictEqual(disposed3, true);
+  });
+
+  await t.test("dispose() should throw AggregateError if multiple items throw", () => {
+    const store = new DisposableStore();
+
+    store.add({
+      dispose: () => {
+        throw new Error("First error");
+      },
+    });
+
+    store.add({
+      dispose: () => {
+        throw new Error("Second error");
+      },
+    });
+
+    assert.throws(
+      () => {
+        store.dispose();
+      },
+      (err: any) => {
+        return err instanceof AggregateError && err.errors.length === 2;
+      }
+    );
+  });
 });
