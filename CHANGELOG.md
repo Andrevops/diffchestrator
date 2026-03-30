@@ -2,6 +2,17 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.43.0
+
+### Features
+- yolo command sends all selected repo paths in multi-select mode
+
+### Other
+- add comprehensive coverage and error handling for DisposableStore
+- expand coverage for dirname utility
+- 🧪 Add edge case tests for timeAgo
+- add edge case tests for timeAgoShort function
+
 ## 0.42.7
 
 ### Bug Fixes
