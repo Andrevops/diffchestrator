@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.44.0
+
+### Features
+- persist selection per root when switching scan roots
+
 ## 0.43.1
 
 ### Bug Fixes
