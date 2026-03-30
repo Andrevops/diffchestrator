@@ -4,6 +4,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
+import { escapeForTerminal } from "../utils/shell";
 
 const execFileAsync = promisify(execFile);
 
@@ -254,29 +255,42 @@ export function registerTerminalCommand(
     vscode.commands.registerCommand(
       CMD.yolo,
       async (item?: any) => {
-        const targetPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
-        if (!targetPath) {
-          vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-          return;
-        }
-
-        repoManager.selectRepo(targetPath);
-        const existing = getAlive(targetPath, "yolo");
-        if (existing) {
-          existing.show();
-          return;
-        }
-
         if (!(await validateCli("yolo"))) return;
 
-        const name = path.basename(targetPath);
-        const terminal = vscode.window.createTerminal({
-          name: `YOLO: ${name}`,
-          cwd: targetPath,
-        });
-        repoTerminals.set(key(targetPath, "yolo"), terminal);
-        terminal.show();
-        terminal.sendText("yolo");
+        const selectedPaths = repoManager.selectedRepoPaths;
+        const singlePath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+
+        if (selectedPaths.size > 1) {
+          // Multi-repo mode: open yolo with --add-dir for each selected repo
+          const addDirArgs = [...selectedPaths]
+            .map((p) => `--add-dir ${escapeForTerminal(p)}`)
+            .join(" ");
+
+          const terminal = vscode.window.createTerminal({
+            name: "YOLO (multi-repo)",
+            cwd: repoManager.currentRoot,
+          });
+          terminal.show();
+          terminal.sendText(`yolo ${addDirArgs}`);
+        } else if (singlePath) {
+          repoManager.selectRepo(singlePath);
+          const existing = getAlive(singlePath, "yolo");
+          if (existing) {
+            existing.show();
+            return;
+          }
+
+          const name = path.basename(singlePath);
+          const terminal = vscode.window.createTerminal({
+            name: `YOLO: ${name}`,
+            cwd: singlePath,
+          });
+          repoTerminals.set(key(singlePath, "yolo"), terminal);
+          terminal.show();
+          terminal.sendText("yolo");
+        } else {
+          vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
+        }
       }
     )
   );
