@@ -182,6 +182,11 @@ export class RepoManager implements vscode.Disposable {
       });
     }
 
+    // Save swap target before clearing selection (so swap works after root switch)
+    if (!this._swappingBack && this._selectedRepo) {
+      this._swapTarget = { path: this._selectedRepo, root: this._currentRoot };
+    }
+
     this._currentRoot = rootPath;
     this._repos.clear();
     this._activeRepoPathsCache = undefined;
