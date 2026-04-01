@@ -887,14 +887,33 @@ export function activate(context: vscode.ExtensionContext): void {
       const current = repoManager.selectedRepo;
       const currentRoot = repoManager.currentRoot;
 
-      // If target is in a different root, switch roots first
       repoManager.beginSwap();
       try {
+        // Step 1: Switch root if needed (and wait for it to fully complete)
         if (target.root && target.root !== repoManager.currentRoot) {
           await repoManager.scan(target.root);
           fileWatcher.watchAll();
+          // Wait for coalesced events to settle
+          await new Promise((r) => setTimeout(r, 100));
         }
-        await vscode.commands.executeCommand(CMD.viewDiff, { path: target.path });
+
+        // Step 2: Select the repo
+        repoManager.selectRepo(target.path);
+
+        // Step 3: Focus changed files view
+        await vscode.commands.executeCommand(`${VIEW_CHANGED_FILES}.focus`);
+
+        // Step 4: Switch terminal
+        await showTerminalIfExists(target.path);
+
+        // Step 5: Open first changed file if any
+        try {
+          const status = await sharedGit.status(target.path);
+          const firstFile = status.unstaged[0] ?? status.untracked[0] ?? status.staged[0];
+          if (firstFile) {
+            await openFileDiff(target.path, firstFile);
+          }
+        } catch { /* non-critical */ }
       } finally {
         repoManager.endSwap();
       }
@@ -904,7 +923,7 @@ export function activate(context: vscode.ExtensionContext): void {
         repoManager.setSwapTarget({ path: current, root: currentRoot });
       }
 
-      // Force UI refresh after swap completes
+      // Force UI refresh
       updateViewInfo();
     })
   );
