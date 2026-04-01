@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.45.0
+
+### Features
+- swap to previous repo across roots with Alt+D, Backspace
+
 ## 0.44.1
 
 ### Bug Fixes
