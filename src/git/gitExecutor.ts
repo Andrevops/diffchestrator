@@ -2,8 +2,8 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import * as path from "path";
 import * as fs from "fs";
-import type { RepoStatus, FileChange, CommitEntry } from "../types";
-import { ChangeType, FileStatus } from "../types";
+import type { RepoStatus, FileChange, CommitEntry } from "../types.ts";
+import { ChangeType, FileStatus } from "../types.ts";
 
 const execFileAsync = promisify(execFile);
 
