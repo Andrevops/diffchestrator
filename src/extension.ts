@@ -903,6 +903,9 @@ export function activate(context: vscode.ExtensionContext): void {
       if (current) {
         repoManager.setSwapTarget({ path: current, root: currentRoot });
       }
+
+      // Force UI refresh after swap completes
+      updateViewInfo();
     })
   );
 
