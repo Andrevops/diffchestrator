@@ -70,6 +70,7 @@ export const CMD = {
   fetchRepo: "diffchestrator.fetchRepo",
   selectAllActive: "diffchestrator.selectAllActive",
   deselectAll: "diffchestrator.deselectAll",
+  swapRepo: "diffchestrator.swapRepo",
 } as const;
 
 export const CONFIG = {

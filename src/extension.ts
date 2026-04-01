@@ -875,6 +875,23 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
+  // Swap between current and previous repo (works across roots)
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.swapRepo, async () => {
+      const prev = repoManager.previousRepo;
+      if (!prev) {
+        vscode.window.showInformationMessage("Diffchestrator: No previous repo to swap to.");
+        return;
+      }
+      // If previous repo is in a different root, switch roots first
+      if (prev.root && prev.root !== repoManager.currentRoot) {
+        await repoManager.scan(prev.root);
+        fileWatcher.watchAll();
+      }
+      await vscode.commands.executeCommand(CMD.viewDiff, { path: prev.path });
+    })
+  );
+
   // Close active repo from recent list
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.closeActiveRepo, async () => {

@@ -466,6 +466,12 @@
         "icon": "$(close-all)"
       },
       {
+        "command": "diffchestrator.swapRepo",
+        "title": "Swap to Previous Repo",
+        "category": "Diffchestrator",
+        "icon": "$(arrow-swap)"
+      },
+      {
         "command": "diffchestrator.fetchRepo",
         "title": "Fetch",
         "category": "Diffchestrator",
@@ -860,6 +866,11 @@
         "command": "diffchestrator.loadSnapshot",
         "key": "alt+d shift+l",
         "mac": "alt+d shift+l"
+      },
+      {
+        "command": "diffchestrator.swapRepo",
+        "key": "alt+d backspace",
+        "mac": "alt+d backspace"
       }
     ],
     "configuration": {
