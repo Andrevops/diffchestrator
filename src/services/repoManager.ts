@@ -239,6 +239,8 @@ export class RepoManager implements vscode.Disposable {
   async refreshRepo(repoPath: string): Promise<void> {
     // Suppress file watcher to avoid double refresh
     this._fileWatcher?.suppressRefresh(repoPath);
+    // Invalidate status cache so Changed Files view gets fresh data
+    this._git.invalidateStatus(repoPath);
     try {
       // shortStatus now returns branch too — single git process instead of two
       const s = await this._git.shortStatus(repoPath);

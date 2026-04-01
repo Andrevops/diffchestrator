@@ -44,6 +44,10 @@ export class GitExecutor {
     }
   }
 
+  invalidateStatus(repoPath: string): void {
+    this._statusCache.delete(repoPath);
+  }
+
   async isGitRepo(dirPath: string): Promise<boolean> {
     const gitDir = path.join(dirPath, ".git");
     try {
