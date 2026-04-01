@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.45.2
+
+### Bug Fixes
+- force UI refresh after swap to update Active Repos view
+
 ## 0.45.1
 
 ### Bug Fixes
