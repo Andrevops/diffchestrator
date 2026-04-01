@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.45.4
+
+### Bug Fixes
+- set swap target in scan() before clearing selection
+
 ## 0.45.3
 
 ### Bug Fixes
