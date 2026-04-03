@@ -29,7 +29,17 @@ import { WorkspaceAutoScan } from "./services/workspaceAutoScan";
 import { showTerminalIfExists, findRepoForTerminal } from "./commands/terminal";
 import * as path from "path";
 
-export function activate(context: vscode.ExtensionContext): void {
+/** Public API for sibling extensions (e.g. Epic Lens) */
+export interface DiffchestratorApi {
+  /** Currently active scan root (e.g. /home/user/RealManage) */
+  getCurrentRoot(): string | undefined;
+  /** Currently selected repo path */
+  getSelectedRepo(): string | undefined;
+  /** Fires when the active root or selection changes */
+  onDidChangeSelection: vscode.Event<void>;
+}
+
+export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   // Check git is installed
   const { execFileSync } = require("child_process");
   try {
@@ -1238,6 +1248,13 @@ export function activate(context: vscode.ExtensionContext): void {
       });
     }
   }
+
+  // Public API for sibling extensions
+  return {
+    getCurrentRoot: () => repoManager.currentRoot,
+    getSelectedRepo: () => repoManager.selectedRepo,
+    onDidChangeSelection: repoManager.onDidChangeSelection,
+  };
 }
 
 export function deactivate(): void {
