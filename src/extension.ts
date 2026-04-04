@@ -667,6 +667,18 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     })
   );
 
+  // Reveal in system file explorer
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.revealInExplorer, async (item?: any) => {
+      const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+      if (!repoPath) {
+        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
+        return;
+      }
+      await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(repoPath));
+    })
+  );
+
   // Repo tags (#38)
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.setRepoTag, async (item?: any) => {

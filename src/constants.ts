@@ -71,6 +71,7 @@ export const CMD = {
   selectAllActive: "diffchestrator.selectAllActive",
   deselectAll: "diffchestrator.deselectAll",
   swapRepo: "diffchestrator.swapRepo",
+  revealInExplorer: "diffchestrator.revealInExplorer",
 } as const;
 
 export const CONFIG = {

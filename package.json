@@ -476,6 +476,12 @@
         "title": "Fetch",
         "category": "Diffchestrator",
         "icon": "$(cloud-download)"
+      },
+      {
+        "command": "diffchestrator.revealInExplorer",
+        "title": "Reveal in File Explorer",
+        "category": "Diffchestrator",
+        "icon": "$(folder-opened)"
       }
     ],
     "menus": {
@@ -670,9 +676,14 @@
           "group": "3_misc@4"
         },
         {
+          "command": "diffchestrator.revealInExplorer",
+          "when": "viewItem == repo || viewItem == directory",
+          "group": "3_misc@5"
+        },
+        {
           "command": "diffchestrator.selectRepo",
           "when": "viewItem == repo",
-          "group": "3_misc@5"
+          "group": "3_misc@6"
         },
         {
           "command": "diffchestrator.stageFile",
@@ -871,6 +882,11 @@
         "command": "diffchestrator.swapRepo",
         "key": "alt+d backspace",
         "mac": "alt+d backspace"
+      },
+      {
+        "command": "diffchestrator.revealInExplorer",
+        "key": "alt+d o",
+        "mac": "alt+d o"
       }
     ],
     "configuration": {
