@@ -153,8 +153,26 @@ updateChangelog(version, tag);
 commitAndTag(version);
 console.log(`Committed and tagged v${version}\n`);
 
-// Build + package
+// Build + package (Marketplace: andrevops-com)
 execSync("npm run package", { cwd: root, stdio: "inherit" });
 
-console.log(`\nReady: diffchestrator-${version}.vsix`);
-console.log(`Install: code --install-extension diffchestrator-${version}.vsix --force`);
+// Package for Open VSX (publisher: andrevops)
+const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+const originalPublisher = pkg.publisher;
+pkg.publisher = "andrevops";
+writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+
+const openvsxFile = `diffchestrator-${version}-openvsx.vsix`;
+execSync(
+  `npx @vscode/vsce package --no-dependencies -o ${openvsxFile}`,
+  { cwd: root, stdio: "inherit" }
+);
+
+// Restore original publisher
+pkg.publisher = originalPublisher;
+writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+
+console.log(`\nReady:`);
+console.log(`  Marketplace: diffchestrator-${version}.vsix`);
+console.log(`  Open VSX:    ${openvsxFile}`);
+console.log(`\nInstall: code --install-extension diffchestrator-${version}.vsix --force`);

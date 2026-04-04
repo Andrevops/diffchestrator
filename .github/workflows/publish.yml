@@ -30,8 +30,20 @@ jobs:
       - name: Build extension
         run: npm run build
 
-      - name: Package .vsix
+      - name: Package .vsix (Marketplace — andrevops-com)
         run: npx @vscode/vsce package --no-dependencies
+
+      - name: Package .vsix (Open VSX — andrevops)
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json','utf-8'));
+            pkg.publisher = 'andrevops';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          npx @vscode/vsce package --no-dependencies -o "diffchestrator-${VERSION}-openvsx.vsix"
+          git checkout package.json
 
       - name: Generate changelog
         id: changelog
@@ -83,8 +95,14 @@ jobs:
           files: "*.vsix"
           body_path: RELEASE_NOTES.md
 
-      # Uncomment when VSCE_PAT is available to auto-publish to marketplace
+      # Uncomment when VSCE_PAT secret is configured
       # - name: Publish to VS Code Marketplace
       #   run: npx @vscode/vsce publish --no-dependencies
       #   env:
       #     VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      # Uncomment when OVSX_PAT secret is configured
+      # - name: Publish to Open VSX
+      #   run: |
+      #     VERSION=$(node -p "require('./package.json').version")
+      #     npx ovsx publish "diffchestrator-${VERSION}-openvsx.vsix" -p ${{ secrets.OVSX_PAT }}
