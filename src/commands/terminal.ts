@@ -28,18 +28,26 @@ async function commandExists(cmd: string): Promise<boolean> {
  */
 export async function validateCli(kind: "claude" | "yolo"): Promise<boolean> {
   if (kind === "yolo") {
-    // yolo alias requires both docker and claude
-    const [hasDocker, hasClaude] = await Promise.all([
+    // yolo requires docker, claude, and the yolo command itself
+    const [hasDocker, hasClaude, hasYolo] = await Promise.all([
       commandExists("docker"),
       commandExists("claude"),
+      commandExists("yolo"),
     ]);
     const missing: string[] = [];
+    if (!hasYolo) missing.push("yolo");
     if (!hasDocker) missing.push("docker");
     if (!hasClaude) missing.push("claude");
     if (missing.length > 0) {
-      vscode.window.showErrorMessage(
-        `Diffchestrator: Yolo requires ${missing.join(" and ")} to be installed.`
+      const action = await vscode.window.showErrorMessage(
+        `Diffchestrator: Yolo requires ${missing.join(", ")} to be installed.`,
+        "Install yolo"
       );
+      if (action === "Install yolo") {
+        vscode.env.openExternal(
+          vscode.Uri.parse("https://github.com/anthropics/claude-code/blob/main/cli/claude-sandbox/README.md")
+        );
+      }
       return false;
     }
     return true;
