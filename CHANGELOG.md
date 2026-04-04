@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.48.3
+
+### Other
+- update README and CHANGELOG for v0.46–0.48, fix make install to exclude openvsx builds
+
 ## 0.48.2
 
 ### Other
