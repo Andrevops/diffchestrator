@@ -121,6 +121,28 @@ Claude Code works best when you can see what it changed, across every repo it to
 - **Left**: repo count + total changes (click to open sidebar)
 - **Right**: active repo name + branch + changes with prominent background (click to switch repo)
 
+### Extension API
+
+Diffchestrator exposes a public API for sibling extensions (e.g., Epic Lens):
+
+```typescript
+interface DiffchestratorApi {
+  getCurrentRoot(): string | undefined;
+  getSelectedRepo(): string | undefined;
+  onDidChangeSelection: vscode.Event<void>;
+}
+```
+
+Consume it from another extension:
+
+```typescript
+const diffchestrator = vscode.extensions.getExtension("andrevops-com.diffchestrator");
+const api = diffchestrator?.exports as DiffchestratorApi;
+api?.onDidChangeSelection(() => {
+  console.log("Selection changed:", api.getSelectedRepo());
+});
+```
+
 ## Keyboard Shortcuts
 
 All shortcuts use **Alt+D** as a chord prefix — press `Alt+D`, release, then press the key:
@@ -164,7 +186,7 @@ All shortcuts use **Alt+D** as a chord prefix — press `Alt+D`, release, then p
 | `Alt+D, Backspace` | Swap to previous repo (across roots) |
 | `Alt+D, O` | Reveal repo in system file explorer |
 
-> On macOS, use `Alt+D` instead of `Alt+D`.
+> On macOS, use `Option+D` as the chord prefix.
 
 ## Context Menu Actions
 
@@ -180,6 +202,7 @@ Right-click a **repository** in the tree:
 Right-click a **directory** in the tree:
 
 - Open Terminal / Open Claude Code / Yolo (launches with cwd set to the directory)
+- Reveal in File Explorer
 - Toggle Favorite
 
 Right-click a **changed file**:
@@ -308,8 +331,10 @@ src/
 │   └── diffWebviewPanel.ts   # Multi-repo diff webview
 └── utils/
     ├── time.ts              # Shared timeAgo / timeAgoShort utilities
-    ├── paths.ts
-    └── disposable.ts
+    ├── paths.ts             # Path manipulation (basename, dirname)
+    ├── shell.ts             # Terminal argument escaping
+    ├── fileItem.ts          # File item resolution
+    └── disposable.ts        # DisposableStore helper
 
 webview-ui/                   # React app for multi-repo diff
 ├── src/

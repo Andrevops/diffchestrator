@@ -941,7 +941,7 @@
         "diffchestrator.autoPushAfterCommit": {
           "type": "boolean",
           "default": false,
-          "description": "Automatically push after a successful commit via Ctrl+D, M"
+          "description": "Automatically push after a successful commit via Alt+D, M"
         },
         "diffchestrator.repoTags": {
           "type": "object",

@@ -29,8 +29,10 @@ make watch        # Watch mode for development
 - `src/providers/` — Tree data providers for sidebar views
 - `src/services/` — Core services (repo manager, file watcher, status bar)
 - `src/git/` — Git CLI wrapper and directory scanner
+- `src/utils/` — Shared utilities (time, paths, shell escaping, disposables)
+- `src/views/` — Webview panels (multi-repo diff)
 - `webview-ui/` — React app for multi-repo diff view (Vite + react-diff-view)
-- `scripts/` — Release automation
+- `scripts/` — Release automation (dual Marketplace + Open VSX builds)
 
 ## Conventions
 
@@ -70,7 +72,7 @@ When adding a new command:
 2. Register the handler in `src/extension.ts` or a command module
 3. Declare the command in `package.json` under `contributes.commands`
 4. Add menu entries if needed under `contributes.menus`
-5. Add a keybinding if appropriate (use `Ctrl+D` chord prefix)
+5. Add a keybinding if appropriate (use `Alt+D` chord prefix)
 
 ### Testing
 
@@ -99,4 +101,4 @@ make release      # Auto-detect bump, update changelog, tag, build
 git push && git push --tags   # Triggers GitHub Actions release
 ```
 
-The GitHub Actions workflow builds the `.vsix` and creates a GitHub Release with a grouped changelog.
+The GitHub Actions workflow builds two `.vsix` files (Marketplace + Open VSX), creates a GitHub Release with both attached, and auto-publishes to Open VSX.
