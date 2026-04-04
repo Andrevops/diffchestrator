@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.48.7
+
+### Bug Fixes
+- Only validate docker and claude for yolo — yolo itself is a shell alias
+
 ## 0.48.6
 
 ### Other
