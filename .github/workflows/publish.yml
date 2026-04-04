@@ -101,8 +101,7 @@ jobs:
       #   env:
       #     VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
-      # Uncomment when OVSX_PAT secret is configured
-      # - name: Publish to Open VSX
-      #   run: |
-      #     VERSION=$(node -p "require('./package.json').version")
-      #     npx ovsx publish "diffchestrator-${VERSION}-openvsx.vsix" -p ${{ secrets.OVSX_PAT }}
+      - name: Publish to Open VSX
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          npx ovsx publish "diffchestrator-${VERSION}-openvsx.vsix" -p ${{ secrets.OVSX_PAT }}
