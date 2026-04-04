@@ -67,21 +67,23 @@ jobs:
             FIXES=$(git log "$RANGE" --pretty=format:"%s" --no-merges | grep -E "^fix" | sed 's/^fix[^:]*: //' || true)
             OTHERS=$(git log "$RANGE" --pretty=format:"%s" --no-merges | grep -vE "^(feat|fix|chore\(release\))" | head -10 || true)
 
+            cap() { echo "$1" | sed 's/^./\U&/'; }
+
             if [ -n "$FEATS" ]; then
               echo "### Features"
-              echo "$FEATS" | while IFS= read -r line; do echo "- $line"; done
+              echo "$FEATS" | while IFS= read -r line; do echo "- $(cap "$line")"; done
               echo ""
             fi
 
             if [ -n "$FIXES" ]; then
               echo "### Bug Fixes"
-              echo "$FIXES" | while IFS= read -r line; do echo "- $line"; done
+              echo "$FIXES" | while IFS= read -r line; do echo "- $(cap "$line")"; done
               echo ""
             fi
 
             if [ -n "$OTHERS" ]; then
               echo "### Other"
-              echo "$OTHERS" | while IFS= read -r line; do echo "- $line"; done
+              echo "$OTHERS" | while IFS= read -r line; do echo "- $(cap "$line")"; done
               echo ""
             fi
 

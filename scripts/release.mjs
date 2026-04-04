@@ -100,11 +100,12 @@ function updateChangelog(version, since) {
 
   if (feats.length + fixes.length + perfs.length + others.length === 0) return;
 
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   const sections = [];
-  if (feats.length) sections.push("### Features\n" + feats.map((f) => `- ${f}`).join("\n"));
-  if (fixes.length) sections.push("### Bug Fixes\n" + fixes.map((f) => `- ${f}`).join("\n"));
-  if (perfs.length) sections.push("### Performance\n" + perfs.map((f) => `- ${f}`).join("\n"));
-  if (others.length) sections.push("### Other\n" + others.map((f) => `- ${f}`).join("\n"));
+  if (feats.length) sections.push("### Features\n" + feats.map((f) => `- ${cap(f)}`).join("\n"));
+  if (fixes.length) sections.push("### Bug Fixes\n" + fixes.map((f) => `- ${cap(f)}`).join("\n"));
+  if (perfs.length) sections.push("### Performance\n" + perfs.map((f) => `- ${cap(f)}`).join("\n"));
+  if (others.length) sections.push("### Other\n" + others.map((f) => `- ${cap(f)}`).join("\n"));
 
   const entry = `## ${version}\n\n${sections.join("\n\n")}`;
 
