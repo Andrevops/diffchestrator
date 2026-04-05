@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.50.1
+
+### Other
+- Rewrite Getting Started with first-time setup guide, update dashboard docs
+
 ## 0.50.0
 
 ### Features
