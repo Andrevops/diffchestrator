@@ -4,13 +4,23 @@ import SyncOverview from "./SyncOverview";
 import BranchMap from "./BranchMap";
 import ChangeHeatmap from "./ChangeHeatmap";
 import SessionSummary from "./SessionSummary";
+import ActivityLog from "./ActivityLog";
 import ShortcutRef from "./ShortcutRef";
+
+export interface ActivityEntry {
+  repoName: string;
+  shortHash: string;
+  author: string;
+  date: string;
+  message: string;
+}
 
 export interface DashboardPayload {
   syncOverview: SyncOverviewEntry[];
   branchMap: BranchMapEntry[];
   changeHeatmap: HeatmapEntry[];
   sessionSummary: SessionSummaryEntry[];
+  activityLog: ActivityEntry[];
   sessionStartTime: string;
 }
 
@@ -21,6 +31,7 @@ export interface SyncOverviewEntry {
   ahead: number;
   behind: number;
   totalChanges: number;
+  stashCount: number;
 }
 
 export interface BranchMapEntry {
@@ -50,7 +61,7 @@ export interface SessionSummaryEntry {
   }[];
 }
 
-type Tab = "dashboard" | "shortcuts";
+type Tab = "dashboard" | "activity" | "shortcuts";
 
 export default function DashboardApp() {
   const [data, setData] = useState<DashboardPayload | null>(null);
@@ -103,17 +114,30 @@ export default function DashboardApp() {
             Dashboard
           </button>
           <button
+            className={`dashboard-tab ${tab === "activity" ? "dashboard-tab--active" : ""}`}
+            onClick={() => setTab("activity")}
+          >
+            Activity
+          </button>
+          <button
             className={`dashboard-tab ${tab === "shortcuts" ? "dashboard-tab--active" : ""}`}
             onClick={() => setTab("shortcuts")}
           >
             Shortcuts
           </button>
         </div>
-        {tab === "dashboard" && (
-          <button className="refresh-btn" onClick={handleRefresh} disabled={loading}>
-            {loading ? <><span className="spinner" /> Refreshing...</> : "Refresh"}
-          </button>
-        )}
+        <span className="header-actions">
+          {tab === "dashboard" && (
+            <>
+              <button className="refresh-btn" onClick={() => vscode.postMessage({ type: "scan" })}>
+                Scan
+              </button>
+              <button className="refresh-btn" onClick={handleRefresh} disabled={loading}>
+                {loading ? <><span className="spinner" /> Refreshing...</> : "Refresh"}
+              </button>
+            </>
+          )}
+        </span>
       </header>
 
       {tab === "dashboard" && (
@@ -127,6 +151,8 @@ export default function DashboardApp() {
           />
         </div>
       )}
+
+      {tab === "activity" && <ActivityLog entries={data.activityLog} />}
 
       {tab === "shortcuts" && <ShortcutRef />}
     </div>

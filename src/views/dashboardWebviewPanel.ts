@@ -10,6 +10,7 @@ interface SyncOverviewEntry {
   ahead: number;
   behind: number;
   totalChanges: number;
+  stashCount: number;
 }
 
 interface BranchMapEntry {
@@ -33,11 +34,20 @@ interface SessionSummaryEntry {
   commits: { hash: string; shortHash: string; author: string; date: string; message: string }[];
 }
 
+interface ActivityEntry {
+  repoName: string;
+  shortHash: string;
+  author: string;
+  date: string;
+  message: string;
+}
+
 interface DashboardPayload {
   syncOverview: SyncOverviewEntry[];
   branchMap: BranchMapEntry[];
   changeHeatmap: HeatmapEntry[];
   sessionSummary: SessionSummaryEntry[];
+  activityLog: ActivityEntry[];
   sessionStartTime: string;
 }
 
@@ -176,6 +186,7 @@ export class DashboardWebviewPanel {
       ahead: r.ahead,
       behind: r.behind,
       totalChanges: r.totalChanges,
+      stashCount: r.stashCount,
     }));
 
     const branchMap: BranchMapEntry[] = repos.map((r) => ({
@@ -193,6 +204,7 @@ export class DashboardWebviewPanel {
         branchMap,
         changeHeatmap: [],
         sessionSummary: [],
+        activityLog: [],
         sessionStartTime: sinceISO,
       } satisfies DashboardPayload,
     });
@@ -201,15 +213,17 @@ export class DashboardWebviewPanel {
     const BATCH = 10;
     const heatmapEntries: HeatmapEntry[] = [];
     const sessionEntries: SessionSummaryEntry[] = [];
+    const activityEntries: ActivityEntry[] = [];
 
     for (let i = 0; i < repos.length; i += BATCH) {
       const batch = repos.slice(i, i + BATCH);
       await Promise.all(
         batch.map(async (r) => {
           try {
-            const [lastDate, commits] = await Promise.all([
+            const [lastDate, sessionCommits, recentCommits] = await Promise.all([
               this._git.lastCommitDate(r.path),
               this._git.logSince(r.path, sinceISO, 50),
+              this._git.log(r.path, 3),
             ]);
             heatmapEntries.push({
               name: r.name,
@@ -222,11 +236,20 @@ export class DashboardWebviewPanel {
                   )
                 : undefined,
             });
-            if (commits.length > 0) {
+            if (sessionCommits.length > 0) {
               sessionEntries.push({
                 repoName: r.name,
                 repoPath: r.path,
-                commits,
+                commits: sessionCommits,
+              });
+            }
+            for (const c of recentCommits) {
+              activityEntries.push({
+                repoName: r.name,
+                shortHash: c.shortHash,
+                author: c.author,
+                date: c.date,
+                message: c.message,
               });
             }
           } catch {
@@ -236,6 +259,9 @@ export class DashboardWebviewPanel {
       );
     }
 
+    // Sort activity by date descending
+    activityEntries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
     // Send complete data
     this._panel.webview.postMessage({
       type: "dashboardUpdate",
@@ -244,6 +270,7 @@ export class DashboardWebviewPanel {
         branchMap,
         changeHeatmap: heatmapEntries,
         sessionSummary: sessionEntries,
+        activityLog: activityEntries,
         sessionStartTime: sinceISO,
       } satisfies DashboardPayload,
     });
@@ -258,6 +285,20 @@ export class DashboardWebviewPanel {
       case "refresh":
         await this._repoManager.refreshAll();
         await this._update();
+        break;
+
+      case "scan":
+        await vscode.commands.executeCommand(CMD.rescan);
+        await this._update();
+        break;
+
+      case "bulkPush":
+        await vscode.commands.executeCommand(CMD.bulkPush);
+        await this._update();
+        break;
+
+      case "branchCleanup":
+        await vscode.commands.executeCommand(CMD.branchCleanup);
         break;
 
       case "openRepo": {

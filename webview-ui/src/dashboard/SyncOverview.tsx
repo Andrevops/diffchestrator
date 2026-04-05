@@ -74,6 +74,14 @@ export default function SyncOverview({ entries, onOpenRepo }: Props) {
               Pull {behindCount} outdated
             </button>
           )}
+          {aheadCount > 0 && (
+            <button
+              className="refresh-btn"
+              onClick={() => vscode.postMessage({ type: "bulkPush" })}
+            >
+              Push {aheadCount} ahead
+            </button>
+          )}
         </span>
       </div>
       <div className="dashboard-section-body">
@@ -98,6 +106,7 @@ export default function SyncOverview({ entries, onOpenRepo }: Props) {
                 <th onClick={() => toggleSort("totalChanges")}>
                   Changes{indicator("totalChanges")}
                 </th>
+                <th title="Stashes">S</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -116,6 +125,7 @@ export default function SyncOverview({ entries, onOpenRepo }: Props) {
                   <td>{e.ahead || ""}</td>
                   <td>{e.behind || ""}</td>
                   <td>{e.totalChanges || ""}</td>
+                  <td>{e.stashCount || ""}</td>
                   <td className="sync-actions">
                     {e.behind > 0 && (
                       <button

@@ -1,3 +1,4 @@
+import vscode from "../vscode";
 import type { BranchMapEntry } from "./DashboardApp";
 
 interface Props {
@@ -24,10 +25,21 @@ export default function BranchMap({ entries, onOpenRepo }: Props) {
   return (
     <div className="dashboard-section">
       <div className="dashboard-section-header">
-        Branch Map
-        <span className="section-badge">
-          {mainRepos.length} main · {featureRepos.length} feature
+        <span>
+          Branch Map{" "}
+          <span className="section-badge">
+            {mainRepos.length} main · {featureRepos.length} feature
+          </span>
         </span>
+        {featureRepos.length > 0 && (
+          <button
+            className="refresh-btn"
+            onClick={() => vscode.postMessage({ type: "branchCleanup" })}
+            title="Find and delete merged branches"
+          >
+            Cleanup
+          </button>
+        )}
       </div>
       <div className="dashboard-section-body">
         {entries.length === 0 ? (
