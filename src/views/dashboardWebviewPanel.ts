@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { RepoManager } from "../services/repoManager";
+import { showTerminalIfExists } from "../commands/terminal";
 
 interface SyncOverviewEntry {
   name: string;
@@ -261,6 +262,7 @@ export class DashboardWebviewPanel {
       case "openRepo": {
         const repoPath = msg.repoPath as string;
         this._repoManager.selectRepo(repoPath);
+        await showTerminalIfExists(repoPath);
         break;
       }
 
