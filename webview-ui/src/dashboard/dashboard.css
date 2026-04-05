@@ -1,0 +1,252 @@
+.dashboard-container {
+  padding: 8px 12px;
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0 12px;
+  border-bottom: 1px solid var(--vscode-panel-border, #333);
+  margin-bottom: 12px;
+}
+
+.dashboard-header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 600px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Section card */
+.dashboard-section {
+  border: 1px solid var(--vscode-panel-border, #333);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.dashboard-section-header {
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 13px;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  border-bottom: 1px solid var(--vscode-panel-border, #333);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background-color: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.dashboard-section-body {
+  padding: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* Sync Overview table */
+.sync-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.sync-table th {
+  text-align: left;
+  padding: 4px 8px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--vscode-descriptionForeground);
+  font-weight: 600;
+  border-bottom: 1px solid var(--vscode-panel-border, #333);
+}
+
+.sync-table th:hover {
+  color: var(--vscode-editor-foreground);
+}
+
+.sync-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border, #222);
+}
+
+.sync-row--clean {
+  opacity: 0.5;
+}
+
+.sync-row--behind td:first-child {
+  border-left: 3px solid var(--vscode-gitDecoration-deletedResourceForeground, #c74e39);
+}
+
+.sync-row--ahead td:first-child {
+  border-left: 3px solid var(--vscode-gitDecoration-untrackedResourceForeground, #73c991);
+}
+
+.sync-row--changes td:first-child {
+  border-left: 3px solid var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d);
+}
+
+.sync-repo-link {
+  cursor: pointer;
+  color: var(--vscode-textLink-foreground, #4fc1ff);
+}
+
+.sync-repo-link:hover {
+  text-decoration: underline;
+}
+
+.sort-indicator {
+  margin-left: 4px;
+  font-size: 10px;
+}
+
+/* Branch Map */
+.branch-group {
+  margin-bottom: 12px;
+}
+
+.branch-group-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.branch-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.branch-pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--vscode-panel-border, #444);
+  cursor: pointer;
+}
+
+.branch-pill:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.branch-pill--main {
+  opacity: 0.7;
+}
+
+.branch-pill--feature {
+  color: var(--vscode-gitDecoration-untrackedResourceForeground, #73c991);
+  border-color: var(--vscode-gitDecoration-untrackedResourceForeground, #73c991);
+}
+
+.branch-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  margin: 8px 0 4px;
+}
+
+/* Heatmap */
+.heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px;
+}
+
+.heatmap-tile {
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid var(--vscode-panel-border, #333);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.heatmap-tile:hover {
+  border-color: var(--vscode-focusBorder, #007fd4);
+}
+
+.heatmap-tile-name {
+  font-size: 11px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 4px;
+}
+
+.heatmap-tile-stats {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* Session Summary */
+.session-repo {
+  margin-bottom: 12px;
+}
+
+.session-repo-header {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.session-commit {
+  display: flex;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 11px;
+  border-bottom: 1px solid var(--vscode-panel-border, #222);
+}
+
+.session-commit:last-child {
+  border-bottom: none;
+}
+
+.commit-hash {
+  color: var(--vscode-textLink-foreground, #4fc1ff);
+  font-family: var(--vscode-editor-fontFamily, monospace);
+  flex-shrink: 0;
+}
+
+.commit-message {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commit-time {
+  color: var(--vscode-descriptionForeground);
+  flex-shrink: 0;
+}
+
+/* Empty state */
+.section-empty {
+  text-align: center;
+  padding: 16px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}

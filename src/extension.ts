@@ -21,6 +21,7 @@ import { registerStashCommands } from "./commands/stash";
 import { ActiveReposProvider } from "./providers/activeReposProvider";
 import { GitContentProvider } from "./providers/gitContentProvider";
 import { DiffWebviewPanel } from "./views/diffWebviewPanel";
+import { DashboardWebviewPanel } from "./views/dashboardWebviewPanel";
 import { FileWatcher } from "./services/fileWatcher";
 import { StatusBarManager } from "./services/statusBar";
 import { InlineBlameService } from "./services/inlineBlame";
@@ -56,6 +57,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     return;
   }
 
+  const sessionStartTime = Date.now();
   const repoManager = new RepoManager(context.workspaceState);
   context.subscriptions.push(repoManager);
 
@@ -1231,6 +1233,13 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.viewMultiRepoDiff, () => {
       DiffWebviewPanel.createOrShow(context.extensionUri, repoManager);
+    })
+  );
+
+  // Dashboard webview
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.dashboard, () => {
+      DashboardWebviewPanel.createOrShow(context.extensionUri, repoManager, sessionStartTime);
     })
   );
 

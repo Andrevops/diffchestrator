@@ -331,6 +331,55 @@ export class GitExecutor {
     return entries;
   }
 
+  async logSince(
+    repoPath: string,
+    since: string,
+    count = 50
+  ): Promise<CommitEntry[]> {
+    const result = await this._run(
+      [
+        "log",
+        `--since=${since}`,
+        `-${count}`,
+        "--format=%H%n%h%n%an%n%ai%n%s%n---END---",
+      ],
+      repoPath
+    );
+
+    if (!result.stdout.trim()) {
+      return [];
+    }
+
+    const entries: CommitEntry[] = [];
+    const blocks = result.stdout.split("---END---\n");
+
+    for (const block of blocks) {
+      const trimmed = block.trim();
+      if (!trimmed) continue;
+      const lines = trimmed.split("\n");
+      if (lines.length >= 5) {
+        entries.push({
+          hash: lines[0],
+          shortHash: lines[1],
+          author: lines[2],
+          date: lines[3],
+          message: lines.slice(4).join("\n"),
+        });
+      }
+    }
+
+    return entries;
+  }
+
+  async lastCommitDate(repoPath: string): Promise<string | undefined> {
+    const result = await this._run(
+      ["log", "-1", "--format=%ai"],
+      repoPath
+    );
+    const date = result.stdout.trim();
+    return date || undefined;
+  }
+
   async show(repoPath: string, ref: string): Promise<string> {
     if (ref.startsWith("-")) return ""; // block flag injection
     const result = await this._run(["show", ref], repoPath);

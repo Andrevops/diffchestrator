@@ -482,6 +482,12 @@
         "title": "Reveal in File Explorer",
         "category": "Diffchestrator",
         "icon": "$(folder-opened)"
+      },
+      {
+        "command": "diffchestrator.dashboard",
+        "title": "Dashboard",
+        "category": "Diffchestrator",
+        "icon": "$(dashboard)"
       }
     ],
     "menus": {
@@ -557,6 +563,11 @@
           "command": "diffchestrator.switchRoot",
           "when": "view == diffchestrator.repos",
           "group": "navigation@6"
+        },
+        {
+          "command": "diffchestrator.dashboard",
+          "when": "view == diffchestrator.repos && diffchestrator.hasRepos",
+          "group": "navigation@7"
         },
         {
           "command": "diffchestrator.stageAll",
@@ -887,6 +898,11 @@
         "command": "diffchestrator.revealInExplorer",
         "key": "alt+d o",
         "mac": "alt+d o"
+      },
+      {
+        "command": "diffchestrator.dashboard",
+        "key": "alt+d v",
+        "mac": "alt+d v"
       }
     ],
     "configuration": {
@@ -980,7 +996,7 @@
     }
   },
   "scripts": {
-    "build:webview": "cd webview-ui && npm run build",
+    "build:webview": "cd webview-ui && npm run build && npm run build:dashboard",
     "compile": "node esbuild.mjs",
     "build": "npm run build:webview && node esbuild.mjs --production",
     "watch": "node esbuild.mjs --watch",

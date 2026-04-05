@@ -133,6 +133,15 @@ They're complementary — you can use Diffchestrator inside a multi-root workspa
 - **Terminal state caching** — Active Repos only rescans terminals on open/close events
 - **Status bar debounce** — consolidates multiple rapid updates into one render
 
+### Dashboard (`Alt+D, V`)
+A webview panel with four sections providing a bird's-eye view across all repos:
+- **Sync Overview** — table of all repos with ahead/behind/changes, color-coded rows, sortable columns
+- **Branch Map** — repos grouped by main vs feature branches, with pills per branch name
+- **Change Heatmap** — tile grid with intensity based on changes + staleness, sorted by activity
+- **Session Summary** — commits since VS Code session start, grouped by repo (works with external CLIs too)
+
+Auto-refreshes every 2 seconds when repos change. Also available from the Repositories title bar.
+
 ### Status Bar
 - **Left**: repo count + total changes (click to open sidebar)
 - **Right**: active repo name + branch + changes with prominent background (click to switch repo)
@@ -201,6 +210,7 @@ All shortcuts use **Alt+D** as a chord prefix — press `Alt+D`, release, then p
 | `Alt+D, Shift+L` | Load workspace snapshot |
 | `Alt+D, Backspace` | Swap to previous repo (across roots) |
 | `Alt+D, O` | Reveal repo in system file explorer |
+| `Alt+D, V` | Open Dashboard |
 
 > On macOS, use `Option+D` as the chord prefix.
 
@@ -344,7 +354,8 @@ src/
 │   ├── inlineBlame.ts        # Current-line git blame decorations
 │   └── workspaceAutoScan.ts  # Auto-scan workspace folders (async)
 ├── views/
-│   └── diffWebviewPanel.ts   # Multi-repo diff webview
+│   ├── diffWebviewPanel.ts   # Multi-repo diff webview
+│   └── dashboardWebviewPanel.ts # Dashboard webview (sync, branches, heatmap, session)
 └── utils/
     ├── time.ts              # Shared timeAgo / timeAgoShort utilities
     ├── paths.ts             # Path manipulation (basename, dirname)
