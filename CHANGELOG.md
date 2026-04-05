@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.52.0
+
+### Features
+- Dashboard command center — scan, bulk push, branch cleanup, stash column, activity log tab
+
 ## 0.51.2
 
 ### Other
