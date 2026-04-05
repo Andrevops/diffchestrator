@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.53.0
+
+### Features
+- Full command center — switch root, tags, review, snapshots, branch switch, discard, history, remote URL, copy info
+
 ## 0.52.0
 
 ### Features
