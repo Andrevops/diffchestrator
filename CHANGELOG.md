@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.50.0
+
+### Features
+- Pull outdated repos from dashboard — bulk and per-repo buttons
+
 ## 0.49.1
 
 ### Bug Fixes
