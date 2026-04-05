@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.51.0
+
+### Features
+- Dashboard action buttons (push, fetch, claude, terminal) and keyboard shortcut reference
+
 ## 0.50.1
 
 ### Other
