@@ -6,6 +6,66 @@
 
 Claude Code works best when you can see what it changed, across every repo it touched. Diffchestrator gives you that visibility: a sidebar tree of all your repos, real-time change tracking, one-click diffs, and direct terminal integration with `claude`. No context switching, no manual `git status` in twelve terminals.
 
+## Diffchestrator vs Multi-Root Workspaces
+
+VS Code's multi-root workspaces let you group repos into a `.code-workspace` file for unified file browsing and search. Diffchestrator takes a different approach:
+
+| | Multi-Root Workspaces | Diffchestrator |
+|---|---|---|
+| **Setup** | Manually add each repo to a `.code-workspace` file | Auto-discovers all repos under a root directory |
+| **View** | File explorer with folders side-by-side | Git-first tree sorted by changes, with branch, ahead/behind, stash counts, and tags |
+| **Scale** | Gets unwieldy beyond ~10 repos | Designed for 20–100+ repos with changed-only filter and tag-based filtering |
+| **Switching** | Static set of repos | Switch between project groups instantly (`Alt+D, Shift+S`) |
+| **Focus** | Navigate and edit code | Orchestrate git operations — stage, commit, push, search, and review across repos |
+| **AI** | No built-in integration | Per-repo Claude Code terminals, AI commits, multi-repo Claude sessions |
+| **Cross-repo ops** | Manual per-repo git | Bulk commit/push, git grep across repos, branch cleanup, activity log |
+
+They're complementary — you can use Diffchestrator inside a multi-root workspace. A workspace says "here are my repos." Diffchestrator says "here's what changed, where, and lets you act on it."
+
+## Team Orchestration with Claude Code
+
+Diffchestrator shines when multiple Claude Code agents work across repos simultaneously — whether you're running parallel agents on an epic, reviewing a multi-service change, or just keeping tabs on what Claude touched while you were away.
+
+### Parallel Agent Workflows
+
+When you spawn multiple Claude Code sessions (one per repo or per story), Diffchestrator gives you a single pane of glass:
+
+- **Per-repo terminal tracking** — each repo tracks its own Claude, Yolo, and shell terminals independently. The Active Repos view shows which terminals are running where
+- **Auto-switch terminal** — clicking a repo in the sidebar or dashboard auto-surfaces that repo's Claude terminal
+- **Smart notifications** — get notified when Claude commits or modifies files. Notifications queue while VS Code is unfocused and show a grouped summary on refocus, with "Push" and "Show Terminal" quick actions
+
+### Multi-Repo Claude Sessions
+
+For changes that span multiple repos (e.g., API contract changes across backend + frontend):
+
+- **Open Claude Code** (`Alt+D, L`) — launches `claude -c` to continue the previous session. With multiple repos selected, it launches `claude --add-dir` for each selected repo
+- **Claude Review All** — opens Claude with `--add-dir` for every repo with uncommitted changes plus a review prompt. Available from the dashboard header
+- **Multi-repo diff webview** — aggregated diffs across selected repos with per-file stage/unstage controls and "Ask Claude" button per diff hunk
+
+### Dashboard as Mission Control
+
+The dashboard (`Alt+D, V`) is designed for orchestration visibility:
+
+- **Session Summary** — every commit since VS Code session start, grouped by repo. Works regardless of where the commit happened (VS Code terminal, external CLI, or a Claude agent running in another window)
+- **Activity Log** — cross-repo commit timeline with repo/author filters. See what every agent produced, sorted by time
+- **Sync Overview** — at a glance: which repos have changes, which are ahead/behind, which need attention. Bulk pull/push from one place
+- **Change Heatmap** — instantly spot which repos are "hot" (active changes) vs stale
+
+### Typical Orchestration Workflow
+
+1. Open Diffchestrator dashboard (`Alt+D, V`)
+2. **Fetch All** to see which repos are behind
+3. **Pull outdated** to bring everything up to date
+4. Spawn Claude Code sessions from the dashboard (per-repo `◇` button) or sidebar
+5. Monitor progress via Session Summary and terminal indicators
+6. Review changes across repos — click each repo to see its diffs, or use Claude Review All
+7. Stage, commit, and push from the dashboard or sidebar
+8. Use the Activity Log tab to see the full cross-repo timeline of what was done
+
+### Works with External Agents
+
+Diffchestrator doesn't require Claude to run inside VS Code. The file watcher monitors `.git/` directories for changes regardless of source. If you have Claude Code running in an external terminal, a CI pipeline pushing commits, or a teammate making changes — the dashboard picks it all up via `git log`.
+
 ## Features
 
 ### Claude Code Integration
@@ -80,6 +140,8 @@ Claude Code works best when you can see what it changed, across every repo it to
 - **Bulk commit/push** across multiple selected repos
 - **Copy repo info** — right-click to copy path, branch, remote URL, or name to clipboard
 - **Open remote URL** — right-click to open the repo's GitHub/GitLab page in browser (auto-converts `git@` SSH URLs to HTTPS)
+- **Reveal in file explorer** — open the repo folder in your system file manager (`Alt+D, O`)
+- **Swap repo** — jump back to the previous repo across roots (`Alt+D, Backspace`)
 - **Git detection** — shows error with install link if git isn't available on PATH
 
 ### Branch & Stash Management
@@ -115,9 +177,46 @@ Claude Code works best when you can see what it changed, across every repo it to
 - **Terminal state caching** — Active Repos only rescans terminals on open/close events
 - **Status bar debounce** — consolidates multiple rapid updates into one render
 
+### Dashboard (`Alt+D, V`)
+A full command center with three tabs. Also available from the Repositories title bar. Auto-refreshes every 2 seconds when repos change.
+
+**Dashboard tab** — four sections:
+- **Sync Overview** — table with ahead/behind/changes/stashes, color-coded rows, sortable columns. Per-repo actions: pull, push, AI commit, discard, switch branch, commit history, open in browser, copy info, terminal, Claude Code. Bulk actions: Fetch All, Pull N outdated, Push N ahead
+- **Branch Map** — repos grouped by main vs feature branches, with pills per branch name. Branch Cleanup button to find and delete merged branches
+- **Change Heatmap** — tile grid with heat levels (hot/warm/mild/stale/quiet) based on changes + days since last commit
+- **Session Summary** — commits since VS Code session start, grouped by repo (works with external CLIs too)
+
+Header actions: Switch Root, Filter by Tag, Claude Review All, Save/Load Snapshot, Scan, Refresh
+
+**Activity tab** — cross-repo commit timeline sorted by date, grouped by day. Shows hash, repo name, message, author, and relative time across all repos.
+
+**Shortcuts tab** — full keyboard shortcut reference with all `Alt+D` chords.
+
 ### Status Bar
 - **Left**: repo count + total changes (click to open sidebar)
 - **Right**: active repo name + branch + changes with prominent background (click to switch repo)
+
+### Extension API
+
+Diffchestrator exposes a public API for sibling extensions (e.g., Epic Lens):
+
+```typescript
+interface DiffchestratorApi {
+  getCurrentRoot(): string | undefined;
+  getSelectedRepo(): string | undefined;
+  onDidChangeSelection: vscode.Event<void>;
+}
+```
+
+Consume it from another extension:
+
+```typescript
+const diffchestrator = vscode.extensions.getExtension("andrevops-com.diffchestrator");
+const api = diffchestrator?.exports as DiffchestratorApi;
+api?.onDidChangeSelection(() => {
+  console.log("Selection changed:", api.getSelectedRepo());
+});
+```
 
 ## Keyboard Shortcuts
 
@@ -159,8 +258,11 @@ All shortcuts use **Alt+D** as a chord prefix — press `Alt+D`, release, then p
 | `Alt+D, Z` | Undo last commit (soft reset) |
 | `Alt+D, Shift+B` | Save workspace snapshot |
 | `Alt+D, Shift+L` | Load workspace snapshot |
+| `Alt+D, Backspace` | Swap to previous repo (across roots) |
+| `Alt+D, O` | Reveal repo in system file explorer |
+| `Alt+D, V` | Open Dashboard |
 
-> On macOS, use `Alt+D` instead of `Alt+D`.
+> On macOS, use `Option+D` as the chord prefix.
 
 ## Context Menu Actions
 
@@ -170,12 +272,13 @@ Right-click a **repository** in the tree:
 - Commit History / Switch Branch / Stash Management
 - Browse Files / Open Repo in New Window
 - Open Terminal / Open Claude Code / Yolo
-- Copy Repo Info / Open Remote in Browser / Set Tags
+- Copy Repo Info / Open Remote in Browser / Set Tags / Reveal in File Explorer
 - Toggle Favorite / Select (for multi-repo operations)
 
 Right-click a **directory** in the tree:
 
 - Open Terminal / Open Claude Code / Yolo (launches with cwd set to the directory)
+- Reveal in File Explorer
 - Toggle Favorite
 
 Right-click a **changed file**:
@@ -213,18 +316,55 @@ Right-click a **changed file**:
 
 ## Getting Started
 
-1. Install the extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=andrevops-com.diffchestrator) or build locally with `make package`
-2. Add your project root to settings:
+### Installation
+
+Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=andrevops-com.diffchestrator), [Open VSX](https://open-vsx.org/extension/andrevops/diffchestrator), or build locally with `make package && make install`.
+
+### First-Time Setup
+
+1. **Add scan roots** — tell Diffchestrator where your repos live. Open VS Code settings (`Ctrl+,`) and add one or more root directories:
    ```json
    {
      "diffchestrator.scanRoots": ["/home/user/projects"]
    }
    ```
-   Or just open a folder — the extension auto-detects workspace folders if no roots are configured.
-3. The extension auto-scans on startup and populates the sidebar
-4. Click a repo to see its changed files, click a file to see the diff
-5. Use `Alt+D, C` to AI commit with Claude, `Alt+D, L` to open Claude Code
-6. Press `Alt+D, K` to see all keyboard shortcuts
+   You can add multiple roots (e.g., work projects + personal projects). Switch between them with `Alt+D, Shift+S`.
+
+   > **Tip:** If you skip this step, Diffchestrator auto-detects repos in your open workspace folders.
+
+2. **Scan** — press `Alt+D, S` or open the Diffchestrator sidebar (click the icon in the Activity Bar). Repos populate automatically on startup if `scanOnStartup` is enabled (default: `true`).
+
+3. **Select a repo** — click any repo in the **Repositories** view. The **Changed Files** panel shows its staged/unstaged/untracked files. Click a file to open the native diff editor.
+
+4. **Optional: Enable fetch on scan** — for accurate ahead/behind counts, enable auto-fetch:
+   ```json
+   {
+     "diffchestrator.fetchOnScan": true
+   }
+   ```
+   This runs `git fetch` for each repo during scan. Disable if you have many repos or slow network.
+
+5. **Optional: Configure Claude Code** — if you use Claude Code, the default permission mode for AI commits is `acceptEdits`. Change it in settings:
+   ```json
+   {
+     "diffchestrator.claudePermissionMode": "acceptEdits"
+   }
+   ```
+   Options: `default`, `acceptEdits`, `full`.
+
+### Quick Tour
+
+| Action | Shortcut |
+|--------|----------|
+| Scan repos | `Alt+D, S` |
+| Switch repo | `Alt+D, R` |
+| View changed files + diff | Click a repo |
+| AI commit with Claude | `Alt+D, C` |
+| Open Claude Code | `Alt+D, L` |
+| Commit with message | `Alt+D, M` |
+| Push | `Alt+D, P` |
+| Open Dashboard | `Alt+D, V` |
+| Show all shortcuts | `Alt+D, K` |
 
 ## Release
 
@@ -234,10 +374,17 @@ make release-patch    # Force patch bump
 make release-minor    # Force minor bump
 make release-major    # Force major bump
 make install          # Install latest .vsix locally
+make publish          # Publish to both VS Code Marketplace and Open VSX
+make publish-marketplace  # Publish to VS Code Marketplace only
+make publish-openvsx      # Publish to Open VSX only
 make clean            # Remove build artifacts
 ```
 
-The release script reads commit messages since the last `v*` tag, picks the semver bump (`feat:` = minor, `fix:` = patch, `BREAKING CHANGE` = major), updates CHANGELOG.md, commits the version bump, tags, builds, and packages the `.vsix`.
+The release script reads commit messages since the last `v*` tag, picks the semver bump (`feat:` = minor, `fix:` = patch, `BREAKING CHANGE` = major), updates CHANGELOG.md, commits the version bump, tags, builds, and packages two `.vsix` files:
+- `diffchestrator-X.Y.Z.vsix` — VS Code Marketplace (publisher: `andrevops-com`)
+- `diffchestrator-X.Y.Z-openvsx.vsix` — Open VSX Registry (publisher: `andrevops`)
+
+Pushing a `v*` tag to GitHub triggers CI to create a GitHub Release with both files and auto-publish to Open VSX.
 
 ## Development
 
@@ -294,11 +441,14 @@ src/
 │   ├── inlineBlame.ts        # Current-line git blame decorations
 │   └── workspaceAutoScan.ts  # Auto-scan workspace folders (async)
 ├── views/
-│   └── diffWebviewPanel.ts   # Multi-repo diff webview
+│   ├── diffWebviewPanel.ts   # Multi-repo diff webview
+│   └── dashboardWebviewPanel.ts # Dashboard webview (sync, branches, heatmap, session)
 └── utils/
     ├── time.ts              # Shared timeAgo / timeAgoShort utilities
-    ├── paths.ts
-    └── disposable.ts
+    ├── paths.ts             # Path manipulation (basename, dirname)
+    ├── shell.ts             # Terminal argument escaping
+    ├── fileItem.ts          # File item resolution
+    └── disposable.ts        # DisposableStore helper
 
 webview-ui/                   # React app for multi-repo diff
 ├── src/
@@ -307,7 +457,7 @@ webview-ui/                   # React app for multi-repo diff
 └── vite.config.ts            # Builds to dist/webview/
 
 scripts/
-└── release.mjs               # Auto-detect semver bump + changelog + commit + tag + build
+└── release.mjs               # Auto-detect semver bump + changelog + commit + tag + dual build (Marketplace + Open VSX)
 ```
 
 ## Tech Stack

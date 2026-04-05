@@ -71,6 +71,8 @@ export const CMD = {
   selectAllActive: "diffchestrator.selectAllActive",
   deselectAll: "diffchestrator.deselectAll",
   swapRepo: "diffchestrator.swapRepo",
+  revealInExplorer: "diffchestrator.revealInExplorer",
+  dashboard: "diffchestrator.dashboard",
 } as const;
 
 export const CONFIG = {
@@ -88,6 +90,7 @@ export const CONFIG = {
   autoPushAfterCommit: "diffchestrator.autoPushAfterCommit",
   repoTags: "diffchestrator.repoTags",
   snapshots: "diffchestrator.snapshots",
+  pinnedRepos: "diffchestrator.pinnedRepos",
 } as const;
 
 export const CTX = {

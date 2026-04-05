@@ -15,7 +15,8 @@ export type TerminalKind = "shell" | "claude" | "yolo";
  */
 async function commandExists(cmd: string): Promise<boolean> {
   try {
-    await execFileAsync("which", [cmd]);
+    const lookup = process.platform === "win32" ? "where" : "which";
+    await execFileAsync(lookup, [cmd]);
     return true;
   } catch {
     return false;
@@ -28,7 +29,7 @@ async function commandExists(cmd: string): Promise<boolean> {
  */
 export async function validateCli(kind: "claude" | "yolo"): Promise<boolean> {
   if (kind === "yolo") {
-    // yolo alias requires both docker and claude
+    // yolo is typically a shell alias — only validate its binary deps (docker + claude)
     const [hasDocker, hasClaude] = await Promise.all([
       commandExists("docker"),
       commandExists("claude"),

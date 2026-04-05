@@ -30,8 +30,20 @@ jobs:
       - name: Build extension
         run: npm run build
 
-      - name: Package .vsix
+      - name: Package .vsix (Marketplace — andrevops-com)
         run: npx @vscode/vsce package --no-dependencies
+
+      - name: Package .vsix (Open VSX — andrevops)
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json','utf-8'));
+            pkg.publisher = 'andrevops';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          npx @vscode/vsce package --no-dependencies -o "diffchestrator-${VERSION}-openvsx.vsix"
+          git checkout package.json
 
       - name: Generate changelog
         id: changelog
@@ -55,21 +67,23 @@ jobs:
             FIXES=$(git log "$RANGE" --pretty=format:"%s" --no-merges | grep -E "^fix" | sed 's/^fix[^:]*: //' || true)
             OTHERS=$(git log "$RANGE" --pretty=format:"%s" --no-merges | grep -vE "^(feat|fix|chore\(release\))" | head -10 || true)
 
+            cap() { echo "$1" | sed 's/^./\U&/'; }
+
             if [ -n "$FEATS" ]; then
               echo "### Features"
-              echo "$FEATS" | while IFS= read -r line; do echo "- $line"; done
+              echo "$FEATS" | while IFS= read -r line; do echo "- $(cap "$line")"; done
               echo ""
             fi
 
             if [ -n "$FIXES" ]; then
               echo "### Bug Fixes"
-              echo "$FIXES" | while IFS= read -r line; do echo "- $line"; done
+              echo "$FIXES" | while IFS= read -r line; do echo "- $(cap "$line")"; done
               echo ""
             fi
 
             if [ -n "$OTHERS" ]; then
               echo "### Other"
-              echo "$OTHERS" | while IFS= read -r line; do echo "- $line"; done
+              echo "$OTHERS" | while IFS= read -r line; do echo "- $(cap "$line")"; done
               echo ""
             fi
 
@@ -83,8 +97,13 @@ jobs:
           files: "*.vsix"
           body_path: RELEASE_NOTES.md
 
-      # Uncomment when VSCE_PAT is available to auto-publish to marketplace
+      # Uncomment when VSCE_PAT secret is configured
       # - name: Publish to VS Code Marketplace
       #   run: npx @vscode/vsce publish --no-dependencies
       #   env:
       #     VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Publish to Open VSX
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          npx ovsx publish "diffchestrator-${VERSION}-openvsx.vsix" -p ${{ secrets.OVSX_PAT }}

@@ -19,6 +19,32 @@ export class GitExecutor {
   private _statusInflight = new Map<string, Promise<RepoStatus>>();
   private static readonly STATUS_CACHE_TTL = 1000; // ms
 
+  // Metadata cache (30s TTL) for frequently accessed data
+  private _metaCache = new Map<string, { value: unknown; time: number }>();
+  private static readonly META_CACHE_TTL = 30_000; // ms
+
+  private _getCachedMeta<T>(key: string): T | undefined {
+    const entry = this._metaCache.get(key);
+    if (entry && Date.now() - entry.time < GitExecutor.META_CACHE_TTL) {
+      return entry.value as T;
+    }
+    return undefined;
+  }
+
+  private _setCachedMeta(key: string, value: unknown): void {
+    this._metaCache.set(key, { value, time: Date.now() });
+  }
+
+  invalidateMetaCache(repoPath?: string): void {
+    if (repoPath) {
+      for (const key of this._metaCache.keys()) {
+        if (key.startsWith(repoPath)) this._metaCache.delete(key);
+      }
+    } else {
+      this._metaCache.clear();
+    }
+  }
+
   private async _run(args: string[], cwd: string): Promise<RunResult> {
     try {
       const { stdout, stderr } = await execFileAsync("git", args, {
@@ -288,12 +314,16 @@ export class GitExecutor {
   }
 
   async getRemoteUrl(repoPath: string): Promise<string | undefined> {
+    const cacheKey = `${repoPath}:remoteUrl`;
+    const cached = this._getCachedMeta<string>(cacheKey);
+    if (cached !== undefined) return cached;
     const result = await this._run(
       ["remote", "get-url", "origin"],
       repoPath
     );
-    const url = result.stdout.trim();
-    return url || undefined;
+    const url = result.stdout.trim() || undefined;
+    if (url) this._setCachedMeta(cacheKey, url);
+    return url;
   }
 
   async log(repoPath: string, count = 10): Promise<CommitEntry[]> {
@@ -329,6 +359,75 @@ export class GitExecutor {
     }
 
     return entries;
+  }
+
+  async logSince(
+    repoPath: string,
+    since: string,
+    count = 50
+  ): Promise<CommitEntry[]> {
+    const result = await this._run(
+      [
+        "log",
+        `--since=${since}`,
+        `-${count}`,
+        "--format=%H%n%h%n%an%n%ai%n%s%n---END---",
+      ],
+      repoPath
+    );
+
+    if (!result.stdout.trim()) {
+      return [];
+    }
+
+    const entries: CommitEntry[] = [];
+    const blocks = result.stdout.split("---END---\n");
+
+    for (const block of blocks) {
+      const trimmed = block.trim();
+      if (!trimmed) continue;
+      const lines = trimmed.split("\n");
+      if (lines.length >= 5) {
+        entries.push({
+          hash: lines[0],
+          shortHash: lines[1],
+          author: lines[2],
+          date: lines[3],
+          message: lines.slice(4).join("\n"),
+        });
+      }
+    }
+
+    return entries;
+  }
+
+  async lastCommitDate(repoPath: string): Promise<string | undefined> {
+    const cacheKey = `${repoPath}:lastCommitDate`;
+    const cached = this._getCachedMeta<string>(cacheKey);
+    if (cached !== undefined) return cached;
+    const result = await this._run(
+      ["log", "-1", "--format=%ai"],
+      repoPath
+    );
+    const date = result.stdout.trim() || undefined;
+    if (date) this._setCachedMeta(cacheKey, date);
+    return date;
+  }
+
+  /**
+   * Combined: get commits since a date AND the most recent commit date in one call.
+   * Saves one git process vs calling logSince + lastCommitDate separately.
+   */
+  async logSinceWithDate(
+    repoPath: string,
+    since: string,
+    count = 50
+  ): Promise<{ lastDate: string | undefined; commits: CommitEntry[] }> {
+    // Get lastCommitDate from cache or single call
+    const lastDate = await this.lastCommitDate(repoPath);
+    // Get session commits
+    const commits = await this.logSince(repoPath, since, count);
+    return { lastDate, commits };
   }
 
   async show(repoPath: string, ref: string): Promise<string> {
@@ -370,9 +469,14 @@ export class GitExecutor {
   }
 
   async stashCount(repoPath: string): Promise<number> {
+    const cacheKey = `${repoPath}:stashCount`;
+    const cached = this._getCachedMeta<number>(cacheKey);
+    if (cached !== undefined) return cached;
     const result = await this._run(["stash", "list"], repoPath);
     if (result.code !== 0 || !result.stdout.trim()) return 0;
-    return result.stdout.trim().split("\n").length;
+    const count = result.stdout.trim().split("\n").length;
+    this._setCachedMeta(cacheKey, count);
+    return count;
   }
 
   async branches(repoPath: string): Promise<{ name: string; current: boolean }[]> {

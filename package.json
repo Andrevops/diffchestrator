@@ -2,7 +2,7 @@
   "name": "diffchestrator",
   "displayName": "Diffchestrator",
   "description": "Multi-repo Git orchestration built for Claude Code — AI commits, diffs, and terminal integration",
-  "version": "0.46.0",
+  "version": "0.55.0",
   "publisher": "andrevops-com",
   "license": "MIT",
   "icon": "resources/icons/icon.png",
@@ -476,6 +476,18 @@
         "title": "Fetch",
         "category": "Diffchestrator",
         "icon": "$(cloud-download)"
+      },
+      {
+        "command": "diffchestrator.revealInExplorer",
+        "title": "Reveal in File Explorer",
+        "category": "Diffchestrator",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "diffchestrator.dashboard",
+        "title": "Dashboard",
+        "category": "Diffchestrator",
+        "icon": "$(dashboard)"
       }
     ],
     "menus": {
@@ -551,6 +563,11 @@
           "command": "diffchestrator.switchRoot",
           "when": "view == diffchestrator.repos",
           "group": "navigation@6"
+        },
+        {
+          "command": "diffchestrator.dashboard",
+          "when": "view == diffchestrator.repos && diffchestrator.hasRepos",
+          "group": "navigation@7"
         },
         {
           "command": "diffchestrator.stageAll",
@@ -670,9 +687,14 @@
           "group": "3_misc@4"
         },
         {
+          "command": "diffchestrator.revealInExplorer",
+          "when": "viewItem == repo || viewItem == directory",
+          "group": "3_misc@5"
+        },
+        {
           "command": "diffchestrator.selectRepo",
           "when": "viewItem == repo",
-          "group": "3_misc@5"
+          "group": "3_misc@6"
         },
         {
           "command": "diffchestrator.stageFile",
@@ -871,6 +893,16 @@
         "command": "diffchestrator.swapRepo",
         "key": "alt+d backspace",
         "mac": "alt+d backspace"
+      },
+      {
+        "command": "diffchestrator.revealInExplorer",
+        "key": "alt+d o",
+        "mac": "alt+d o"
+      },
+      {
+        "command": "diffchestrator.dashboard",
+        "key": "alt+d v",
+        "mac": "alt+d v"
       }
     ],
     "configuration": {
@@ -925,7 +957,7 @@
         "diffchestrator.autoPushAfterCommit": {
           "type": "boolean",
           "default": false,
-          "description": "Automatically push after a successful commit via Ctrl+D, M"
+          "description": "Automatically push after a successful commit via Alt+D, M"
         },
         "diffchestrator.repoTags": {
           "type": "object",
@@ -959,12 +991,77 @@
           "type": "boolean",
           "default": true,
           "description": "Show inline git blame annotation on the current line"
+        },
+        "diffchestrator.pinnedRepos": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Repository paths pinned to the top of Dashboard Sync Overview"
         }
       }
-    }
+    },
+    "walkthroughs": [
+      {
+        "id": "diffchestrator.welcome",
+        "title": "Get Started with Diffchestrator",
+        "description": "Set up multi-repo Git orchestration in a few steps.",
+        "steps": [
+          {
+            "id": "diffchestrator.welcome.intro",
+            "title": "Welcome to Diffchestrator",
+            "description": "Multi-repo Git orchestration built for Claude Code.\n\n[Open Dashboard](command:diffchestrator.dashboard)",
+            "media": {
+              "image": "resources/icons/icon.png",
+              "altText": "Diffchestrator"
+            },
+            "completionEvents": [
+              "onCommand:diffchestrator.dashboard"
+            ]
+          },
+          {
+            "id": "diffchestrator.welcome.addRoot",
+            "title": "Add a Scan Root",
+            "description": "Point Diffchestrator at a folder containing your Git repositories.\n\n[Add Scan Root](command:diffchestrator.addScanRoot)",
+            "media": {
+              "image": "resources/icons/icon.png",
+              "altText": "Add scan root"
+            },
+            "completionEvents": [
+              "onCommand:diffchestrator.addScanRoot"
+            ]
+          },
+          {
+            "id": "diffchestrator.welcome.scan",
+            "title": "Scan for Repositories",
+            "description": "Discover all Git repos under your scan root.\n\n[Scan Now](command:diffchestrator.scan)",
+            "media": {
+              "image": "resources/icons/icon.png",
+              "altText": "Scan repos"
+            },
+            "completionEvents": [
+              "onCommand:diffchestrator.scan"
+            ]
+          },
+          {
+            "id": "diffchestrator.welcome.shortcuts",
+            "title": "Learn the Shortcuts",
+            "description": "All shortcuts use **Alt+D** as a chord prefix.\n\n**Alt+D, R** Switch repo | **Alt+D, C** AI Commit | **Alt+D, V** Dashboard\n\n[View All Shortcuts](command:diffchestrator.showShortcuts)",
+            "media": {
+              "image": "resources/icons/icon.png",
+              "altText": "Shortcuts"
+            },
+            "completionEvents": [
+              "onCommand:diffchestrator.showShortcuts"
+            ]
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
-    "build:webview": "cd webview-ui && npm run build",
+    "build:webview": "cd webview-ui && npm run build && npm run build:dashboard",
     "compile": "node esbuild.mjs",
     "build": "npm run build:webview && node esbuild.mjs --production",
     "watch": "node esbuild.mjs --watch",

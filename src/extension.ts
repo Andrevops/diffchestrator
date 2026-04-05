@@ -21,6 +21,7 @@ import { registerStashCommands } from "./commands/stash";
 import { ActiveReposProvider } from "./providers/activeReposProvider";
 import { GitContentProvider } from "./providers/gitContentProvider";
 import { DiffWebviewPanel } from "./views/diffWebviewPanel";
+import { DashboardWebviewPanel } from "./views/dashboardWebviewPanel";
 import { FileWatcher } from "./services/fileWatcher";
 import { StatusBarManager } from "./services/statusBar";
 import { InlineBlameService } from "./services/inlineBlame";
@@ -56,6 +57,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     return;
   }
 
+  const sessionStartTime = Date.now();
   const repoManager = new RepoManager(context.workspaceState);
   context.subscriptions.push(repoManager);
 
@@ -114,6 +116,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   // Tree views
   const activeRepos = new ActiveReposProvider(repoManager);
   const repoTree = new RepoTreeProvider(repoManager);
+  context.subscriptions.push(repoTree);
   const changedFiles = new ChangedFilesProvider(repoManager);
 
   // Git content provider for diff URIs
@@ -664,6 +667,18 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         url = url.replace(/\.git$/, "");
       }
       await vscode.env.openExternal(vscode.Uri.parse(url));
+    })
+  );
+
+  // Reveal in system file explorer
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.revealInExplorer, async (item?: any) => {
+      const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+      if (!repoPath) {
+        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
+        return;
+      }
+      await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(repoPath));
     })
   );
 
@@ -1222,6 +1237,13 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     })
   );
 
+  // Dashboard webview
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.dashboard, () => {
+      DashboardWebviewPanel.createOrShow(context.extensionUri, repoManager, sessionStartTime);
+    })
+  );
+
   // Phase 5: File watcher already created above (before command registrations)
 
   // Phase 6: Status bar — shows repo/change counts
@@ -1247,6 +1269,21 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         fileWatcher.watchAll();
       });
     }
+  }
+
+  // Onboarding: show walkthrough on first run if no scan roots configured
+  const wasOnboarded = context.globalState.get<boolean>("diffchestrator.onboarded", false);
+  if (!wasOnboarded) {
+    const onboardConfig = vscode.workspace.getConfiguration("diffchestrator");
+    const roots = onboardConfig.get<string[]>("scanRoots", []);
+    if (roots.length === 0) {
+      vscode.commands.executeCommand(
+        "workbench.action.openWalkthrough",
+        "andrevops-com.diffchestrator#diffchestrator.welcome",
+        false
+      );
+    }
+    context.globalState.update("diffchestrator.onboarded", true);
   }
 
   // Public API for sibling extensions

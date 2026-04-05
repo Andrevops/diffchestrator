@@ -318,7 +318,7 @@ export class RepoManager implements vscode.Disposable {
   async refreshAll(): Promise<void> {
     const repos = [...this._repos.keys()];
     if (repos.length === 0) return;
-    const BATCH = 5;
+    const BATCH = 10;
     await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Window, title: "Diffchestrator: Refreshing" },
       async (progress) => {
@@ -454,9 +454,9 @@ export class RepoManager implements vscode.Disposable {
     this._focusDisposable = vscode.window.onDidChangeWindowState((state) => {
       this._windowFocused = state.focused;
       if (state.focused) {
-        // Refresh on regain and reset the timer to avoid double-refresh
-        this.refreshAll();
+        // Reset timer first to prevent it from firing during/after our refresh
         this._resetTimer();
+        this.refreshAll();
       }
     });
 

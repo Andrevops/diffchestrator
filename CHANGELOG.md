@@ -2,6 +2,135 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.55.0
+
+### Features
+- Pinned repos, health scores, activity export, settings tab, onboarding wizard
+
+## 0.54.2
+
+### Performance
+- Deep optimization — metadata caching, combined git calls, memory leak fix, batch size increase, debounce guards
+
+## 0.54.1
+
+### Other
+- Add Team Orchestration with Claude Code section
+
+## 0.54.0
+
+### Features
+- Dashboard UX overhaul — search, overflow menus, status dots, collapsible sections, keyboard nav, activity filters, skeleton loading, header toolbar
+
+## 0.53.1
+
+### Other
+- Update dashboard documentation with full command center features
+
+## 0.53.0
+
+### Features
+- Full command center — switch root, tags, review, snapshots, branch switch, discard, history, remote URL, copy info
+
+## 0.52.0
+
+### Features
+- Dashboard command center — scan, bulk push, branch cleanup, stash column, activity log tab
+
+## 0.51.2
+
+### Other
+- Move shortcuts to separate tab in dashboard
+
+## 0.51.1
+
+### Bug Fixes
+- Use 'where' instead of 'which' for CLI detection on Windows
+
+## 0.51.0
+
+### Features
+- Dashboard action buttons (push, fetch, claude, terminal) and keyboard shortcut reference
+
+## 0.50.1
+
+### Other
+- Rewrite Getting Started with first-time setup guide, update dashboard docs
+
+## 0.50.0
+
+### Features
+- Pull outdated repos from dashboard — bulk and per-repo buttons
+
+## 0.49.1
+
+### Bug Fixes
+- Heatmap uses class-based heat levels instead of inline opacity for readability
+- Dashboard openRepo switches terminal to selected repo
+- Dashboard openRepo only selects repo instead of opening diff, prevents tab closure
+
+### Other
+- Remove tracked tsbuildinfo file
+- Gitignore tsbuildinfo files
+
+## 0.49.0
+
+### Features
+- Add dashboard webview with sync overview, branch map, heatmap, and session summary
+
+## 0.48.7
+
+### Bug Fixes
+- Only validate docker and claude for yolo — yolo itself is a shell alias
+
+## 0.48.6
+
+### Other
+- Add Diffchestrator vs Multi-Root Workspaces comparison
+
+## 0.48.5
+
+### Bug Fixes
+- Capitalize changelog entries in release script and CI workflow
+
+## 0.48.4
+
+### Bug Fixes
+- validate yolo command exists before launching, show install link
+
+### Other
+- add extension API section, fix Ctrl+D references, update architecture tree
+
+## 0.48.3
+
+### Other
+- update README and CHANGELOG for v0.46–0.48, fix make install to exclude openvsx builds
+
+## 0.48.2
+
+### Other
+- enable auto-publish to Open VSX on tag push
+
+## 0.48.1
+
+### Other
+- dual-publish to VS Code Marketplace and Open VSX
+
+## 0.48.0
+
+### Features
+- dual-publish to VS Code Marketplace and Open VSX (release script + CI workflow)
+
+## 0.47.0
+
+### Features
+- reveal repo in system file explorer with Alt+D, O
+
+## 0.46.0
+
+### Features
+- expose public API for sibling extensions (getCurrentRoot, getSelectedRepo, onDidChangeSelection)
+
 ## 0.45.4
 
 ### Bug Fixes

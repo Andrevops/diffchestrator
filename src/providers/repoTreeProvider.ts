@@ -13,9 +13,10 @@ interface TreeNode {
   children: Map<string, TreeNode>;
 }
 
-export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
+export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode>, vscode.Disposable {
   private _onDidChangeTreeData = new vscode.EventEmitter<TreeNode | undefined | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+  private _disposables: vscode.Disposable[] = [];
 
   private _root: TreeNode | undefined;
   private _git;
@@ -27,21 +28,33 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
   constructor(private repoManager: RepoManager) {
     this._git = repoManager.git;
-    repoManager.onDidChangeRepos(() => {
+    this._disposables.push(repoManager.onDidChangeRepos(() => {
       this._root = undefined;
       this._repoTagsCache = undefined;
+      // Evict commit cache entries for repos no longer in the list
+      const currentPaths = new Set(repoManager.allRepos.map((r) => r.path));
+      for (const key of this._lastCommitCache.keys()) {
+        if (!currentPaths.has(key)) this._lastCommitCache.delete(key);
+      }
       this._onDidChangeTreeData.fire();
-    });
-    repoManager.onDidChangeSelection(() => {
+    }));
+    this._disposables.push(repoManager.onDidChangeSelection(() => {
       this._refreshLastCommits();
       this._onDidChangeTreeData.fire();
-    });
-    vscode.workspace.onDidChangeConfiguration((e) => {
+    }));
+    this._disposables.push(vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("diffchestrator.repoTags")) {
         this._repoTagsCache = undefined;
         this._onDidChangeTreeData.fire();
       }
-    });
+    }));
+  }
+
+  dispose(): void {
+    this._lastCommitCache.clear();
+    this._onDidChangeTreeData.dispose();
+    for (const d of this._disposables) d.dispose();
+    this._disposables = [];
   }
 
   private _getRepoTags(): Record<string, string[]> {
