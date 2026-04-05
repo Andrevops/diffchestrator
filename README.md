@@ -135,9 +135,9 @@ They're complementary — you can use Diffchestrator inside a multi-root workspa
 
 ### Dashboard (`Alt+D, V`)
 A webview panel with four sections providing a bird's-eye view across all repos:
-- **Sync Overview** — table of all repos with ahead/behind/changes, color-coded rows, sortable columns
+- **Sync Overview** — table of all repos with ahead/behind/changes, color-coded rows, sortable columns. "Pull N outdated" bulk button + per-repo pull buttons for repos that are behind
 - **Branch Map** — repos grouped by main vs feature branches, with pills per branch name
-- **Change Heatmap** — tile grid with intensity based on changes + staleness, sorted by activity
+- **Change Heatmap** — tile grid with heat levels (hot/warm/mild/stale/quiet) based on changes + days since last commit
 - **Session Summary** — commits since VS Code session start, grouped by repo (works with external CLIs too)
 
 Auto-refreshes every 2 seconds when repos change. Also available from the Repositories title bar.
@@ -266,18 +266,55 @@ Right-click a **changed file**:
 
 ## Getting Started
 
-1. Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=andrevops-com.diffchestrator), [Open VSX](https://open-vsx.org/extension/andrevops/diffchestrator), or build locally with `make package`
-2. Add your project root to settings:
+### Installation
+
+Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=andrevops-com.diffchestrator), [Open VSX](https://open-vsx.org/extension/andrevops/diffchestrator), or build locally with `make package && make install`.
+
+### First-Time Setup
+
+1. **Add scan roots** — tell Diffchestrator where your repos live. Open VS Code settings (`Ctrl+,`) and add one or more root directories:
    ```json
    {
      "diffchestrator.scanRoots": ["/home/user/projects"]
    }
    ```
-   Or just open a folder — the extension auto-detects workspace folders if no roots are configured.
-3. The extension auto-scans on startup and populates the sidebar
-4. Click a repo to see its changed files, click a file to see the diff
-5. Use `Alt+D, C` to AI commit with Claude, `Alt+D, L` to open Claude Code
-6. Press `Alt+D, K` to see all keyboard shortcuts
+   You can add multiple roots (e.g., work projects + personal projects). Switch between them with `Alt+D, Shift+S`.
+
+   > **Tip:** If you skip this step, Diffchestrator auto-detects repos in your open workspace folders.
+
+2. **Scan** — press `Alt+D, S` or open the Diffchestrator sidebar (click the icon in the Activity Bar). Repos populate automatically on startup if `scanOnStartup` is enabled (default: `true`).
+
+3. **Select a repo** — click any repo in the **Repositories** view. The **Changed Files** panel shows its staged/unstaged/untracked files. Click a file to open the native diff editor.
+
+4. **Optional: Enable fetch on scan** — for accurate ahead/behind counts, enable auto-fetch:
+   ```json
+   {
+     "diffchestrator.fetchOnScan": true
+   }
+   ```
+   This runs `git fetch` for each repo during scan. Disable if you have many repos or slow network.
+
+5. **Optional: Configure Claude Code** — if you use Claude Code, the default permission mode for AI commits is `acceptEdits`. Change it in settings:
+   ```json
+   {
+     "diffchestrator.claudePermissionMode": "acceptEdits"
+   }
+   ```
+   Options: `default`, `acceptEdits`, `full`.
+
+### Quick Tour
+
+| Action | Shortcut |
+|--------|----------|
+| Scan repos | `Alt+D, S` |
+| Switch repo | `Alt+D, R` |
+| View changed files + diff | Click a repo |
+| AI commit with Claude | `Alt+D, C` |
+| Open Claude Code | `Alt+D, L` |
+| Commit with message | `Alt+D, M` |
+| Push | `Alt+D, P` |
+| Open Dashboard | `Alt+D, V` |
+| Show all shortcuts | `Alt+D, K` |
 
 ## Release
 
