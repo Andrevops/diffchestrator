@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.51.2
+
+### Other
+- Move shortcuts to separate tab in dashboard
+
 ## 0.51.1
 
 ### Bug Fixes
