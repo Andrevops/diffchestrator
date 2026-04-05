@@ -129,6 +129,21 @@ export default function DashboardApp() {
         <span className="header-actions">
           {tab === "dashboard" && (
             <>
+              <button className="refresh-btn" onClick={() => vscode.postMessage({ type: "switchRoot" })} title="Switch scan root">
+                Root
+              </button>
+              <button className="refresh-btn" onClick={() => vscode.postMessage({ type: "filterByTag" })} title="Filter by tag">
+                Tags
+              </button>
+              <button className="refresh-btn" onClick={() => vscode.postMessage({ type: "claudeReviewAll" })} title="Claude review all changed repos">
+                Review
+              </button>
+              <button className="refresh-btn" onClick={() => vscode.postMessage({ type: "saveSnapshot" })} title="Save workspace snapshot">
+                Save
+              </button>
+              <button className="refresh-btn" onClick={() => vscode.postMessage({ type: "loadSnapshot" })} title="Load workspace snapshot">
+                Load
+              </button>
               <button className="refresh-btn" onClick={() => vscode.postMessage({ type: "scan" })}>
                 Scan
               </button>

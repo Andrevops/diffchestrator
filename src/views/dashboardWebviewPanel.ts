@@ -377,6 +377,73 @@ export class DashboardWebviewPanel {
         }
         break;
       }
+
+      case "switchRoot":
+        await vscode.commands.executeCommand(CMD.switchRoot);
+        await this._update();
+        break;
+
+      case "switchBranch": {
+        const repoPath = msg.repoPath as string;
+        if (repoPath) {
+          this._repoManager.selectRepo(repoPath);
+          await vscode.commands.executeCommand(CMD.switchBranch, { path: repoPath });
+          await this._update();
+        }
+        break;
+      }
+
+      case "discardAll": {
+        const repoPath = msg.repoPath as string;
+        if (repoPath) {
+          await vscode.commands.executeCommand(CMD.discardAll, { path: repoPath });
+          await this._update();
+        }
+        break;
+      }
+
+      case "commitHistory": {
+        const repoPath = msg.repoPath as string;
+        if (repoPath) {
+          this._repoManager.selectRepo(repoPath);
+          await vscode.commands.executeCommand(CMD.commitHistory, { path: repoPath });
+        }
+        break;
+      }
+
+      case "openRemoteUrl": {
+        const repoPath = msg.repoPath as string;
+        if (repoPath) {
+          await vscode.commands.executeCommand(CMD.openRemoteUrl, { path: repoPath });
+        }
+        break;
+      }
+
+      case "copyRepoInfo": {
+        const repoPath = msg.repoPath as string;
+        if (repoPath) {
+          await vscode.commands.executeCommand(CMD.copyRepoInfo, { path: repoPath });
+        }
+        break;
+      }
+
+      case "saveSnapshot":
+        await vscode.commands.executeCommand(CMD.saveSnapshot);
+        break;
+
+      case "loadSnapshot":
+        await vscode.commands.executeCommand(CMD.loadSnapshot);
+        await this._update();
+        break;
+
+      case "claudeReviewAll":
+        await vscode.commands.executeCommand(CMD.claudeReviewAll);
+        break;
+
+      case "filterByTag":
+        await vscode.commands.executeCommand(CMD.filterByTag);
+        await this._update();
+        break;
     }
   }
 

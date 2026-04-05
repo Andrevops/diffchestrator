@@ -154,6 +154,43 @@ export default function SyncOverview({ entries, onOpenRepo }: Props) {
                         ✦
                       </button>
                     )}
+                    {e.totalChanges > 0 && (
+                      <button
+                        className="icon-btn"
+                        onClick={() => vscode.postMessage({ type: "discardAll", repoPath: e.path })}
+                        title="Discard all changes"
+                      >
+                        ✕
+                      </button>
+                    )}
+                    <button
+                      className="icon-btn"
+                      onClick={() => vscode.postMessage({ type: "switchBranch", repoPath: e.path })}
+                      title="Switch branch"
+                    >
+                      ⎇
+                    </button>
+                    <button
+                      className="icon-btn"
+                      onClick={() => vscode.postMessage({ type: "commitHistory", repoPath: e.path })}
+                      title="Commit history"
+                    >
+                      ⏱
+                    </button>
+                    <button
+                      className="icon-btn"
+                      onClick={() => vscode.postMessage({ type: "openRemoteUrl", repoPath: e.path })}
+                      title="Open in browser"
+                    >
+                      ↗
+                    </button>
+                    <button
+                      className="icon-btn"
+                      onClick={() => vscode.postMessage({ type: "copyRepoInfo", repoPath: e.path })}
+                      title="Copy repo info"
+                    >
+                      ⎘
+                    </button>
                     <button
                       className="icon-btn"
                       onClick={() => vscode.postMessage({ type: "openTerminal", repoPath: e.path })}
