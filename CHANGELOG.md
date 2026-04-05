@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.55.0
+
+### Features
+- Pinned repos, health scores, activity export, settings tab, onboarding wizard
+
 ## 0.54.2
 
 ### Performance

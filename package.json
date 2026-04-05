@@ -2,7 +2,7 @@
   "name": "diffchestrator",
   "displayName": "Diffchestrator",
   "description": "Multi-repo Git orchestration built for Claude Code — AI commits, diffs, and terminal integration",
-  "version": "0.54.2",
+  "version": "0.55.0",
   "publisher": "andrevops-com",
   "license": "MIT",
   "icon": "resources/icons/icon.png",
@@ -1012,29 +1012,49 @@
             "id": "diffchestrator.welcome.intro",
             "title": "Welcome to Diffchestrator",
             "description": "Multi-repo Git orchestration built for Claude Code.\n\n[Open Dashboard](command:diffchestrator.dashboard)",
-            "media": { "image": "resources/icons/icon.png", "altText": "Diffchestrator" },
-            "completionEvents": ["onCommand:diffchestrator.dashboard"]
+            "media": {
+              "image": "resources/icons/icon.png",
+              "altText": "Diffchestrator"
+            },
+            "completionEvents": [
+              "onCommand:diffchestrator.dashboard"
+            ]
           },
           {
             "id": "diffchestrator.welcome.addRoot",
             "title": "Add a Scan Root",
             "description": "Point Diffchestrator at a folder containing your Git repositories.\n\n[Add Scan Root](command:diffchestrator.addScanRoot)",
-            "media": { "image": "resources/icons/icon.png", "altText": "Add scan root" },
-            "completionEvents": ["onCommand:diffchestrator.addScanRoot"]
+            "media": {
+              "image": "resources/icons/icon.png",
+              "altText": "Add scan root"
+            },
+            "completionEvents": [
+              "onCommand:diffchestrator.addScanRoot"
+            ]
           },
           {
             "id": "diffchestrator.welcome.scan",
             "title": "Scan for Repositories",
             "description": "Discover all Git repos under your scan root.\n\n[Scan Now](command:diffchestrator.scan)",
-            "media": { "image": "resources/icons/icon.png", "altText": "Scan repos" },
-            "completionEvents": ["onCommand:diffchestrator.scan"]
+            "media": {
+              "image": "resources/icons/icon.png",
+              "altText": "Scan repos"
+            },
+            "completionEvents": [
+              "onCommand:diffchestrator.scan"
+            ]
           },
           {
             "id": "diffchestrator.welcome.shortcuts",
             "title": "Learn the Shortcuts",
             "description": "All shortcuts use **Alt+D** as a chord prefix.\n\n**Alt+D, R** Switch repo | **Alt+D, C** AI Commit | **Alt+D, V** Dashboard\n\n[View All Shortcuts](command:diffchestrator.showShortcuts)",
-            "media": { "image": "resources/icons/icon.png", "altText": "Shortcuts" },
-            "completionEvents": ["onCommand:diffchestrator.showShortcuts"]
+            "media": {
+              "image": "resources/icons/icon.png",
+              "altText": "Shortcuts"
+            },
+            "completionEvents": [
+              "onCommand:diffchestrator.showShortcuts"
+            ]
           }
         ]
       }
