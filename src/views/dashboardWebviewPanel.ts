@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { RepoManager } from "../services/repoManager";
+import { CMD } from "../constants";
 import { showTerminalIfExists } from "../commands/terminal";
 
 interface SyncOverviewEntry {
@@ -263,6 +264,25 @@ export class DashboardWebviewPanel {
         const repoPath = msg.repoPath as string;
         this._repoManager.selectRepo(repoPath);
         await showTerminalIfExists(repoPath);
+        break;
+      }
+
+      case "pullAll": {
+        await vscode.commands.executeCommand(CMD.bulkPull);
+        await this._update();
+        break;
+      }
+
+      case "pullRepo": {
+        const repoPath = msg.repoPath as string;
+        try {
+          await this._git.pull(repoPath);
+          await this._repoManager.refreshRepo(repoPath);
+          await this._update();
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          vscode.window.showErrorMessage(`Diffchestrator: Pull failed for ${require("path").basename(repoPath)}: ${errMsg}`);
+        }
         break;
       }
 

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import vscode from "../vscode";
 import type { SyncOverviewEntry } from "./DashboardApp";
 
 type SortKey = "name" | "branch" | "ahead" | "behind" | "totalChanges";
@@ -45,16 +46,31 @@ export default function SyncOverview({ entries, onOpenRepo }: Props) {
   const aheadCount = entries.filter((e) => e.ahead > 0).length;
   const dirtyCount = entries.filter((e) => e.totalChanges > 0).length;
 
+  const handlePullAll = () => {
+    vscode.postMessage({ type: "pullAll" });
+  };
+
+  const handlePullRepo = (repoPath: string) => {
+    vscode.postMessage({ type: "pullRepo", repoPath });
+  };
+
   return (
     <div className="dashboard-section">
       <div className="dashboard-section-header">
-        Sync Overview
-        <span className="section-badge">
-          {behindCount > 0 && `↓${behindCount} `}
-          {aheadCount > 0 && `↑${aheadCount} `}
-          {dirtyCount > 0 && `${dirtyCount} dirty`}
-          {behindCount === 0 && aheadCount === 0 && dirtyCount === 0 && "All clean"}
+        <span>
+          Sync Overview{" "}
+          <span className="section-badge">
+            {behindCount > 0 && `↓${behindCount} `}
+            {aheadCount > 0 && `↑${aheadCount} `}
+            {dirtyCount > 0 && `${dirtyCount} dirty`}
+            {behindCount === 0 && aheadCount === 0 && dirtyCount === 0 && "All clean"}
+          </span>
         </span>
+        {behindCount > 0 && (
+          <button className="refresh-btn" onClick={handlePullAll}>
+            Pull {behindCount} outdated
+          </button>
+        )}
       </div>
       <div className="dashboard-section-body">
         {entries.length === 0 ? (
@@ -78,6 +94,7 @@ export default function SyncOverview({ entries, onOpenRepo }: Props) {
                 <th onClick={() => toggleSort("totalChanges")}>
                   Changes{indicator("totalChanges")}
                 </th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -95,6 +112,17 @@ export default function SyncOverview({ entries, onOpenRepo }: Props) {
                   <td>{e.ahead || ""}</td>
                   <td>{e.behind || ""}</td>
                   <td>{e.totalChanges || ""}</td>
+                  <td>
+                    {e.behind > 0 && (
+                      <button
+                        className="icon-btn"
+                        onClick={() => handlePullRepo(e.path)}
+                        title={`Pull ${e.behind} commit${e.behind > 1 ? "s" : ""}`}
+                      >
+                        ↓ Pull
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
