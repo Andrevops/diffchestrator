@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.53.1
+
+### Other
+- Update dashboard documentation with full command center features
+
 ## 0.53.0
 
 ### Features
