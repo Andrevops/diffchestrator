@@ -22,6 +22,50 @@ VS Code's multi-root workspaces let you group repos into a `.code-workspace` fil
 
 They're complementary — you can use Diffchestrator inside a multi-root workspace. A workspace says "here are my repos." Diffchestrator says "here's what changed, where, and lets you act on it."
 
+## Team Orchestration with Claude Code
+
+Diffchestrator shines when multiple Claude Code agents work across repos simultaneously — whether you're running parallel agents on an epic, reviewing a multi-service change, or just keeping tabs on what Claude touched while you were away.
+
+### Parallel Agent Workflows
+
+When you spawn multiple Claude Code sessions (one per repo or per story), Diffchestrator gives you a single pane of glass:
+
+- **Per-repo terminal tracking** — each repo tracks its own Claude, Yolo, and shell terminals independently. The Active Repos view shows which terminals are running where
+- **Auto-switch terminal** — clicking a repo in the sidebar or dashboard auto-surfaces that repo's Claude terminal
+- **Smart notifications** — get notified when Claude commits or modifies files. Notifications queue while VS Code is unfocused and show a grouped summary on refocus, with "Push" and "Show Terminal" quick actions
+
+### Multi-Repo Claude Sessions
+
+For changes that span multiple repos (e.g., API contract changes across backend + frontend):
+
+- **Open Claude Code** (`Alt+D, L`) — launches `claude -c` to continue the previous session. With multiple repos selected, it launches `claude --add-dir` for each selected repo
+- **Claude Review All** — opens Claude with `--add-dir` for every repo with uncommitted changes plus a review prompt. Available from the dashboard header
+- **Multi-repo diff webview** — aggregated diffs across selected repos with per-file stage/unstage controls and "Ask Claude" button per diff hunk
+
+### Dashboard as Mission Control
+
+The dashboard (`Alt+D, V`) is designed for orchestration visibility:
+
+- **Session Summary** — every commit since VS Code session start, grouped by repo. Works regardless of where the commit happened (VS Code terminal, external CLI, or a Claude agent running in another window)
+- **Activity Log** — cross-repo commit timeline with repo/author filters. See what every agent produced, sorted by time
+- **Sync Overview** — at a glance: which repos have changes, which are ahead/behind, which need attention. Bulk pull/push from one place
+- **Change Heatmap** — instantly spot which repos are "hot" (active changes) vs stale
+
+### Typical Orchestration Workflow
+
+1. Open Diffchestrator dashboard (`Alt+D, V`)
+2. **Fetch All** to see which repos are behind
+3. **Pull outdated** to bring everything up to date
+4. Spawn Claude Code sessions from the dashboard (per-repo `◇` button) or sidebar
+5. Monitor progress via Session Summary and terminal indicators
+6. Review changes across repos — click each repo to see its diffs, or use Claude Review All
+7. Stage, commit, and push from the dashboard or sidebar
+8. Use the Activity Log tab to see the full cross-repo timeline of what was done
+
+### Works with External Agents
+
+Diffchestrator doesn't require Claude to run inside VS Code. The file watcher monitors `.git/` directories for changes regardless of source. If you have Claude Code running in an external terminal, a CI pipeline pushing commits, or a teammate making changes — the dashboard picks it all up via `git log`.
+
 ## Features
 
 ### Claude Code Integration
