@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.56.3
+
+### Bug Fixes
+- Activate() returns stub API when git missing, add git timeout, fix require imports, hoist regex, catch startup errors
+
 ## 0.56.2
 
 ### Other
