@@ -23,7 +23,6 @@ import { GitContentProvider } from "./providers/gitContentProvider";
 import { DiffWebviewPanel } from "./views/diffWebviewPanel";
 import { DashboardWebviewPanel } from "./views/dashboardWebviewPanel";
 import { FileWatcher } from "./services/fileWatcher";
-import { StatusBarManager } from "./services/statusBar";
 import { InlineBlameService } from "./services/inlineBlame";
 import { WorkspaceAutoScan } from "./services/workspaceAutoScan";
 // GitExecutor accessed via repoManager.git (shared instance)
@@ -185,8 +184,9 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     const descParts = [rootName, tagLabel, countLabel].filter(Boolean);
     repoTreeView.description = descParts.join(" — ");
 
-    // Active Repos view: show root name
-    activeReposView.description = rootName || undefined;
+    // Active Repos view: show root name + summary
+    const activeDesc = [rootName, `${repos.length} repos`, totalChanges > 0 ? `${totalChanges} changes` : ""].filter(Boolean);
+    activeReposView.description = activeDesc.join(" · ") || undefined;
 
     // Activity bar badge: total changes across all repos
     repoTreeView.badge = totalChanges > 0
@@ -1252,11 +1252,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
 
   // Phase 5: File watcher already created above (before command registrations)
 
-  // Phase 6: Status bar — shows repo/change counts
-  const statusBar = new StatusBarManager(repoManager);
-  context.subscriptions.push(statusBar);
-
-  // Phase 7: Inline blame — git blame on current line
+  // Phase 6: Inline blame — git blame on current line
   const inlineBlame = new InlineBlameService(repoManager);
   context.subscriptions.push(inlineBlame);
 
