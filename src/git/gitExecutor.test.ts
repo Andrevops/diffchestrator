@@ -23,6 +23,7 @@ describe("GitExecutor Path Validation", () => {
     "./local.file",
     "sub/folder/file.ext",
     "", // Root of repo
+    "sub/../file.txt", // resolves inside repo
   ];
 
   describe("diff()", () => {
@@ -37,6 +38,28 @@ describe("GitExecutor Path Validation", () => {
     for (const p of validPaths) {
       test(`should accept valid path: ${p}`, async () => {
         await assert.doesNotReject(() => executor.diff(repoPath, false, p));
+      });
+    }
+  });
+
+  describe("checkoutFile() and cleanFile() edge cases", () => {
+    for (const p of invalidPaths) {
+      test(`checkoutFile should throw for invalid path: ${p}`, async () => {
+        await assert.rejects(() => executor.checkoutFile(repoPath, p), {
+          message: /Path traversal detected/,
+        });
+      });
+
+      test(`cleanFile should throw for invalid path: ${p}`, async () => {
+        await assert.rejects(() => executor.cleanFile(repoPath, p), {
+          message: /Path traversal detected/,
+        });
+      });
+
+      test(`blame should throw for invalid path: ${p}`, async () => {
+        await assert.rejects(() => executor.blame(repoPath, p, 1), {
+          message: /Path traversal detected/,
+        });
       });
     }
   });
