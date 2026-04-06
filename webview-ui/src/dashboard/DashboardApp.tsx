@@ -5,6 +5,7 @@ import BranchMap from "./BranchMap";
 import ChangeHeatmap from "./ChangeHeatmap";
 import SessionSummary from "./SessionSummary";
 import ActivityLog from "./ActivityLog";
+import StashOverview from "./StashOverview";
 import SettingsPanel from "./SettingsPanel";
 import ShortcutRef from "./ShortcutRef";
 
@@ -16,12 +17,25 @@ export interface ActivityEntry {
   message: string;
 }
 
+export interface DiffStatSummary {
+  files: string[];
+  additions: number;
+  deletions: number;
+}
+
+export interface StashOverviewEntry {
+  repoName: string;
+  repoPath: string;
+  stashes: { index: number; message: string }[];
+}
+
 export interface DashboardPayload {
   syncOverview: SyncOverviewEntry[];
   branchMap: BranchMapEntry[];
   changeHeatmap: HeatmapEntry[];
   sessionSummary: SessionSummaryEntry[];
   activityLog: ActivityEntry[];
+  stashOverview: StashOverviewEntry[];
   sessionStartTime: string;
 }
 
@@ -35,6 +49,7 @@ export interface SyncOverviewEntry {
   stashCount: number;
   isPinned: boolean;
   healthScore: number;
+  diffStat?: DiffStatSummary;
 }
 
 export interface BranchMapEntry {
@@ -219,6 +234,13 @@ export default function DashboardApp() {
             collapsed={!!collapsed.session}
             onToggle={() => toggleSection("session")}
           />
+          {data.stashOverview.length > 0 && (
+            <StashOverview
+              entries={data.stashOverview}
+              collapsed={!!collapsed.stash}
+              onToggle={() => toggleSection("stash")}
+            />
+          )}
         </div>
       )}
 

@@ -187,7 +187,17 @@ export default function SyncOverview({ entries, onOpenRepo, collapsed, onToggle 
                       <td>{e.branch}</td>
                       <td>{e.ahead || ""}</td>
                       <td>{e.behind || ""}</td>
-                      <td>{e.totalChanges || ""}</td>
+                      <td
+                        title={e.diffStat ? `+${e.diffStat.additions} -${e.diffStat.deletions}\n${e.diffStat.files.join("\n")}` : ""}
+                      >
+                        {e.totalChanges || ""}
+                        {e.diffStat && (
+                          <span className="diff-stat-inline">
+                            <span className="diff-add">+{e.diffStat.additions}</span>
+                            <span className="diff-del">-{e.diffStat.deletions}</span>
+                          </span>
+                        )}
+                      </td>
                       <td>{e.stashCount || ""}</td>
                       <td>{healthBadge(e.healthScore)}</td>
                       <td className="sync-actions">

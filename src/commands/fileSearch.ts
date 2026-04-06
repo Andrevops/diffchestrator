@@ -184,7 +184,7 @@ export function registerFileSearchCommand(
           }
 
           if (allMatches.length === 0) {
-            quickPick.items = [{ label: "$(info) No matches found", description: "", _noAction: true } as any];
+            quickPick.items = [{ label: "$(info) No matches found", description: "", _noAction: true }];
           } else {
             quickPick.items = allMatches.slice(0, 100);
           }

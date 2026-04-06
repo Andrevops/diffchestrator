@@ -34,16 +34,19 @@ export function registerCommitCommands(
           { label: "test", description: "Adding or updating tests" },
           { label: "ci", description: "CI/CD changes" },
           { label: "$(dash) No prefix", description: "Plain commit message", _plain: true },
-        ];
-        const picked = await vscode.window.showQuickPick(prefixes as (typeof prefixes[0] & { _plain?: boolean })[], {
-          placeHolder: `Commit type for ${repoName}`,
-        });
+        ] as const;
+        type PrefixItem = (typeof prefixes)[number];
+        const picked: PrefixItem | undefined = await vscode.window.showQuickPick(
+          prefixes as unknown as vscode.QuickPickItem[],
+          { placeHolder: `Commit type for ${repoName}` }
+        ) as PrefixItem | undefined;
         if (!picked) return;
 
+        const isPlain = "_plain" in picked && picked._plain;
         const message = await vscode.window.showInputBox({
           prompt: `Commit message for ${repoName}`,
-          placeHolder: (picked as any)._plain ? "Enter commit message..." : `${picked.label}: describe your change...`,
-          value: (picked as any)._plain ? "" : `${picked.label}: `,
+          placeHolder: isPlain ? "Enter commit message..." : `${picked.label}: describe your change...`,
+          value: isPlain ? "" : `${picked.label}: `,
           validateInput: (value) => {
             if (!value || value.trim().length === 0) {
               return "Commit message cannot be empty";

@@ -23,11 +23,11 @@ import { GitContentProvider } from "./providers/gitContentProvider";
 import { DiffWebviewPanel } from "./views/diffWebviewPanel";
 import { DashboardWebviewPanel } from "./views/dashboardWebviewPanel";
 import { FileWatcher } from "./services/fileWatcher";
-import { StatusBarManager } from "./services/statusBar";
 import { InlineBlameService } from "./services/inlineBlame";
 import { WorkspaceAutoScan } from "./services/workspaceAutoScan";
 // GitExecutor accessed via repoManager.git (shared instance)
 import { showTerminalIfExists, findRepoForTerminal } from "./commands/terminal";
+import { extractTabUri } from "./types";
 import * as path from "path";
 
 /** Public API for sibling extensions (e.g. Epic Lens) */
@@ -54,7 +54,14 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         vscode.env.openExternal(vscode.Uri.parse("https://git-scm.com/downloads"));
       }
     });
-    return;
+    // Return stub API so consumers don't crash
+    const noop = new vscode.EventEmitter<void>();
+    context.subscriptions.push(noop);
+    return {
+      getCurrentRoot: () => undefined,
+      getSelectedRepo: () => undefined,
+      onDidChangeSelection: noop.event,
+    };
   }
 
   const sessionStartTime = Date.now();
@@ -148,7 +155,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     // Repo is clean — close any open git-show tabs for it
     const tabsToClose: vscode.Tab[] = [];
     for (const tab of vscode.window.tabGroups.all.flatMap((g) => g.tabs)) {
-      const uri = (tab.input as any)?.uri ?? (tab.input as any)?.original ?? (tab.input as any)?.modified;
+      const uri = extractTabUri(tab.input);
       if (uri?.scheme === "git-show") {
         try {
           const params = JSON.parse(uri.query);
@@ -177,8 +184,9 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     const descParts = [rootName, tagLabel, countLabel].filter(Boolean);
     repoTreeView.description = descParts.join(" — ");
 
-    // Active Repos view: show root name
-    activeReposView.description = rootName || undefined;
+    // Active Repos view: show root name + summary
+    const activeDesc = [rootName, `${repos.length} repos`, totalChanges > 0 ? `${totalChanges} changes` : ""].filter(Boolean);
+    activeReposView.description = activeDesc.join(" · ") || undefined;
 
     // Activity bar badge: total changes across all repos
     repoTreeView.badge = totalChanges > 0
@@ -1147,15 +1155,13 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     for (const group of vscode.window.tabGroups.all) {
       for (const tab of group.tabs) {
         let belongsToRepo = false;
-        const input = tab.input as any;
+        const input = tab.input as Record<string, unknown> | undefined;
         if (input?.uri) {
-          // TabInputText or TabInputNotebook — has a single uri
-          belongsToRepo = uriBelongsToRepo(input.uri, repoPath);
+          belongsToRepo = uriBelongsToRepo(input.uri as vscode.Uri, repoPath);
         } else if (input?.original && input?.modified) {
-          // TabInputDiff — has original + modified URIs
           belongsToRepo =
-            uriBelongsToRepo(input.original, repoPath) ||
-            uriBelongsToRepo(input.modified, repoPath);
+            uriBelongsToRepo(input.original as vscode.Uri, repoPath) ||
+            uriBelongsToRepo(input.modified as vscode.Uri, repoPath);
         }
         if (belongsToRepo) {
           tabsToClose.push(tab);
@@ -1246,11 +1252,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
 
   // Phase 5: File watcher already created above (before command registrations)
 
-  // Phase 6: Status bar — shows repo/change counts
-  const statusBar = new StatusBarManager(repoManager);
-  context.subscriptions.push(statusBar);
-
-  // Phase 7: Inline blame — git blame on current line
+  // Phase 6: Inline blame — git blame on current line
   const inlineBlame = new InlineBlameService(repoManager);
   context.subscriptions.push(inlineBlame);
 
@@ -1267,6 +1269,8 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     if (startupRoot) {
       repoManager.scan(startupRoot).then(() => {
         fileWatcher.watchAll();
+      }).catch((err) => {
+        outputChannel.appendLine(`[startup scan] ${err instanceof Error ? err.message : err}`);
       });
     }
   }

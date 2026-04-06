@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { RepoManager } from "../services/repoManager";
-import type { RepoStatus } from "../types";
+import type { RepoStatus, DiffWebviewMessage } from "../types";
 import { escapeForTerminal } from "../utils/shell";
 
 export class DiffWebviewPanel {
@@ -176,7 +176,13 @@ export class DiffWebviewPanel {
     });
   }
 
-  private async _handleMessage(msg: Record<string, unknown>): Promise<void> {
+  private async _handleMessage(msg: DiffWebviewMessage): Promise<void> {
+    // Validate repoPath against known repos
+    const repoPath = "repoPath" in msg ? msg.repoPath : undefined;
+    if (repoPath && !this._repoManager.getRepo(repoPath)) {
+      return;
+    }
+
     switch (msg.type) {
       case "ready":
         await this._update();
@@ -188,61 +194,50 @@ export class DiffWebviewPanel {
         break;
 
       case "stageFile": {
-        const repoPath = msg.repoPath as string;
-        const filePath = msg.filePath as string;
-        await this._git.stage(repoPath, [filePath]);
-        await this._repoManager.refreshRepo(repoPath);
+        await this._git.stage(msg.repoPath, [msg.filePath]);
+        await this._repoManager.refreshRepo(msg.repoPath);
         await this._update();
         break;
       }
 
       case "unstageFile": {
-        const repoPath = msg.repoPath as string;
-        const filePath = msg.filePath as string;
-        await this._git.unstage(repoPath, [filePath]);
-        await this._repoManager.refreshRepo(repoPath);
+        await this._git.unstage(msg.repoPath, [msg.filePath]);
+        await this._repoManager.refreshRepo(msg.repoPath);
         await this._update();
         break;
       }
 
       case "stageAll": {
-        const repoPath = msg.repoPath as string;
-        await this._git.stage(repoPath, ["."]);
-        await this._repoManager.refreshRepo(repoPath);
+        await this._git.stage(msg.repoPath, ["."]);
+        await this._repoManager.refreshRepo(msg.repoPath);
         await this._update();
         break;
       }
 
       case "unstageAll": {
-        const repoPath = msg.repoPath as string;
-        await this._git.unstage(repoPath, ["."]);
-        await this._repoManager.refreshRepo(repoPath);
+        await this._git.unstage(msg.repoPath, ["."]);
+        await this._repoManager.refreshRepo(msg.repoPath);
         await this._update();
         break;
       }
 
       case "openTerminal": {
-        const repoPath = msg.repoPath as string | undefined;
-        if (repoPath) {
-          const name = path.basename(repoPath);
-          const terminal = vscode.window.createTerminal({
-            name: `Terminal - ${name}`,
-            cwd: repoPath,
-          });
-          terminal.show();
-        }
+        const name = path.basename(msg.repoPath);
+        const terminal = vscode.window.createTerminal({
+          name: `Terminal - ${name}`,
+          cwd: msg.repoPath,
+        });
+        terminal.show();
         break;
       }
 
       case "askClaude": {
-        const repoPath = msg.repoPath as string;
-        const filePath = msg.filePath as string;
-        const hunkContent = msg.hunkContent as string;
-        const repoName = path.basename(repoPath);
+        const { repoPath: rp, filePath, hunkContent } = msg;
+        const repoName = path.basename(rp);
 
         const terminal = vscode.window.createTerminal({
           name: `Claude Code - ${repoName}`,
-          cwd: repoPath,
+          cwd: rp,
         });
         terminal.show();
 

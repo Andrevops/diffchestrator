@@ -708,6 +708,59 @@
   white-space: nowrap;
 }
 
+/* Diff stat inline */
+.diff-stat-inline {
+  margin-left: 4px;
+  font-size: 10px;
+}
+
+.diff-add {
+  color: var(--vscode-gitDecoration-untrackedResourceForeground, #73c991);
+  margin-right: 3px;
+}
+
+.diff-del {
+  color: var(--vscode-gitDecoration-deletedResourceForeground, #c74e39);
+}
+
+/* Stash overview */
+.stash-repo {
+  margin-bottom: 12px;
+}
+
+.stash-repo-header {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.stash-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 11px;
+  border-bottom: 1px solid var(--vscode-panel-border, #222);
+}
+
+.stash-row:last-child {
+  border-bottom: none;
+}
+
+.stash-message {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-descriptionForeground);
+}
+
+.stash-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 /* Empty state */
 .section-empty {
   text-align: center;

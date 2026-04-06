@@ -89,3 +89,93 @@ describe("GitExecutor Path Validation", () => {
     });
   });
 });
+
+describe("GitExecutor Stash Validation", () => {
+  const executor = new GitExecutor();
+  const repoPath = path.resolve("/tmp/repo");
+
+  // Mock _run
+  (executor as any)._run = async () => ({ stdout: "", stderr: "", code: 0 });
+
+  describe("stashApply()", () => {
+    test("should reject negative index", async () => {
+      await assert.rejects(() => executor.stashApply(repoPath, -1), {
+        message: /Invalid stash index/,
+      });
+    });
+
+    test("should reject non-integer index", async () => {
+      await assert.rejects(() => executor.stashApply(repoPath, 1.5), {
+        message: /Invalid stash index/,
+      });
+    });
+
+    test("should reject NaN", async () => {
+      await assert.rejects(() => executor.stashApply(repoPath, NaN), {
+        message: /Invalid stash index/,
+      });
+    });
+
+    test("should accept valid index 0", async () => {
+      await assert.doesNotReject(() => executor.stashApply(repoPath, 0));
+    });
+
+    test("should accept valid index 5", async () => {
+      await assert.doesNotReject(() => executor.stashApply(repoPath, 5));
+    });
+  });
+
+  describe("show()", () => {
+    test("should block flag injection", async () => {
+      const result = await executor.show(repoPath, "--exec=malicious");
+      assert.strictEqual(result, "");
+    });
+
+    test("should block -flag injection", async () => {
+      const result = await executor.show(repoPath, "-n1");
+      assert.strictEqual(result, "");
+    });
+
+    test("should accept valid ref", async () => {
+      await assert.doesNotReject(() => executor.show(repoPath, "HEAD"));
+    });
+
+    test("should accept commit hash", async () => {
+      await assert.doesNotReject(() => executor.show(repoPath, "abc1234"));
+    });
+  });
+});
+
+describe("GitExecutor Meta Cache", () => {
+  const executor = new GitExecutor();
+
+  test("invalidateMetaCache clears all entries", () => {
+    // Populate cache via internal method
+    (executor as any)._setCachedMeta("repo1:remoteUrl", "https://example.com");
+    (executor as any)._setCachedMeta("repo2:remoteUrl", "https://example.com");
+    executor.invalidateMetaCache();
+    assert.strictEqual((executor as any)._getCachedMeta("repo1:remoteUrl"), undefined);
+    assert.strictEqual((executor as any)._getCachedMeta("repo2:remoteUrl"), undefined);
+  });
+
+  test("invalidateMetaCache clears entries for specific repo", () => {
+    (executor as any)._setCachedMeta("repo1:remoteUrl", "url1");
+    (executor as any)._setCachedMeta("repo1:stashCount", 3);
+    (executor as any)._setCachedMeta("repo2:remoteUrl", "url2");
+    executor.invalidateMetaCache("repo1");
+    assert.strictEqual((executor as any)._getCachedMeta("repo1:remoteUrl"), undefined);
+    assert.strictEqual((executor as any)._getCachedMeta("repo1:stashCount"), undefined);
+    assert.strictEqual((executor as any)._getCachedMeta("repo2:remoteUrl"), "url2");
+  });
+
+  test("cache respects TTL", async () => {
+    // Set a value with artificially expired time
+    (executor as any)._metaCache.set("expired:key", { value: "old", time: 0 });
+    assert.strictEqual((executor as any)._getCachedMeta("expired:key"), undefined);
+  });
+
+  test("cache returns value within TTL", () => {
+    (executor as any)._setCachedMeta("fresh:key", "value");
+    assert.strictEqual((executor as any)._getCachedMeta("fresh:key"), "value");
+  });
+});

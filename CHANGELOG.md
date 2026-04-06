@@ -2,6 +2,58 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.56.7
+
+### Bug Fixes
+- Guard status cache against stale in-flight writes
+
+### Other
+- Remove status bar items, surface summary in sidebar
+
+## 0.56.6
+
+### Other
+- Fix dashboard tab count, add stashes/settings/pinned docs, update architecture tree
+
+## 0.56.5
+
+### Bug Fixes
+- Bump CI Node.js to 22 for --experimental-strip-types test support
+
+## 0.56.4
+
+### Other
+- Type-safe webview messages, eliminate as-any casts, remove dead types, add CI tests, tab URI helper
+
+## 0.56.3
+
+### Bug Fixes
+- Activate() returns stub API when git missing, add git timeout, fix require imports, hoist regex, catch startup errors
+
+## 0.56.2
+
+### Other
+- Fix enum compatibility, add stash validation, flag injection, and cache tests (42 pass)
+
+## 0.56.1
+
+### Bug Fixes
+- Security hardening — repoPath validation, stash index validation, cache TTL cleanup, update concurrency guard
+
+## 0.56.0
+
+### Features
+- Stash overview, diff stat preview, and diffStatSummary/fileCount git methods
+
+### Other
+- Add make release and publish targets to CLAUDE.md
+- Add CLAUDE.md with project instructions for Claude Code sessions
+
+## 0.55.1
+
+### Performance
+- Optimize repository sorting in switchRepo command
+
 ## 0.55.0
 
 ### Features

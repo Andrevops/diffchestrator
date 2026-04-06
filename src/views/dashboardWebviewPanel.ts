@@ -1,7 +1,21 @@
 import * as vscode from "vscode";
+import * as path from "path";
 import { RepoManager } from "../services/repoManager";
+import type { CommitEntry, DashboardMessage } from "../types";
 import { CMD } from "../constants";
 import { showTerminalIfExists } from "../commands/terminal";
+
+interface DiffStatSummary {
+  files: string[];
+  additions: number;
+  deletions: number;
+}
+
+interface StashOverviewEntry {
+  repoName: string;
+  repoPath: string;
+  stashes: { index: number; message: string }[];
+}
 
 interface SyncOverviewEntry {
   name: string;
@@ -13,6 +27,7 @@ interface SyncOverviewEntry {
   stashCount: number;
   isPinned: boolean;
   healthScore: number;
+  diffStat?: DiffStatSummary;
 }
 
 function computeHealthScore(r: { totalChanges: number; ahead: number; behind: number; stashCount: number }): number {
@@ -57,6 +72,7 @@ interface DashboardPayload {
   changeHeatmap: HeatmapEntry[];
   sessionSummary: SessionSummaryEntry[];
   activityLog: ActivityEntry[];
+  stashOverview: StashOverviewEntry[];
   sessionStartTime: string;
 }
 
@@ -71,6 +87,7 @@ export class DashboardWebviewPanel {
   private _git;
   private _sessionStartTime: number;
   private _updateThrottleTimer: ReturnType<typeof setTimeout> | undefined;
+  private _updateInProgress = false;
 
   static createOrShow(
     extensionUri: vscode.Uri,
@@ -139,10 +156,16 @@ export class DashboardWebviewPanel {
   }
 
   private _scheduleUpdate(): void {
-    if (this._updateThrottleTimer) return;
-    this._updateThrottleTimer = setTimeout(() => {
+    if (this._updateThrottleTimer || this._updateInProgress) return;
+    this._updateThrottleTimer = setTimeout(async () => {
       this._updateThrottleTimer = undefined;
-      this._update();
+      if (this._updateInProgress) return;
+      this._updateInProgress = true;
+      try {
+        await this._update();
+      } finally {
+        this._updateInProgress = false;
+      }
     }, 2000);
   }
 
@@ -219,6 +242,7 @@ export class DashboardWebviewPanel {
         changeHeatmap: [],
         sessionSummary: [],
         activityLog: [],
+        stashOverview: [],
         sessionStartTime: sinceISO,
       } satisfies DashboardPayload,
     });
@@ -228,16 +252,39 @@ export class DashboardWebviewPanel {
     const heatmapEntries: HeatmapEntry[] = [];
     const sessionEntries: SessionSummaryEntry[] = [];
     const activityEntries: ActivityEntry[] = [];
+    const stashEntries: StashOverviewEntry[] = [];
+    const diffStats = new Map<string, DiffStatSummary>();
 
     for (let i = 0; i < repos.length; i += BATCH) {
       const batch = repos.slice(i, i + BATCH);
       await Promise.all(
         batch.map(async (r) => {
           try {
-            const [{ lastDate, commits: sessionCommits }, recentCommits] = await Promise.all([
+            const calls: Promise<unknown>[] = [
               this._git.logSinceWithDate(r.path, sinceISO, 50),
               this._git.log(r.path, 3),
-            ]);
+            ];
+            // Only fetch diff stats for dirty repos
+            if (r.totalChanges > 0) {
+              calls.push(this._git.diffStatSummary(r.path));
+            }
+            // Only fetch stash list for repos with stashes
+            if (r.stashCount > 0) {
+              calls.push(this._git.stashList(r.path));
+            }
+            const results = await Promise.all(calls);
+            const { lastDate, commits: sessionCommits } = results[0] as { lastDate: string | undefined; commits: CommitEntry[] };
+            const recentCommits = results[1] as CommitEntry[];
+            let resultIdx = 2;
+            if (r.totalChanges > 0) {
+              diffStats.set(r.path, results[resultIdx++] as DiffStatSummary);
+            }
+            if (r.stashCount > 0) {
+              const stashes = results[resultIdx] as { index: number; message: string }[];
+              if (stashes.length > 0) {
+                stashEntries.push({ repoName: r.name, repoPath: r.path, stashes });
+              }
+            }
             heatmapEntries.push({
               name: r.name,
               path: r.path,
@@ -275,21 +322,41 @@ export class DashboardWebviewPanel {
     // Sort activity by date descending
     activityEntries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+    // Enrich sync entries with diff stats
+    const enrichedSync = syncOverview.map((e) => ({
+      ...e,
+      diffStat: diffStats.get(e.path),
+    }));
+
     // Send complete data
     this._panel.webview.postMessage({
       type: "dashboardUpdate",
       data: {
-        syncOverview,
+        syncOverview: enrichedSync,
         branchMap,
         changeHeatmap: heatmapEntries,
         sessionSummary: sessionEntries,
         activityLog: activityEntries,
+        stashOverview: stashEntries,
         sessionStartTime: sinceISO,
       } satisfies DashboardPayload,
     });
   }
 
-  private async _handleMessage(msg: Record<string, unknown>): Promise<void> {
+  private _isKnownRepo(repoPath: string): boolean {
+    return !!this._repoManager.getRepo(repoPath);
+  }
+
+  private async _handleMessage(msg: DashboardMessage): Promise<void> {
+    // Validate repoPath against known repos for any message that includes one
+    const repoPath = "repoPath" in msg ? msg.repoPath : undefined;
+    if (repoPath && !this._isKnownRepo(repoPath)) {
+      // Allow pin/unpin (path may be in config but not currently scanned)
+      if (msg.type !== "pinRepo" && msg.type !== "unpinRepo") {
+        return;
+      }
+    }
+
     switch (msg.type) {
       case "ready":
         await this._update();
@@ -316,7 +383,7 @@ export class DashboardWebviewPanel {
         break;
 
       case "openRepo": {
-        const repoPath = msg.repoPath as string;
+        const repoPath = msg.repoPath;
         this._repoManager.selectRepo(repoPath);
         await showTerminalIfExists(repoPath);
         break;
@@ -329,28 +396,28 @@ export class DashboardWebviewPanel {
       }
 
       case "pullRepo": {
-        const repoPath = msg.repoPath as string;
+        const repoPath = msg.repoPath;
         try {
           await this._git.pull(repoPath);
           await this._repoManager.refreshRepo(repoPath);
           await this._update();
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
-          vscode.window.showErrorMessage(`Diffchestrator: Pull failed for ${require("path").basename(repoPath)}: ${errMsg}`);
+          vscode.window.showErrorMessage(`Diffchestrator: Pull failed for ${path.basename(repoPath)}: ${errMsg}`);
         }
         break;
       }
 
       case "pushRepo": {
-        const repoPath = msg.repoPath as string;
+        const repoPath = msg.repoPath;
         try {
           await this._git.push(repoPath);
           await this._repoManager.refreshRepo(repoPath);
           await this._update();
-          vscode.window.showInformationMessage(`Diffchestrator: Pushed ${require("path").basename(repoPath)}`);
+          vscode.window.showInformationMessage(`Diffchestrator: Pushed ${path.basename(repoPath)}`);
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
-          vscode.window.showErrorMessage(`Diffchestrator: Push failed for ${require("path").basename(repoPath)}: ${errMsg}`);
+          vscode.window.showErrorMessage(`Diffchestrator: Push failed for ${path.basename(repoPath)}: ${errMsg}`);
         }
         break;
       }
@@ -362,9 +429,9 @@ export class DashboardWebviewPanel {
       }
 
       case "openTerminal": {
-        const repoPath = msg.repoPath as string;
+        const repoPath = msg.repoPath;
         if (repoPath) {
-          const name = require("path").basename(repoPath);
+          const name = path.basename(repoPath);
           const terminal = vscode.window.createTerminal({
             name: `DC: ${name}`,
             cwd: repoPath,
@@ -375,7 +442,7 @@ export class DashboardWebviewPanel {
       }
 
       case "openClaude": {
-        const repoPath = msg.repoPath as string;
+        const repoPath = msg.repoPath;
         if (repoPath) {
           this._repoManager.selectRepo(repoPath);
           await vscode.commands.executeCommand(CMD.openClaudeCode, { path: repoPath });
@@ -384,7 +451,7 @@ export class DashboardWebviewPanel {
       }
 
       case "aiCommit": {
-        const repoPath = msg.repoPath as string;
+        const repoPath = msg.repoPath;
         if (repoPath) {
           this._repoManager.selectRepo(repoPath);
           await vscode.commands.executeCommand(CMD.aiCommit, { path: repoPath });
@@ -398,7 +465,7 @@ export class DashboardWebviewPanel {
         break;
 
       case "switchBranch": {
-        const repoPath = msg.repoPath as string;
+        const repoPath = msg.repoPath;
         if (repoPath) {
           this._repoManager.selectRepo(repoPath);
           await vscode.commands.executeCommand(CMD.switchBranch, { path: repoPath });
@@ -408,7 +475,7 @@ export class DashboardWebviewPanel {
       }
 
       case "discardAll": {
-        const repoPath = msg.repoPath as string;
+        const repoPath = msg.repoPath;
         if (repoPath) {
           await vscode.commands.executeCommand(CMD.discardAll, { path: repoPath });
           await this._update();
@@ -417,7 +484,7 @@ export class DashboardWebviewPanel {
       }
 
       case "commitHistory": {
-        const repoPath = msg.repoPath as string;
+        const repoPath = msg.repoPath;
         if (repoPath) {
           this._repoManager.selectRepo(repoPath);
           await vscode.commands.executeCommand(CMD.commitHistory, { path: repoPath });
@@ -426,7 +493,7 @@ export class DashboardWebviewPanel {
       }
 
       case "openRemoteUrl": {
-        const repoPath = msg.repoPath as string;
+        const repoPath = msg.repoPath;
         if (repoPath) {
           await vscode.commands.executeCommand(CMD.openRemoteUrl, { path: repoPath });
         }
@@ -434,7 +501,7 @@ export class DashboardWebviewPanel {
       }
 
       case "copyRepoInfo": {
-        const repoPath = msg.repoPath as string;
+        const repoPath = msg.repoPath;
         if (repoPath) {
           await vscode.commands.executeCommand(CMD.copyRepoInfo, { path: repoPath });
         }
@@ -459,8 +526,35 @@ export class DashboardWebviewPanel {
         await this._update();
         break;
 
+      case "stashPop": {
+        const repoPath = msg.repoPath;
+        try {
+          await this._git.stashPop(repoPath);
+          await this._repoManager.refreshRepo(repoPath);
+          await this._update();
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          vscode.window.showErrorMessage(`Diffchestrator: Stash pop failed: ${errMsg}`);
+        }
+        break;
+      }
+
+      case "stashApply": {
+        const repoPath = msg.repoPath;
+        const index = msg.index;
+        try {
+          await this._git.stashApply(repoPath, index);
+          await this._repoManager.refreshRepo(repoPath);
+          await this._update();
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          vscode.window.showErrorMessage(`Diffchestrator: Stash apply failed: ${errMsg}`);
+        }
+        break;
+      }
+
       case "pinRepo": {
-        const repoPath = msg.repoPath as string;
+        const repoPath = msg.repoPath;
         const cfg = vscode.workspace.getConfiguration("diffchestrator");
         const pinned = cfg.get<string[]>("pinnedRepos", []);
         if (!pinned.includes(repoPath)) {
@@ -472,7 +566,7 @@ export class DashboardWebviewPanel {
       }
 
       case "unpinRepo": {
-        const repoPath = msg.repoPath as string;
+        const repoPath = msg.repoPath;
         const cfg = vscode.workspace.getConfiguration("diffchestrator");
         const pinned = cfg.get<string[]>("pinnedRepos", []).filter((p) => p !== repoPath);
         await cfg.update("pinnedRepos", pinned, vscode.ConfigurationTarget.Global);
@@ -481,8 +575,8 @@ export class DashboardWebviewPanel {
       }
 
       case "exportActivity": {
-        const format = msg.format as "clipboard" | "file";
-        const entries = msg.entries as ActivityEntry[];
+        const format = msg.format;
+        const entries = msg.entries;
         const lines: string[] = ["# Diffchestrator Activity Log", ""];
         const grouped = new Map<string, ActivityEntry[]>();
         for (const e of entries) {
@@ -539,7 +633,7 @@ export class DashboardWebviewPanel {
       }
 
       case "updateSetting": {
-        const key = msg.key as string;
+        const key = msg.key;
         const value = msg.value;
         const cfg = vscode.workspace.getConfiguration("diffchestrator");
         await cfg.update(key, value, vscode.ConfigurationTarget.Global);

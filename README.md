@@ -178,17 +178,20 @@ Diffchestrator doesn't require Claude to run inside VS Code. The file watcher mo
 - **Status bar debounce** — consolidates multiple rapid updates into one render
 
 ### Dashboard (`Alt+D, V`)
-A full command center with three tabs. Also available from the Repositories title bar. Auto-refreshes every 2 seconds when repos change.
+A full command center with four tabs. Also available from the Repositories title bar. Auto-refreshes every 2 seconds when repos change.
 
-**Dashboard tab** — four sections:
-- **Sync Overview** — table with ahead/behind/changes/stashes, color-coded rows, sortable columns. Per-repo actions: pull, push, AI commit, discard, switch branch, commit history, open in browser, copy info, terminal, Claude Code. Bulk actions: Fetch All, Pull N outdated, Push N ahead
+**Dashboard tab** — five sections:
+- **Sync Overview** — table with ahead/behind/changes/stashes/health scores, color-coded rows, sortable columns, repo search filter, keyboard navigation. Per-repo actions: pull, push, AI commit, discard, switch branch, commit history, open in browser, copy info, terminal, Claude Code (overflow menu). Pinned repos sort to top. Bulk actions: Fetch All, Pull N outdated, Push N ahead
 - **Branch Map** — repos grouped by main vs feature branches, with pills per branch name. Branch Cleanup button to find and delete merged branches
 - **Change Heatmap** — tile grid with heat levels (hot/warm/mild/stale/quiet) based on changes + days since last commit
 - **Session Summary** — commits since VS Code session start, grouped by repo (works with external CLIs too)
+- **Stashes** — per-repo stash list with Apply/Pop actions (shown when repos have stashes)
 
 Header actions: Switch Root, Filter by Tag, Claude Review All, Save/Load Snapshot, Scan, Refresh
 
-**Activity tab** — cross-repo commit timeline sorted by date, grouped by day. Shows hash, repo name, message, author, and relative time across all repos.
+**Activity tab** — cross-repo commit timeline sorted by date, grouped by day. Filter by repo or author. Export as markdown (clipboard or file).
+
+**Settings tab** — configure scan roots, depth, skip dirs, display preferences, Claude permission mode, auto-push — all without editing JSON.
 
 **Shortcuts tab** — full keyboard shortcut reference with all `Alt+D` chords.
 
@@ -313,6 +316,7 @@ Right-click a **changed file**:
 | `diffchestrator.favorites` | `[]` | Persisted favorite paths (managed by extension) |
 | `diffchestrator.repoTags` | `{}` | Repo tags for filtering (managed by extension) |
 | `diffchestrator.snapshots` | `{}` | Workspace snapshots (managed by extension) |
+| `diffchestrator.pinnedRepos` | `[]` | Pinned repo paths in Dashboard Sync Overview (managed by extension) |
 
 ## Getting Started
 
@@ -450,11 +454,22 @@ src/
     ├── fileItem.ts          # File item resolution
     └── disposable.ts        # DisposableStore helper
 
-webview-ui/                   # React app for multi-repo diff
+webview-ui/                   # React apps (diff + dashboard)
 ├── src/
 │   ├── App.tsx               # Diff viewer with react-diff-view
-│   └── vscode.ts             # VS Code API wrapper
-└── vite.config.ts            # Builds to dist/webview/
+│   ├── vscode.ts             # VS Code API wrapper
+│   └── dashboard/            # Dashboard webview
+│       ├── DashboardApp.tsx   # Main dashboard with tabs
+│       ├── SyncOverview.tsx   # Sync table with actions
+│       ├── BranchMap.tsx      # Branch grouping
+│       ├── ChangeHeatmap.tsx  # Activity heatmap
+│       ├── SessionSummary.tsx # Session commits
+│       ├── StashOverview.tsx  # Stash management
+│       ├── ActivityLog.tsx    # Activity tab with filters
+│       ├── SettingsPanel.tsx  # Settings tab
+│       └── ShortcutRef.tsx    # Shortcuts tab
+├── vite.config.ts             # Builds diff webview → dist/webview/
+└── vite.dashboard.config.ts   # Builds dashboard → dist/webview-dashboard/
 
 scripts/
 └── release.mjs               # Auto-detect semver bump + changelog + commit + tag + dual build (Marketplace + Open VSX)
