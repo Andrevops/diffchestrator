@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.56.11
+
+### Bug Fixes
+- Use BFS scanner for cross-root terminal matching instead of shallow readdirSync
+
 ## 0.56.10
 
 ### Bug Fixes
