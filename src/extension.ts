@@ -29,7 +29,6 @@ import { WorkspaceAutoScan } from "./services/workspaceAutoScan";
 import { showTerminalIfExists, findRepoForTerminal } from "./commands/terminal";
 import { extractTabUri } from "./types";
 import * as path from "path";
-import * as fs from "fs";
 
 /** Public API for sibling extensions (e.g. Epic Lens) */
 export interface DiffchestratorApi {
@@ -121,25 +120,12 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         return;
       }
       if (!repoPath) {
-        // No match in current root — scan other configured roots for a
-        // directory whose name appears in the terminal name (same strategy
-        // as findRepoForTerminal, but across roots).
-        const roots = vscode.workspace.getConfiguration("diffchestrator").get<string[]>("scanRoots", []);
-        const termName = terminal.name;
-        outer: for (const root of roots) {
-          if (root === repoManager.currentRoot) continue;
-          try {
-            const entries = fs.readdirSync(root, { withFileTypes: true });
-            // Longest name first so "foo-bar" matches before "foo"
-            const dirs = entries.filter((e) => e.isDirectory()).sort((a, b) => b.name.length - a.name.length);
-            for (const dir of dirs) {
-              if (termName.includes(dir.name) && fs.existsSync(path.join(root, dir.name, ".git"))) {
-                await vscode.commands.executeCommand(CMD.switchRoot, root);
-                await vscode.commands.executeCommand(CMD.viewDiff, { path: path.join(root, dir.name) });
-                break outer;
-              }
-            }
-          } catch { /* skip inaccessible roots */ }
+        // No match in current root — search other configured roots
+        // using cached/lazy BFS discovery (handles nested repos)
+        const match = repoManager.findRepoInOtherRoots(terminal.name);
+        if (match) {
+          await vscode.commands.executeCommand(CMD.switchRoot, match.root);
+          await vscode.commands.executeCommand(CMD.viewDiff, { path: match.path });
         }
       }
     })

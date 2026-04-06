@@ -16,6 +16,8 @@ export class RepoManager implements vscode.Disposable {
   private _selectedRepoPaths = new Set<string>();
   private _recentRepoPaths: string[] = [];
   private _selectionPerRoot = new Map<string, { selected?: string; multi: string[]; recent: string[] }>();
+  /** Cached repo paths per root — populated during scan() and lazily for cross-root lookups */
+  private _pathsByRoot = new Map<string, string[]>();
   private _swapTarget: { path: string; root?: string } | undefined;
   private _swappingBack = false;
   private _state: vscode.Memento | undefined;
@@ -241,7 +243,44 @@ export class RepoManager implements vscode.Disposable {
       }
     );
 
+    this._pathsByRoot.set(rootPath, repos.map((r) => r.path));
+
     this.startAutoRefresh();
+  }
+
+  /**
+   * Find a repo in a non-current scan root by matching the terminal name
+   * against repo basenames. Lazily discovers repos via scanFast (BFS, no
+   * git calls) for roots not yet cached.
+   */
+  findRepoInOtherRoots(terminalName: string): { root: string; path: string } | undefined {
+    const config = vscode.workspace.getConfiguration("diffchestrator");
+    const roots = config.get<string[]>("scanRoots", []);
+    const maxDepth = config.get<number>("scanMaxDepth", 6);
+    const extraSkip = config.get<string[]>("scanExtraSkipDirs", []);
+
+    for (const root of roots) {
+      if (root === this._currentRoot) continue;
+
+      // Lazily discover repo paths for this root
+      if (!this._pathsByRoot.has(root)) {
+        const scanner = new Scanner(this._git, maxDepth, extraSkip);
+        this._pathsByRoot.set(root, scanner.scanFast(root).map((r) => r.path));
+      }
+
+      const paths = this._pathsByRoot.get(root) ?? [];
+      // Longest basename first to avoid partial matches ("foo" matching "foo-bar")
+      const sorted = [...paths].sort(
+        (a, b) => path.basename(b).length - path.basename(a).length
+      );
+
+      for (const p of sorted) {
+        if (terminalName.includes(path.basename(p))) {
+          return { root, path: p };
+        }
+      }
+    }
+    return undefined;
   }
 
   async refreshRepo(repoPath: string): Promise<void> {
