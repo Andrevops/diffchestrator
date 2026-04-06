@@ -59,6 +59,7 @@ export class GitExecutor {
       const { stdout, stderr } = await execFileAsync("git", args, {
         cwd,
         maxBuffer: 10 * 1024 * 1024,
+        timeout: 30_000, // 30s per operation
         env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
       });
       return { stdout, stderr, code: 0 };

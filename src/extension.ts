@@ -54,7 +54,14 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         vscode.env.openExternal(vscode.Uri.parse("https://git-scm.com/downloads"));
       }
     });
-    return;
+    // Return stub API so consumers don't crash
+    const noop = new vscode.EventEmitter<void>();
+    context.subscriptions.push(noop);
+    return {
+      getCurrentRoot: () => undefined,
+      getSelectedRepo: () => undefined,
+      onDidChangeSelection: noop.event,
+    };
   }
 
   const sessionStartTime = Date.now();
@@ -1267,6 +1274,8 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     if (startupRoot) {
       repoManager.scan(startupRoot).then(() => {
         fileWatcher.watchAll();
+      }).catch((err) => {
+        outputChannel.appendLine(`[startup scan] ${err instanceof Error ? err.message : err}`);
       });
     }
   }

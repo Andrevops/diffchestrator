@@ -4,6 +4,7 @@ import * as path from "path";
 import type { RepoManager } from "./repoManager";
 
 export class FileWatcher implements vscode.Disposable {
+  private static readonly GIT_STATE_PATTERN = /^(HEAD|index|COMMIT_EDITMSG|refs|MERGE_HEAD|REBASE_HEAD)/;
   private _watchers = new Map<string, fs.FSWatcher>();
   private _debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private _repoManager: RepoManager;
@@ -48,7 +49,7 @@ export class FileWatcher implements vscode.Disposable {
     try {
       const watcher = fs.watch(gitDir, { persistent: false }, (_event, filename) => {
         // Only react to meaningful git state changes
-        if (filename && /^(HEAD|index|COMMIT_EDITMSG|refs|MERGE_HEAD|REBASE_HEAD)/.test(filename)) {
+        if (filename && FileWatcher.GIT_STATE_PATTERN.test(filename)) {
           this._debouncedRefresh(repoPath);
         }
       });

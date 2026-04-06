@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as path from "path";
 import { RepoManager } from "../services/repoManager";
 import type { CommitEntry } from "../types";
 import { CMD } from "../constants";
@@ -401,7 +402,7 @@ export class DashboardWebviewPanel {
           await this._update();
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
-          vscode.window.showErrorMessage(`Diffchestrator: Pull failed for ${require("path").basename(repoPath)}: ${errMsg}`);
+          vscode.window.showErrorMessage(`Diffchestrator: Pull failed for ${path.basename(repoPath)}: ${errMsg}`);
         }
         break;
       }
@@ -412,10 +413,10 @@ export class DashboardWebviewPanel {
           await this._git.push(repoPath);
           await this._repoManager.refreshRepo(repoPath);
           await this._update();
-          vscode.window.showInformationMessage(`Diffchestrator: Pushed ${require("path").basename(repoPath)}`);
+          vscode.window.showInformationMessage(`Diffchestrator: Pushed ${path.basename(repoPath)}`);
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
-          vscode.window.showErrorMessage(`Diffchestrator: Push failed for ${require("path").basename(repoPath)}: ${errMsg}`);
+          vscode.window.showErrorMessage(`Diffchestrator: Push failed for ${path.basename(repoPath)}: ${errMsg}`);
         }
         break;
       }
@@ -429,7 +430,7 @@ export class DashboardWebviewPanel {
       case "openTerminal": {
         const repoPath = msg.repoPath as string;
         if (repoPath) {
-          const name = require("path").basename(repoPath);
+          const name = path.basename(repoPath);
           const terminal = vscode.window.createTerminal({
             name: `DC: ${name}`,
             cwd: repoPath,
