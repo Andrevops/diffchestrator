@@ -121,20 +121,23 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         return;
       }
       if (!repoPath) {
-        // No match in current root — extract project name from terminal
-        // (e.g. "Claude: my-app" → "my-app") and probe other scan roots
-        const m = terminal.name.match(/^(?:Claude|YOLO|DC):\s*(.+)$/i);
-        const projectName = m?.[1]?.trim();
-        if (!projectName) return;
+        // No match in current root — scan other configured roots for a
+        // directory whose name appears in the terminal name (same strategy
+        // as findRepoForTerminal, but across roots).
         const roots = vscode.workspace.getConfiguration("diffchestrator").get<string[]>("scanRoots", []);
-        for (const root of roots) {
+        const termName = terminal.name;
+        outer: for (const root of roots) {
           if (root === repoManager.currentRoot) continue;
-          const candidate = path.join(root, projectName);
           try {
-            if (fs.existsSync(path.join(candidate, ".git"))) {
-              await vscode.commands.executeCommand(CMD.switchRoot, root);
-              vscode.commands.executeCommand(CMD.viewDiff, { path: candidate });
-              return;
+            const entries = fs.readdirSync(root, { withFileTypes: true });
+            // Longest name first so "foo-bar" matches before "foo"
+            const dirs = entries.filter((e) => e.isDirectory()).sort((a, b) => b.name.length - a.name.length);
+            for (const dir of dirs) {
+              if (termName.includes(dir.name) && fs.existsSync(path.join(root, dir.name, ".git"))) {
+                await vscode.commands.executeCommand(CMD.switchRoot, root);
+                await vscode.commands.executeCommand(CMD.viewDiff, { path: path.join(root, dir.name) });
+                break outer;
+              }
             }
           } catch { /* skip inaccessible roots */ }
         }
