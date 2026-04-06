@@ -17,6 +17,7 @@ export class GitExecutor {
   // Short-TTL cache for status() to deduplicate concurrent calls
   private _statusCache = new Map<string, { result: RepoStatus; time: number }>();
   private _statusInflight = new Map<string, Promise<RepoStatus>>();
+  private _statusEpoch = new Map<string, number>(); // guards against stale in-flight writes
   private static readonly STATUS_CACHE_TTL = 1000; // ms
 
   // Metadata cache (30s TTL) for frequently accessed data
@@ -82,6 +83,7 @@ export class GitExecutor {
 
   invalidateStatus(repoPath: string): void {
     this._statusCache.delete(repoPath);
+    this._statusEpoch.set(repoPath, (this._statusEpoch.get(repoPath) ?? 0) + 1);
   }
 
   async isGitRepo(dirPath: string): Promise<boolean> {
@@ -105,7 +107,8 @@ export class GitExecutor {
     const inflight = this._statusInflight.get(repoPath);
     if (inflight) return inflight;
 
-    const promise = this._statusUncached(repoPath);
+    const epoch = this._statusEpoch.get(repoPath) ?? 0;
+    const promise = this._statusUncached(repoPath, epoch);
     this._statusInflight.set(repoPath, promise);
     try {
       return await promise;
@@ -114,7 +117,7 @@ export class GitExecutor {
     }
   }
 
-  private async _statusUncached(repoPath: string): Promise<RepoStatus> {
+  private async _statusUncached(repoPath: string, epoch: number): Promise<RepoStatus> {
     const result = await this._run(
       ["status", "--porcelain=v2", "--branch", "-uall"],
       repoPath
@@ -205,7 +208,10 @@ export class GitExecutor {
     }
 
     const statusResult = { branch, upstream, ahead, behind, staged, unstaged, untracked };
-    this._statusCache.set(repoPath, { result: statusResult, time: Date.now() });
+    // Only cache if no invalidation happened while the git process was running
+    if ((this._statusEpoch.get(repoPath) ?? 0) === epoch) {
+      this._statusCache.set(repoPath, { result: statusResult, time: Date.now() });
+    }
     return statusResult;
   }
 
@@ -276,7 +282,7 @@ export class GitExecutor {
       this._validateFilePath(repoPath, f);
     }
     await this._run(["add", "--", ...files], repoPath);
-    this._statusCache.delete(repoPath);
+    this.invalidateStatus(repoPath);
   }
 
   async unstage(repoPath: string, files: string[]): Promise<void> {
@@ -284,12 +290,12 @@ export class GitExecutor {
       this._validateFilePath(repoPath, f);
     }
     await this._run(["reset", "HEAD", "--", ...files], repoPath);
-    this._statusCache.delete(repoPath);
+    this.invalidateStatus(repoPath);
   }
 
   async commit(repoPath: string, message: string): Promise<string> {
     const result = await this._run(["commit", "-m", message], repoPath);
-    this._statusCache.delete(repoPath);
+    this.invalidateStatus(repoPath);
     if (result.code !== 0) {
       throw new Error(result.stderr || "Commit failed");
     }
@@ -550,6 +556,7 @@ export class GitExecutor {
   async checkoutFile(repoPath: string, file: string): Promise<void> {
     this._validateFilePath(repoPath, file);
     const result = await this._run(["checkout", "--", file], repoPath);
+    this.invalidateStatus(repoPath);
     if (result.code !== 0) {
       throw new Error(result.stderr || "Discard failed");
     }
@@ -557,6 +564,7 @@ export class GitExecutor {
 
   async checkoutAll(repoPath: string): Promise<void> {
     const result = await this._run(["checkout", "--", "."], repoPath);
+    this.invalidateStatus(repoPath);
     if (result.code !== 0) {
       throw new Error(result.stderr || "Discard all failed");
     }
@@ -564,6 +572,7 @@ export class GitExecutor {
 
   async clean(repoPath: string): Promise<string> {
     const result = await this._run(["clean", "-fd"], repoPath);
+    this.invalidateStatus(repoPath);
     if (result.code !== 0) {
       throw new Error(result.stderr || "Clean failed");
     }
@@ -573,6 +582,7 @@ export class GitExecutor {
   async cleanFile(repoPath: string, file: string): Promise<void> {
     this._validateFilePath(repoPath, file);
     const result = await this._run(["clean", "-f", "--", file], repoPath);
+    this.invalidateStatus(repoPath);
     if (result.code !== 0) {
       throw new Error(result.stderr || "Clean file failed");
     }
