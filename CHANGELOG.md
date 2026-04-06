@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.56.5
+
+### Bug Fixes
+- Bump CI Node.js to 22 for --experimental-strip-types test support
+
 ## 0.56.4
 
 ### Other
