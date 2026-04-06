@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.56.6
+
+### Other
+- Fix dashboard tab count, add stashes/settings/pinned docs, update architecture tree
+
 ## 0.56.5
 
 ### Bug Fixes
