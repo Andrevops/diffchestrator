@@ -2,6 +2,14 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.56.7
+
+### Bug Fixes
+- Guard status cache against stale in-flight writes
+
+### Other
+- Remove status bar items, surface summary in sidebar
+
 ## 0.56.6
 
 ### Other
