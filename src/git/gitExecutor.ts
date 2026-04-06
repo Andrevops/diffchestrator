@@ -33,6 +33,15 @@ export class GitExecutor {
 
   private _setCachedMeta(key: string, value: unknown): void {
     this._metaCache.set(key, { value, time: Date.now() });
+    // Lazy purge expired entries when cache grows large
+    if (this._metaCache.size > 500) {
+      const now = Date.now();
+      for (const [k, v] of this._metaCache.entries()) {
+        if (now - v.time > GitExecutor.META_CACHE_TTL) {
+          this._metaCache.delete(k);
+        }
+      }
+    }
   }
 
   invalidateMetaCache(repoPath?: string): void {
@@ -415,18 +424,28 @@ export class GitExecutor {
   }
 
   /**
-   * Combined: get commits since a date AND the most recent commit date in one call.
-   * Saves one git process vs calling logSince + lastCommitDate separately.
+   * Combined: get commits since a date AND the most recent commit date.
+   * Uses lastCommitDate cache (30s TTL) to avoid extra git process when cached.
    */
   async logSinceWithDate(
     repoPath: string,
     since: string,
     count = 50
   ): Promise<{ lastDate: string | undefined; commits: CommitEntry[] }> {
-    // Get lastCommitDate from cache or single call
-    const lastDate = await this.lastCommitDate(repoPath);
-    // Get session commits
-    const commits = await this.logSince(repoPath, since, count);
+    const cacheKey = `${repoPath}:lastCommitDate`;
+    const cachedDate = this._getCachedMeta<string>(cacheKey);
+
+    if (cachedDate !== undefined) {
+      // Cache hit — only need session commits (1 git call)
+      const commits = await this.logSince(repoPath, since, count);
+      return { lastDate: cachedDate, commits };
+    }
+
+    // Cache miss — run both in parallel (2 git calls, but parallel)
+    const [lastDate, commits] = await Promise.all([
+      this.lastCommitDate(repoPath),
+      this.logSince(repoPath, since, count),
+    ]);
     return { lastDate, commits };
   }
 
@@ -588,6 +607,9 @@ export class GitExecutor {
   }
 
   async stashApply(repoPath: string, index: number): Promise<string> {
+    if (!Number.isInteger(index) || index < 0) {
+      throw new Error("Invalid stash index");
+    }
     const result = await this._run(["stash", "apply", `stash@{${index}}`], repoPath);
     if (result.code !== 0) {
       throw new Error(result.stderr || "Stash apply failed");

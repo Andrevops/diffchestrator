@@ -177,6 +177,11 @@ export class DiffWebviewPanel {
   }
 
   private async _handleMessage(msg: Record<string, unknown>): Promise<void> {
+    // Validate repoPath against known repos
+    if (msg.repoPath && typeof msg.repoPath === "string" && !this._repoManager.getRepo(msg.repoPath as string)) {
+      return;
+    }
+
     switch (msg.type) {
       case "ready":
         await this._update();

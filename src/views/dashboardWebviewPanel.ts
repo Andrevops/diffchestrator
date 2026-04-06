@@ -86,6 +86,7 @@ export class DashboardWebviewPanel {
   private _git;
   private _sessionStartTime: number;
   private _updateThrottleTimer: ReturnType<typeof setTimeout> | undefined;
+  private _updateInProgress = false;
 
   static createOrShow(
     extensionUri: vscode.Uri,
@@ -154,10 +155,16 @@ export class DashboardWebviewPanel {
   }
 
   private _scheduleUpdate(): void {
-    if (this._updateThrottleTimer) return;
-    this._updateThrottleTimer = setTimeout(() => {
+    if (this._updateThrottleTimer || this._updateInProgress) return;
+    this._updateThrottleTimer = setTimeout(async () => {
       this._updateThrottleTimer = undefined;
-      this._update();
+      if (this._updateInProgress) return;
+      this._updateInProgress = true;
+      try {
+        await this._update();
+      } finally {
+        this._updateInProgress = false;
+      }
     }, 2000);
   }
 
@@ -335,7 +342,19 @@ export class DashboardWebviewPanel {
     });
   }
 
+  private _isKnownRepo(repoPath: string): boolean {
+    return !!this._repoManager.getRepo(repoPath);
+  }
+
   private async _handleMessage(msg: Record<string, unknown>): Promise<void> {
+    // Validate repoPath against known repos for any message that includes one
+    if (msg.repoPath && typeof msg.repoPath === "string" && !this._isKnownRepo(msg.repoPath as string)) {
+      // Allow pin/unpin (path may be in config but not currently scanned)
+      if (msg.type !== "pinRepo" && msg.type !== "unpinRepo") {
+        return;
+      }
+    }
+
     switch (msg.type) {
       case "ready":
         await this._update();
