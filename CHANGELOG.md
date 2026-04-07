@@ -2,6 +2,15 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.58.0
+
+### Features
+- Add yolonew command with Alt+D, Alt+Y shortcut
+
+### Other
+- Add yolonew to README shortcuts, features, and context menus
+- Add tests for git ref validation edge cases
+
 ## 0.57.0
 
 ### Features
