@@ -114,19 +114,23 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     vscode.window.onDidChangeActiveTerminal(async (terminal) => {
       if (!terminal || switchingRepo) return;
       const allPaths = repoManager.repos.map((r) => r.path);
+      const currentRootPaths = new Set(allPaths);
       const repoPath = findRepoForTerminal(terminal, allPaths);
-      if (repoPath && repoPath !== repoManager.selectedRepo) {
-        vscode.commands.executeCommand(CMD.viewDiff, { path: repoPath });
+
+      // Only trust the match if the path belongs to the current root —
+      // the tracking map can return stale paths from a previous root.
+      if (repoPath && currentRootPaths.has(repoPath)) {
+        if (repoPath !== repoManager.selectedRepo) {
+          vscode.commands.executeCommand(CMD.viewDiff, { path: repoPath });
+        }
         return;
       }
-      if (!repoPath) {
-        // No match in current root — search other configured roots
-        // using cached/lazy BFS discovery (handles nested repos)
-        const match = repoManager.findRepoInOtherRoots(terminal.name);
-        if (match) {
-          await vscode.commands.executeCommand(CMD.switchRoot, match.root);
-          await vscode.commands.executeCommand(CMD.viewDiff, { path: match.path });
-        }
+
+      // No valid match in current root — search other configured roots
+      const match = repoManager.findRepoInOtherRoots(terminal.name);
+      if (match) {
+        await vscode.commands.executeCommand(CMD.switchRoot, match.root);
+        await vscode.commands.executeCommand(CMD.viewDiff, { path: match.path });
       }
     })
   );
