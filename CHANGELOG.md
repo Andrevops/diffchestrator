@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.57.0
+
+### Features
+- Add yolonew command with Alt+D, Alt+Y shortcut
+
 ## 0.56.12
 
 ### Bug Fixes
