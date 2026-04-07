@@ -1,12 +1,13 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import { execFile } from "child_process";
+import { exec, execFile } from "child_process";
 import { promisify } from "util";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 import { escapeForTerminal } from "../utils/shell";
 
 const execFileAsync = promisify(execFile);
+const execAsync = promisify(exec);
 
 export type TerminalKind = "shell" | "claude" | "yolo" | "yolonew";
 
@@ -24,9 +25,24 @@ async function commandExists(cmd: string): Promise<boolean> {
 }
 
 /**
+ * Check if a shell alias or command exists.
+ * Unlike commandExists, this spawns an interactive shell to resolve aliases.
+ */
+async function aliasOrCommandExists(name: string): Promise<boolean> {
+  try {
+    await execAsync(`type ${name}`, { shell: "/bin/bash", env: { ...process.env, BASH_ENV: `${process.env.HOME}/.bashrc` } });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Validate that required CLI tools are available before running a command.
  * Returns true if all tools are available, false otherwise (shows warning).
  */
+const CLAUDE_SANDBOX_URL = "https://github.com/aeanez/claude-sandbox";
+
 export async function validateCli(kind: "claude" | "yolo"): Promise<boolean> {
   if (kind === "yolo") {
     // yolo is typically a shell alias — only validate its binary deps (docker + claude)
@@ -41,6 +57,19 @@ export async function validateCli(kind: "claude" | "yolo"): Promise<boolean> {
       vscode.window.showErrorMessage(
         `Diffchestrator: Yolo requires ${missing.join(" and ")} to be installed.`
       );
+      return false;
+    }
+
+    // Check that the yolo/yolonew alias is available (provided by claude-sandbox)
+    const hasAlias = await aliasOrCommandExists("yolo");
+    if (!hasAlias) {
+      const action = await vscode.window.showErrorMessage(
+        "Diffchestrator: The yolo/yolonew commands require claude-sandbox to be installed and sourced in your shell.",
+        "Setup claude-sandbox"
+      );
+      if (action) {
+        vscode.env.openExternal(vscode.Uri.parse(CLAUDE_SANDBOX_URL));
+      }
       return false;
     }
     return true;
