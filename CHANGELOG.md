@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.59.0
+
+### Features
+- Show claude-sandbox setup link when yolo alias is missing
+
 ## 0.58.0
 
 ### Features
