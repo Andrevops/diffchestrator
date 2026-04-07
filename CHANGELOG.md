@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.56.12
+
+### Bug Fixes
+- Validate terminal tracking map results against current root before trusting
+
 ## 0.56.11
 
 ### Bug Fixes
