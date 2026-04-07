@@ -8,7 +8,7 @@ import { escapeForTerminal } from "../utils/shell";
 
 const execFileAsync = promisify(execFile);
 
-export type TerminalKind = "shell" | "claude" | "yolo";
+export type TerminalKind = "shell" | "claude" | "yolo" | "yolonew";
 
 /**
  * Check if a command exists on the system.
@@ -82,6 +82,7 @@ vscode.window.onDidCloseTerminal((t) => {
 const NAME_PATTERNS: Record<TerminalKind, RegExp[]> = {
   claude: [], // built dynamically from repo name
   yolo: [],
+  yolonew: [],
   shell: [],
 };
 
@@ -97,6 +98,10 @@ function buildPatterns(repoPath: string, kind: TerminalKind): RegExp[] {
       // yolo runs claude which renames the terminal, so also check Claude: prefix
       return [
         new RegExp(`^YOLO:\\s*${name}$`, "i"),
+      ];
+    case "yolonew":
+      return [
+        new RegExp(`^YOLONEW:\\s*${name}$`, "i"),
       ];
     case "shell":
       return [new RegExp(`^DC:\\s*${name}$`, "i")];
@@ -162,6 +167,7 @@ export function findRepoForTerminal(terminal: vscode.Terminal, allRepoPaths: str
       // Adopt into tracking map
       const kind: TerminalKind =
         /claude/i.test(name) ? "claude" :
+        /yolonew/i.test(name) ? "yolonew" :
         /yolo/i.test(name) ? "yolo" : "shell";
       repoTerminals.set(key(rp, kind), terminal);
       return rp;
@@ -205,7 +211,7 @@ export function getOrCreateTerminal(repoPath: string): vscode.Terminal {
  * Check if a repo has any active terminal (any kind).
  */
 export function hasActiveTerminal(repoPath: string): boolean {
-  const kinds: TerminalKind[] = ["claude", "yolo", "shell"];
+  const kinds: TerminalKind[] = ["claude", "yolo", "yolonew", "shell"];
   return kinds.some((k) => !!getAlive(repoPath, k));
 }
 
@@ -215,7 +221,7 @@ export function hasActiveTerminal(repoPath: string): boolean {
  */
 export async function showTerminalIfExists(repoPath: string): Promise<boolean> {
   // Priority: claude > yolo > shell
-  const kinds: TerminalKind[] = ["claude", "yolo", "shell"];
+  const kinds: TerminalKind[] = ["claude", "yolo", "yolonew", "shell"];
   for (const kind of kinds) {
     const existing = getAlive(repoPath, kind);
     if (existing) {
@@ -289,6 +295,50 @@ export function registerTerminalCommand(
           repoTerminals.set(key(singlePath, "yolo"), terminal);
           terminal.show();
           terminal.sendText("yolo");
+        } else {
+          vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
+        }
+      }
+    )
+  );
+
+  // Yolonew — reuse existing yolonew terminal or create new one
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      CMD.yolonew,
+      async (item?: any) => {
+        if (!(await validateCli("yolo"))) return;
+
+        const selectedPaths = repoManager.selectedRepoPaths;
+        const singlePath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+
+        if (selectedPaths.size > 1) {
+          const addDirArgs = [...selectedPaths]
+            .map((p) => `--add-dir ${escapeForTerminal(p)}`)
+            .join(" ");
+
+          const terminal = vscode.window.createTerminal({
+            name: "YOLONEW (multi-repo)",
+            cwd: repoManager.currentRoot,
+          });
+          terminal.show();
+          terminal.sendText(`yolonew ${addDirArgs}`);
+        } else if (singlePath) {
+          repoManager.selectRepo(singlePath);
+          const existing = getAlive(singlePath, "yolonew");
+          if (existing) {
+            existing.show();
+            return;
+          }
+
+          const name = path.basename(singlePath);
+          const terminal = vscode.window.createTerminal({
+            name: `YOLONEW: ${name}`,
+            cwd: singlePath,
+          });
+          repoTerminals.set(key(singlePath, "yolonew"), terminal);
+          terminal.show();
+          terminal.sendText("yolonew");
         } else {
           vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
         }

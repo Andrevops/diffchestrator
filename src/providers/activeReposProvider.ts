@@ -18,11 +18,12 @@ interface ActiveRepoNode {
 const KIND_LABELS: Record<TerminalKind, string> = {
   claude: "Claude",
   yolo: "Yolo",
+  yolonew: "Yolonew",
   shell: "Shell",
 };
 
 function activeKinds(repoPath: string): TerminalKind[] {
-  const kinds: TerminalKind[] = ["claude", "yolo", "shell"];
+  const kinds: TerminalKind[] = ["claude", "yolo", "yolonew", "shell"];
   return kinds.filter((k) => !!getRepoTerminal(repoPath, k));
 }
 

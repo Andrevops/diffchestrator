@@ -257,6 +257,12 @@
         "icon": "$(zap)"
       },
       {
+        "command": "diffchestrator.yolonew",
+        "title": "Yolonew (Claude Sandbox)",
+        "category": "Diffchestrator",
+        "icon": "$(zap)"
+      },
+      {
         "command": "diffchestrator.searchFiles",
         "title": "Search Files Across Repos",
         "category": "Diffchestrator",
@@ -667,6 +673,11 @@
           "group": "2_tools@3"
         },
         {
+          "command": "diffchestrator.yolonew",
+          "when": "viewItem == repo || viewItem == directory",
+          "group": "2_tools@4"
+        },
+        {
           "command": "diffchestrator.toggleFavorite",
           "when": "viewItem == repo || viewItem == directory",
           "group": "3_misc@1"
@@ -768,6 +779,11 @@
         "command": "diffchestrator.yolo",
         "key": "alt+d y",
         "mac": "alt+d y"
+      },
+      {
+        "command": "diffchestrator.yolonew",
+        "key": "alt+d alt+y",
+        "mac": "alt+d alt+y"
       },
       {
         "command": "diffchestrator.toggleChangedOnly",

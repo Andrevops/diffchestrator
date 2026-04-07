@@ -29,6 +29,7 @@ export const CMD = {
   clearSelection: "diffchestrator.clearSelection",
   switchRepo: "diffchestrator.switchRepo",
   yolo: "diffchestrator.yolo",
+  yolonew: "diffchestrator.yolonew",
   commitHistory: "diffchestrator.commitHistory",
   discardFile: "diffchestrator.discardFile",
   discardAll: "diffchestrator.discardAll",
