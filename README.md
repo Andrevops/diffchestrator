@@ -392,6 +392,19 @@ The release script reads commit messages since the last `v*` tag, picks the semv
 
 Pushing a `v*` tag to GitHub triggers CI to create a GitHub Release with both files and auto-publish to Open VSX.
 
+### Verify Release Integrity
+
+Every GitHub Release includes `checksums.txt` (SHA-256) and `checksums.txt.sig` (ED25519 signature), plus [GitHub build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds).
+
+```sh
+# Verify build provenance
+gh attestation verify diffchestrator-*.vsix --repo Andrevops/diffchestrator
+
+# Verify checksum signature
+curl -fsSL https://raw.githubusercontent.com/Andrevops/diffchestrator/main/public_key.pem -o public_key.pem
+xxd -r -p checksums.txt.sig | openssl pkeyutl -verify -pubin -inkey public_key.pem -rawin -in checksums.txt -sigfile /dev/stdin
+```
+
 ## Development
 
 ```bash
@@ -483,5 +496,5 @@ scripts/
 - **Git**: `child_process.execFile` (no shell=true)
 - **Webview**: React 19, Vite, react-diff-view
 - **AI**: Claude Code CLI integration
-- **CI/CD**: GitHub Actions for building and releasing
+- **CI/CD**: GitHub Actions with ED25519 release signing and build provenance attestation
 - **No backend server** — everything runs in-process via the VS Code extension host
