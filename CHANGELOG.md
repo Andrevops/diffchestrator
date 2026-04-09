@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.62.0
+
+### Features
+- Add close terminal command (Alt+D, Alt+J)
+
 ## 0.61.0
 
 ### Features
