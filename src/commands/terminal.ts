@@ -130,29 +130,24 @@ const NAME_PATTERNS: Record<TerminalKind, RegExp[]> = {
 
 function buildPatterns(repoPath: string, kind: TerminalKind): RegExp[] {
   const name = escapeRegex(path.basename(repoPath));
-  // Match new icon-only names (just repo name) and legacy prefixed names
+  // Only match legacy prefixed names — icon-only terminals (bare repo name)
+  // are tracked exclusively via the repoTerminals map to avoid cross-type collisions
   switch (kind) {
     case "claude":
       return [
-        new RegExp(`^${name}$`),
         new RegExp(`^Claude:\\s*${name}$`, "i"),
         new RegExp(`^Claude Code[^]*${name}$`, "i"),
       ];
     case "yolo":
       return [
-        new RegExp(`^${name}$`),
         new RegExp(`^YOLO:\\s*${name}$`, "i"),
       ];
     case "yolonew":
       return [
-        new RegExp(`^${name}$`),
         new RegExp(`^YOLONEW:\\s*${name}$`, "i"),
       ];
     case "shell":
-      return [
-        new RegExp(`^${name}$`),
-        new RegExp(`^DC:\\s*${name}$`, "i"),
-      ];
+      return [new RegExp(`^DC:\\s*${name}$`, "i")];
   }
 }
 
