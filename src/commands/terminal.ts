@@ -426,8 +426,11 @@ export async function navigateTerminal(direction: 1 | -1, allRepoPaths: string[]
 
   const afterPane = await execAndWaitForChange(paneCmd, before, 200);
 
-  if (!afterPane || groupVisited.has(afterPane)) {
-    // Single pane (no change) or wrapped around to visited terminal → next group
+  if (afterPane && !groupVisited.has(afterPane)) {
+    // Successfully moved to a new pane within the group — track it
+    groupVisited.add(afterPane);
+  } else {
+    // Single pane (no change) or wrapped to visited terminal → next group
     groupVisited.clear();
     const groupCmd = direction === 1
       ? "workbench.action.terminal.focusNext"
