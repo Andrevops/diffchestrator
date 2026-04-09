@@ -218,13 +218,33 @@ function getAlive(repoPath: string, kind: TerminalKind): vscode.Terminal | undef
   // Clean stale entry
   repoTerminals.delete(key(repoPath, kind));
 
-  // Fallback: scan all terminals by name pattern and adopt untracked ones
+  // Fallback 1: scan by legacy prefixed name patterns
   const patterns = buildPatterns(repoPath, kind);
   for (const terminal of vscode.window.terminals) {
     if (patterns.some((p) => p.test(terminal.name))) {
-      // Adopt it into the map
       repoTerminals.set(key(repoPath, kind), terminal);
       return terminal;
+    }
+  }
+
+  // Fallback 2: match icon-only terminals (bare repo name) by name + icon
+  // This handles post-reload adoption where prefixes were removed
+  const repoName = path.basename(repoPath);
+  for (const terminal of vscode.window.terminals) {
+    if (terminal.name === repoName) {
+      // Already tracked under a different kind? Skip.
+      let alreadyTracked = false;
+      for (const [, t] of repoTerminals) {
+        if (t === terminal) { alreadyTracked = true; break; }
+      }
+      if (alreadyTracked) continue;
+
+      // Verify kind via icon if available, otherwise accept for requested kind
+      const iconKind = inferKindFromIcon(terminal);
+      if (iconKind === kind || iconKind === undefined) {
+        repoTerminals.set(key(repoPath, kind), terminal);
+        return terminal;
+      }
     }
   }
 
