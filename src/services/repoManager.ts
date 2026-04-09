@@ -105,6 +105,34 @@ export class RepoManager implements vscode.Disposable {
     return [...this._repos.values()];
   }
 
+  /** Get repo paths across ALL configured roots (current + other roots). */
+  getAllRootRepoPaths(): { root: string; repoPath: string; repoName: string }[] {
+    const config = vscode.workspace.getConfiguration("diffchestrator");
+    const roots = config.get<string[]>("scanRoots", []);
+    const maxDepth = config.get<number>("scanMaxDepth", 6);
+    const extraSkip = config.get<string[]>("scanExtraSkipDirs", []);
+    const result: { root: string; repoPath: string; repoName: string }[] = [];
+
+    for (const root of roots) {
+      if (root === this._currentRoot) {
+        // Use already-scanned repos for current root
+        for (const r of this._repos.values()) {
+          result.push({ root, repoPath: r.path, repoName: r.name });
+        }
+      } else {
+        // Lazily discover repos for other roots
+        if (!this._pathsByRoot.has(root)) {
+          const scanner = new Scanner(this._git, maxDepth, extraSkip);
+          this._pathsByRoot.set(root, scanner.scanFast(root).map((r) => r.path));
+        }
+        for (const p of this._pathsByRoot.get(root) ?? []) {
+          result.push({ root, repoPath: p, repoName: path.basename(p) });
+        }
+      }
+    }
+    return result;
+  }
+
   setTagFilter(tag: string | undefined): void {
     this._tagFilter = tag;
     this._taggedPathsCache = undefined;

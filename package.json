@@ -508,6 +508,12 @@
         "icon": "$(sync)"
       },
       {
+        "command": "diffchestrator.switchRepoAllRoots",
+        "title": "Switch Repo (All Roots)",
+        "category": "Diffchestrator",
+        "icon": "$(globe)"
+      },
+      {
         "command": "diffchestrator.amendCommit",
         "title": "Amend Last Commit",
         "category": "Diffchestrator",
@@ -981,6 +987,11 @@
         "command": "diffchestrator.prevTerminal",
         "key": "alt+d up",
         "mac": "alt+d up"
+      },
+      {
+        "command": "diffchestrator.switchRepoAllRoots",
+        "key": "alt+d alt+f",
+        "mac": "alt+d alt+f"
       },
       {
         "command": "diffchestrator.forcePush",

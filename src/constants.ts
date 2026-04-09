@@ -78,6 +78,7 @@ export const CMD = {
   forcePush: "diffchestrator.forcePush",
   amendCommit: "diffchestrator.amendCommit",
   syncAll: "diffchestrator.syncAll",
+  switchRepoAllRoots: "diffchestrator.switchRepoAllRoots",
   closeTerminal: "diffchestrator.closeTerminal",
   nextTerminal: "diffchestrator.nextTerminal",
   prevTerminal: "diffchestrator.prevTerminal",

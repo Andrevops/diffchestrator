@@ -317,4 +317,50 @@ export function registerFileSearchCommand(
       }
     })
   );
+
+  // Switch repo across ALL roots
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.switchRepoAllRoots, async () => {
+      const allRepos = repoManager.getAllRootRepoPaths();
+      if (allRepos.length === 0) {
+        vscode.window.showWarningMessage("Diffchestrator: No repos found across configured roots.");
+        return;
+      }
+
+      const currentRoot = repoManager.currentRoot;
+      const currentPath = repoManager.selectedRepo;
+
+      const items = allRepos.map((r) => ({
+        label: `$(repo) ${r.repoName}`,
+        description: r.root === currentRoot ? r.root : `$(globe) ${r.root}`,
+        detail: r.repoPath,
+        _repoPath: r.repoPath,
+        _root: r.root,
+      }));
+
+      // Sort: current repo first, current root repos next, then alphabetical
+      items.sort((a, b) => {
+        if (a._repoPath === currentPath) return -1;
+        if (b._repoPath === currentPath) return 1;
+        const aInRoot = a._root === currentRoot ? 0 : 1;
+        const bInRoot = b._root === currentRoot ? 0 : 1;
+        if (aInRoot !== bInRoot) return aInRoot - bInRoot;
+        return a.label.localeCompare(b.label);
+      });
+
+      const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: "Switch to a repository (all roots)...",
+        matchOnDescription: true,
+        matchOnDetail: true,
+      });
+
+      if (selected) {
+        // Switch root if needed
+        if (selected._root !== currentRoot) {
+          await vscode.commands.executeCommand(CMD.switchRoot, selected._root);
+        }
+        await vscode.commands.executeCommand(CMD.viewDiff, { path: selected._repoPath });
+      }
+    })
+  );
 }
