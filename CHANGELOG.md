@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.66.3
+
+### Bug Fixes
+- Don't override terminal choice when user clicks a terminal tab
+
 ## 0.66.2
 
 ### Bug Fixes
