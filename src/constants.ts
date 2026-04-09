@@ -76,6 +76,7 @@ export const CMD = {
   dashboard: "diffchestrator.dashboard",
   cycleTerminal: "diffchestrator.cycleTerminal",
   forcePush: "diffchestrator.forcePush",
+  amendCommit: "diffchestrator.amendCommit",
   closeTerminal: "diffchestrator.closeTerminal",
   nextTerminal: "diffchestrator.nextTerminal",
   prevTerminal: "diffchestrator.prevTerminal",

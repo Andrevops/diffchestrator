@@ -348,6 +348,20 @@ export class GitExecutor {
     return result.stdout;
   }
 
+  async commitAmend(repoPath: string, message: string): Promise<string> {
+    const result = await this._run(["commit", "--amend", "-m", message], repoPath);
+    this.invalidateStatus(repoPath);
+    if (result.code !== 0) {
+      throw new Error(result.stderr || "Amend failed");
+    }
+    return result.stdout;
+  }
+
+  async lastCommitMessage(repoPath: string): Promise<string> {
+    const result = await this._run(["log", "-1", "--format=%s"], repoPath);
+    return result.stdout.trim();
+  }
+
   async push(repoPath: string, force = false): Promise<string> {
     const args = ["push"];
     if (force) {

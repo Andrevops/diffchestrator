@@ -502,6 +502,12 @@
         "icon": "$(terminal)"
       },
       {
+        "command": "diffchestrator.amendCommit",
+        "title": "Amend Last Commit",
+        "category": "Diffchestrator",
+        "icon": "$(edit)"
+      },
+      {
         "command": "diffchestrator.forcePush",
         "title": "Force Push",
         "category": "Diffchestrator",
@@ -974,6 +980,11 @@
         "command": "diffchestrator.forcePush",
         "key": "alt+d shift+p",
         "mac": "alt+d shift+p"
+      },
+      {
+        "command": "diffchestrator.amendCommit",
+        "key": "alt+d shift+m",
+        "mac": "alt+d shift+m"
       }
     ],
     "configuration": {

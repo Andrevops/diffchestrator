@@ -156,4 +156,36 @@ export function registerCommitCommands(
       );
     })
   );
+
+  // Amend last commit
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      CMD.amendCommit,
+      async (item?: any) => {
+        const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
+        if (!repoPath) {
+          vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
+          return;
+        }
+        const repoName = path.basename(repoPath);
+
+        try {
+          const lastMessage = await git.lastCommitMessage(repoPath);
+          const message = await vscode.window.showInputBox({
+            prompt: `Amend last commit in ${repoName}`,
+            value: lastMessage,
+            placeHolder: "New commit message",
+          });
+          if (message === undefined) return;
+
+          await git.commitAmend(repoPath, message);
+          await repoManager.refreshRepo(repoPath);
+          vscode.window.showInformationMessage(`Diffchestrator: Amended commit in ${repoName}`);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          vscode.window.showErrorMessage(`Diffchestrator: Amend failed for ${repoName}: ${msg}`);
+        }
+      }
+    )
+  );
 }
