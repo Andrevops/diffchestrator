@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.63.8
+
+### Bug Fixes
+- Track visited panes to correctly detect group wrap-around
+
 ## 0.63.7
 
 ### Bug Fixes
