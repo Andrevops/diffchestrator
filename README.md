@@ -245,6 +245,7 @@ All shortcuts use **Alt+D** as a chord prefix — press `Alt+D`, release, then p
 | `Alt+D, Shift+T` | Open terminal at scan root |
 | `Alt+D, T` | Open terminal at repo |
 | `Alt+D, J` | Cycle terminal (rotate through alive terminals) |
+| `Alt+D, Alt+J` | Close terminal (active or pick) |
 | `Alt+D, R` | Switch active repo |
 | `Alt+D, F` | Browse files in repo |
 | `Alt+D, P` | Push |

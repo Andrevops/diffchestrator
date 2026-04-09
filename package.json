@@ -500,6 +500,12 @@
         "title": "Cycle Terminal",
         "category": "Diffchestrator",
         "icon": "$(terminal)"
+      },
+      {
+        "command": "diffchestrator.closeTerminal",
+        "title": "Close Terminal",
+        "category": "Diffchestrator",
+        "icon": "$(close)"
       }
     ],
     "menus": {
@@ -930,6 +936,11 @@
         "command": "diffchestrator.cycleTerminal",
         "key": "alt+d j",
         "mac": "alt+d j"
+      },
+      {
+        "command": "diffchestrator.closeTerminal",
+        "key": "alt+d alt+j",
+        "mac": "alt+d alt+j"
       }
     ],
     "configuration": {

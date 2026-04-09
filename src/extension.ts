@@ -26,7 +26,7 @@ import { FileWatcher } from "./services/fileWatcher";
 import { InlineBlameService } from "./services/inlineBlame";
 import { WorkspaceAutoScan } from "./services/workspaceAutoScan";
 // GitExecutor accessed via repoManager.git (shared instance)
-import { showTerminalIfExists, findRepoForTerminal, cycleTerminal } from "./commands/terminal";
+import { showTerminalIfExists, findRepoForTerminal, cycleTerminal, closeRepoTerminal } from "./commands/terminal";
 import { extractTabUri } from "./types";
 import * as path from "path";
 
@@ -1274,6 +1274,18 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         return;
       }
       await cycleTerminal(repoPath);
+    })
+  );
+
+  // Close terminal — close active or pick which to close
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.closeTerminal, async () => {
+      const repoPath = repoManager.selectedRepo;
+      if (!repoPath) {
+        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
+        return;
+      }
+      await closeRepoTerminal(repoPath);
     })
   );
 

@@ -311,6 +311,47 @@ export async function cycleTerminal(repoPath: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * Close the active terminal for a repo.
+ * If the currently active terminal belongs to this repo, close it.
+ * Otherwise show a picker of alive terminals to close.
+ */
+export async function closeRepoTerminal(repoPath: string): Promise<void> {
+  const alive = getAliveKinds(repoPath);
+  if (alive.length === 0) {
+    vscode.window.showInformationMessage("Diffchestrator: No terminals open for this repo.");
+    return;
+  }
+
+  // If active terminal belongs to this repo, close it directly
+  const active = vscode.window.activeTerminal;
+  if (active) {
+    for (const k of alive) {
+      if (getAlive(repoPath, k) === active) {
+        active.dispose();
+        return;
+      }
+    }
+  }
+
+  // Otherwise pick which to close
+  if (alive.length === 1) {
+    getAlive(repoPath, alive[0])!.dispose();
+    return;
+  }
+
+  const items = alive.map((k) => ({
+    label: k.charAt(0).toUpperCase() + k.slice(1),
+    kind: k,
+  }));
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: "Close which terminal?",
+  });
+  if (picked) {
+    getAlive(repoPath, picked.kind as TerminalKind)?.dispose();
+  }
+}
+
 export function registerTerminalCommand(
   context: vscode.ExtensionContext,
   repoManager: RepoManager

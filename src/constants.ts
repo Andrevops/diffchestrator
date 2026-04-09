@@ -75,6 +75,7 @@ export const CMD = {
   revealInExplorer: "diffchestrator.revealInExplorer",
   dashboard: "diffchestrator.dashboard",
   cycleTerminal: "diffchestrator.cycleTerminal",
+  closeTerminal: "diffchestrator.closeTerminal",
 } as const;
 
 export const CONFIG = {
