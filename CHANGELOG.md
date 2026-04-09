@@ -2,6 +2,15 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.66.0
+
+### Features
+- Add stash timestamps and branch count to dashboard
+- Detect and display merge/rebase/cherry-pick state in tree views
+
+### Performance
+- Deduplicate dashboard git calls, add concurrency limiter, extract resolveRepoPath
+
 ## 0.65.2
 
 ### Other
