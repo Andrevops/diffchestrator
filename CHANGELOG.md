@@ -2,6 +2,15 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.67.0
+
+### Features
+- Offer pull or force-push when push is rejected by remote
+- Add Sync All command — fetch, pull behind, push ahead in one action
+- Add commit amend command (Alt+D, Shift+M) with message pre-fill
+- Add force push command (Alt+D, Shift+P) with --force-with-lease
+- Add stash drop — QuickPick + dashboard Drop button
+
 ## 0.66.5
 
 ### Bug Fixes
