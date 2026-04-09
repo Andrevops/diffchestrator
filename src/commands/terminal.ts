@@ -359,6 +359,16 @@ export async function closeRepoTerminal(repoPath: string): Promise<void> {
 const groupVisited = new Set<vscode.Terminal>();
 
 /**
+ * Remembers terminals that are at the edge of a split group for each direction.
+ * After detecting a wrap once, subsequent navigations from the same terminal
+ * in the same direction skip the pane command entirely (no flicker).
+ */
+const knownGroupEdges = new Map<vscode.Terminal, Set<1 | -1>>();
+
+// Clean up edge cache when terminals close
+vscode.window.onDidCloseTerminal((t) => knownGroupEdges.delete(t));
+
+/**
  * Execute a VS Code command and wait for activeTerminal to change.
  * Sets up listener BEFORE executing to avoid race conditions.
  * Returns the new terminal, or undefined if no change within timeout.
@@ -387,16 +397,17 @@ function execAndWaitForChange(
   });
 }
 
+async function moveToNextGroup(direction: 1 | -1): Promise<void> {
+  groupVisited.clear();
+  const groupCmd = direction === 1
+    ? "workbench.action.terminal.focusNext"
+    : "workbench.action.terminal.focusPrevious";
+  await execAndWaitForChange(groupCmd, vscode.window.activeTerminal, 200);
+}
+
 /**
  * Navigate to the next/previous terminal, traversing split panes within
- * groups before moving to the next group. Uses VS Code native commands
- * to respect visual order.
- *
- * Strategy:
- * 1. Try focusNextPane to move within the current split group
- * 2. If terminal didn't change (single pane) → focusNext to next group
- * 3. If landed on a visited terminal (wrapped within group) → focusNext
- *
+ * groups before moving to the next group.
  * direction: 1 = next (down), -1 = previous (up)
  */
 export async function navigateTerminal(direction: 1 | -1, allRepoPaths: string[]): Promise<string | undefined> {
@@ -412,6 +423,13 @@ export async function navigateTerminal(direction: 1 | -1, allRepoPaths: string[]
   }
 
   const before = vscode.window.activeTerminal;
+
+  // If this terminal is a known group edge for this direction, skip pane → go to next group
+  if (before && knownGroupEdges.get(before)?.has(direction)) {
+    await moveToNextGroup(direction);
+    const current = vscode.window.activeTerminal;
+    return current ? findRepoForTerminal(current, allRepoPaths) : undefined;
+  }
 
   // Reset visited set if we're on a terminal we haven't seen (user clicked elsewhere)
   if (before && !groupVisited.has(before) && groupVisited.size > 0) {
@@ -430,12 +448,12 @@ export async function navigateTerminal(direction: 1 | -1, allRepoPaths: string[]
     // Successfully moved to a new pane within the group — track it
     groupVisited.add(afterPane);
   } else {
-    // Single pane (no change) or wrapped to visited terminal → next group
-    groupVisited.clear();
-    const groupCmd = direction === 1
-      ? "workbench.action.terminal.focusNext"
-      : "workbench.action.terminal.focusPrevious";
-    await execAndWaitForChange(groupCmd, vscode.window.activeTerminal, 200);
+    // Single pane (no change) or wrapped to visited terminal → mark edge and move
+    if (before) {
+      if (!knownGroupEdges.has(before)) knownGroupEdges.set(before, new Set());
+      knownGroupEdges.get(before)!.add(direction);
+    }
+    await moveToNextGroup(direction);
   }
 
   const current = vscode.window.activeTerminal;
