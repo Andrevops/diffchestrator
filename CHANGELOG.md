@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.63.5
+
+### Bug Fixes
+- Navigate all terminals including split panes via terminal.show()
+
 ## 0.63.4
 
 ### Bug Fixes
