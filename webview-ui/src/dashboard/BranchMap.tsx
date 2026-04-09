@@ -28,7 +28,7 @@ export default function BranchMap({ entries, onOpenRepo, collapsed, onToggle }: 
         <span>
           {collapsed ? "▸" : "▾"} Branch Map{" "}
           <span className="section-badge">
-            {mainRepos.length} main · {featureRepos.length} feature
+            {mainRepos.length} main · {featureRepos.length} feature · {sortedBranches.length} branches
           </span>
         </span>
         {!collapsed && featureRepos.length > 0 && (

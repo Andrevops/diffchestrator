@@ -26,7 +26,7 @@ export interface DiffStatSummary {
 export interface StashOverviewEntry {
   repoName: string;
   repoPath: string;
-  stashes: { index: number; message: string }[];
+  stashes: { index: number; message: string; date?: string }[];
 }
 
 export interface DashboardPayload {

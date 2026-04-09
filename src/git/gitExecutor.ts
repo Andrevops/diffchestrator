@@ -634,13 +634,21 @@ export class GitExecutor {
     }
   }
 
-  async stashList(repoPath: string): Promise<{ index: number; message: string }[]> {
-    const result = await this._run(["stash", "list"], repoPath);
+  async stashList(repoPath: string): Promise<{ index: number; message: string; date: string }[]> {
+    const result = await this._run(
+      ["stash", "list", "--format=%gd%n%ai%n%s%n---END---"],
+      repoPath
+    );
     if (!result.stdout.trim()) return [];
-    return result.stdout.split("\n").filter(l => l.trim()).map((line, i) => ({
-      index: i,
-      message: line,
-    }));
+    const blocks = result.stdout.split("---END---\n").filter((b) => b.trim());
+    return blocks.map((block, i) => {
+      const lines = block.trim().split("\n");
+      return {
+        index: i,
+        date: lines[1] ?? "",
+        message: lines[2] ?? lines[0] ?? "",
+      };
+    });
   }
 
   async stashPush(repoPath: string, message?: string): Promise<string> {

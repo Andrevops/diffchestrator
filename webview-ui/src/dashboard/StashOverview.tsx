@@ -1,6 +1,17 @@
 import vscode from "../vscode";
 import type { StashOverviewEntry } from "./DashboardApp";
 
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 interface Props {
   entries: StashOverviewEntry[];
   collapsed: boolean;
@@ -27,7 +38,10 @@ export default function StashOverview({ entries, collapsed, onToggle }: Props) {
               <div className="stash-repo-header">{repo.repoName}</div>
               {repo.stashes.map((s) => (
                 <div key={s.index} className="stash-row">
-                  <span className="stash-message">{s.message}</span>
+                  <span className="stash-message">
+                    {s.message}
+                    {s.date && <span className="stash-date" title={s.date}> · {timeAgo(s.date)}</span>}
+                  </span>
                   <span className="stash-actions">
                     <button
                       className="icon-btn"
