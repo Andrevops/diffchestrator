@@ -74,6 +74,7 @@ export const CMD = {
   swapRepo: "diffchestrator.swapRepo",
   revealInExplorer: "diffchestrator.revealInExplorer",
   dashboard: "diffchestrator.dashboard",
+  cycleTerminal: "diffchestrator.cycleTerminal",
 } as const;
 
 export const CONFIG = {

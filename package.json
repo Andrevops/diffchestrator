@@ -494,6 +494,12 @@
         "title": "Dashboard",
         "category": "Diffchestrator",
         "icon": "$(dashboard)"
+      },
+      {
+        "command": "diffchestrator.cycleTerminal",
+        "title": "Cycle Terminal",
+        "category": "Diffchestrator",
+        "icon": "$(terminal)"
       }
     ],
     "menus": {
@@ -919,6 +925,11 @@
         "command": "diffchestrator.dashboard",
         "key": "alt+d v",
         "mac": "alt+d v"
+      },
+      {
+        "command": "diffchestrator.cycleTerminal",
+        "key": "alt+d j",
+        "mac": "alt+d j"
       }
     ],
     "configuration": {

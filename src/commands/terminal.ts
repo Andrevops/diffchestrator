@@ -265,6 +265,52 @@ export async function showTerminalIfExists(repoPath: string): Promise<boolean> {
   return false;
 }
 
+const CYCLE_ORDER: TerminalKind[] = ["claude", "yolo", "yolonew", "shell"];
+
+/**
+ * Get all alive terminal kinds for a repo, in cycle order.
+ */
+function getAliveKinds(repoPath: string): TerminalKind[] {
+  return CYCLE_ORDER.filter((k) => !!getAlive(repoPath, k));
+}
+
+/**
+ * Cycle to the next alive terminal for a repo.
+ * If the currently active terminal belongs to this repo, advances to the next kind.
+ * Otherwise shows the first alive terminal.
+ */
+export async function cycleTerminal(repoPath: string): Promise<boolean> {
+  const alive = getAliveKinds(repoPath);
+  if (alive.length === 0) {
+    vscode.window.showInformationMessage("Diffchestrator: No terminals open for this repo.");
+    return false;
+  }
+  if (alive.length === 1) {
+    const t = getAlive(repoPath, alive[0])!;
+    t.show(false);
+    return true;
+  }
+
+  // Determine which kind is currently active
+  const active = vscode.window.activeTerminal;
+  let currentKind: TerminalKind | undefined;
+  if (active) {
+    for (const k of alive) {
+      if (getAlive(repoPath, k) === active) {
+        currentKind = k;
+        break;
+      }
+    }
+  }
+
+  // Advance to next in the alive list
+  const idx = currentKind ? alive.indexOf(currentKind) : -1;
+  const nextKind = alive[(idx + 1) % alive.length];
+  const next = getAlive(repoPath, nextKind)!;
+  next.show(false);
+  return true;
+}
+
 export function registerTerminalCommand(
   context: vscode.ExtensionContext,
   repoManager: RepoManager

@@ -32,6 +32,7 @@ const shortcuts = [
   ["Alt+D, I", "Filter by tag"],
   ["Alt+D, T", "Terminal at repo"],
   ["Alt+D, Shift+T", "Terminal at root"],
+  ["Alt+D, J", "Cycle terminal"],
   ["Alt+D, Backspace", "Swap to previous repo"],
   ["", ""],
   ["Alt+D, Q", "Close active repo"],
