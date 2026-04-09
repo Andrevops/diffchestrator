@@ -433,6 +433,12 @@ export class DashboardWebviewPanel {
         break;
       }
 
+      case "syncAll": {
+        await vscode.commands.executeCommand(CMD.syncAll);
+        await this._update();
+        break;
+      }
+
       case "openTerminal": {
         const repoPath = msg.repoPath;
         if (repoPath) {

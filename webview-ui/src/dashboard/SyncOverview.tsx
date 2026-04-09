@@ -132,6 +132,9 @@ export default function SyncOverview({ entries, onOpenRepo, collapsed, onToggle 
             <button className="icon-btn" onClick={() => vscode.postMessage({ type: "fetchAll" })} title="Fetch all repos">
               ⟳
             </button>
+            <button className="refresh-btn" onClick={() => vscode.postMessage({ type: "syncAll" })} title="Fetch → Pull → Push">
+              Sync All
+            </button>
             {behindCount > 0 && (
               <button className="refresh-btn" onClick={() => vscode.postMessage({ type: "pullAll" })}>
                 Pull {behindCount}

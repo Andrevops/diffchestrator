@@ -502,6 +502,12 @@
         "icon": "$(terminal)"
       },
       {
+        "command": "diffchestrator.syncAll",
+        "title": "Sync All",
+        "category": "Diffchestrator",
+        "icon": "$(sync)"
+      },
+      {
         "command": "diffchestrator.amendCommit",
         "title": "Amend Last Commit",
         "category": "Diffchestrator",

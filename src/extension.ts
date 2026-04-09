@@ -501,6 +501,51 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         vscode.window.showInformationMessage(pullMsg);
       }
     }),
+    // Sync All: fetch → pull behind → push ahead
+    vscode.commands.registerCommand(CMD.syncAll, async () => {
+      const repos = repoManager.repos;
+      if (repos.length === 0) {
+        vscode.window.showWarningMessage("Diffchestrator: No repos to sync.");
+        return;
+      }
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: "Diffchestrator: Syncing all repos", cancellable: false },
+        async (progress) => {
+          // Phase 1: fetch
+          progress.report({ message: "Fetching..." });
+          await vscode.commands.executeCommand(CMD.fetchAll);
+
+          // Phase 2: pull repos that are behind
+          const behind = repoManager.repos.filter((r) => r.behind > 0);
+          if (behind.length > 0) {
+            progress.report({ message: `Pulling ${behind.length} repos...` });
+            for (const r of behind) {
+              try {
+                await sharedGit.pull(r.path);
+                await repoManager.refreshRepo(r.path);
+              } catch (err) {
+                outputChannel.appendLine(`[sync-pull] ${r.name}: ${err instanceof Error ? err.message : err}`);
+              }
+            }
+          }
+
+          // Phase 3: push repos that are ahead
+          const ahead = repoManager.repos.filter((r) => r.ahead > 0);
+          if (ahead.length > 0) {
+            progress.report({ message: `Pushing ${ahead.length} repos...` });
+            for (const r of ahead) {
+              try {
+                await sharedGit.push(r.path);
+                await repoManager.refreshRepo(r.path);
+              } catch (err) {
+                outputChannel.appendLine(`[sync-push] ${r.name}: ${err instanceof Error ? err.message : err}`);
+              }
+            }
+          }
+        }
+      );
+      vscode.window.showInformationMessage("Diffchestrator: Sync complete");
+    }),
     // Claude multi-repo review
     vscode.commands.registerCommand(CMD.claudeReviewAll, async () => {
       const changedRepos = repoManager.repos.filter((r) => r.totalChanges > 0);

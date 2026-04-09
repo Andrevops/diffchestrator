@@ -105,6 +105,7 @@ export type DashboardMessage =
   | { type: "pullRepo"; repoPath: string }
   | { type: "pushRepo"; repoPath: string }
   | { type: "fetchAll" }
+  | { type: "syncAll" }
   | { type: "openTerminal"; repoPath: string }
   | { type: "openClaude"; repoPath: string }
   | { type: "aiCommit"; repoPath: string }
