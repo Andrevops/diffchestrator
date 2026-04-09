@@ -120,6 +120,7 @@ export type DashboardMessage =
   | { type: "filterByTag" }
   | { type: "stashPop"; repoPath: string }
   | { type: "stashApply"; repoPath: string; index: number }
+  | { type: "stashDrop"; repoPath: string; index: number }
   | { type: "pinRepo"; repoPath: string }
   | { type: "unpinRepo"; repoPath: string }
   | { type: "exportActivity"; format: "clipboard" | "file"; entries: { repoName: string; shortHash: string; author: string; date: string; message: string }[] }

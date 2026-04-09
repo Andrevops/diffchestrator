@@ -31,6 +31,7 @@ export function registerStashCommands(
             { label: "$(list-unordered) List stashes", description: "View all stashes", _action: "list" as const },
             { label: "$(debug-step-out) Pop latest stash", description: "Apply and remove most recent stash", _action: "pop" as const },
             { label: "$(history) Apply stash...", description: "Apply a specific stash (keep in list)", _action: "apply" as const },
+            { label: "$(trash) Drop stash...", description: "Delete a specific stash", _action: "drop" as const },
           ],
           { placeHolder: `Stash management for ${repoName}` }
         );
@@ -124,6 +125,42 @@ export function registerStashCommands(
                 vscode.window.showInformationMessage(
                   `Diffchestrator: Applied stash in ${repoName}`
                 );
+              }
+              break;
+            }
+
+            case "drop": {
+              const stashes = await git.stashList(repoPath);
+              if (stashes.length === 0) {
+                vscode.window.showInformationMessage(
+                  `Diffchestrator: No stashes in ${repoName}`
+                );
+                return;
+              }
+
+              const items = stashes.map((s) => ({
+                label: s.message,
+                description: s.date,
+                _index: s.index,
+              }));
+
+              const selected = await vscode.window.showQuickPick(items, {
+                placeHolder: "Select a stash to drop",
+              });
+
+              if (selected) {
+                const confirm = await vscode.window.showWarningMessage(
+                  `Drop stash@{${selected._index}} from ${repoName}?`,
+                  { modal: true },
+                  "Drop"
+                );
+                if (confirm === "Drop") {
+                  await git.stashDrop(repoPath, selected._index);
+                  await repoManager.refreshRepo(repoPath);
+                  vscode.window.showInformationMessage(
+                    `Diffchestrator: Dropped stash in ${repoName}`
+                  );
+                }
               }
               break;
             }

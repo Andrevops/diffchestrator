@@ -559,6 +559,20 @@ export class DashboardWebviewPanel {
         break;
       }
 
+      case "stashDrop": {
+        const repoPath = msg.repoPath;
+        const index = msg.index;
+        try {
+          await this._git.stashDrop(repoPath, index);
+          await this._repoManager.refreshRepo(repoPath);
+          await this._update();
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          vscode.window.showErrorMessage(`Diffchestrator: Stash drop failed: ${errMsg}`);
+        }
+        break;
+      }
+
       case "pinRepo": {
         const repoPath = msg.repoPath;
         const cfg = vscode.workspace.getConfiguration("diffchestrator");

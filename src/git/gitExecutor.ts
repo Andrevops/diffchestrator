@@ -682,6 +682,17 @@ export class GitExecutor {
     return result.stdout || result.stderr;
   }
 
+  async stashDrop(repoPath: string, index: number): Promise<string> {
+    if (!Number.isInteger(index) || index < 0) {
+      throw new Error("Invalid stash index");
+    }
+    const result = await this._run(["stash", "drop", `stash@{${index}}`], repoPath);
+    if (result.code !== 0) {
+      throw new Error(result.stderr || "Stash drop failed");
+    }
+    return result.stdout || result.stderr;
+  }
+
   async stashShow(repoPath: string, index: number): Promise<string> {
     const result = await this._run(["stash", "show", "-p", `stash@{${index}}`], repoPath);
     return result.stdout;

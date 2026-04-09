@@ -59,6 +59,13 @@ export default function StashOverview({ entries, collapsed, onToggle }: Props) {
                         Pop
                       </button>
                     )}
+                    <button
+                      className="icon-btn icon-btn--danger"
+                      onClick={() => vscode.postMessage({ type: "stashDrop", repoPath: repo.repoPath, index: s.index })}
+                      title="Drop (delete stash)"
+                    >
+                      Drop
+                    </button>
                   </span>
                 </div>
               ))}
