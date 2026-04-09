@@ -359,6 +359,35 @@ export async function closeRepoTerminal(repoPath: string): Promise<void> {
 const groupVisited = new Set<vscode.Terminal>();
 
 /**
+ * Execute a VS Code command and wait for activeTerminal to change.
+ * Sets up listener BEFORE executing to avoid race conditions.
+ * Returns the new terminal, or undefined if no change within timeout.
+ */
+function execAndWaitForChange(
+  command: string,
+  before: vscode.Terminal | undefined,
+  timeoutMs: number,
+): Promise<vscode.Terminal | undefined> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      disp.dispose();
+      // Final check in case event was missed
+      const current = vscode.window.activeTerminal;
+      resolve(current && current !== before ? current : undefined);
+    }, timeoutMs);
+
+    const disp = vscode.window.onDidChangeActiveTerminal((t) => {
+      clearTimeout(timer);
+      disp.dispose();
+      resolve(t ?? undefined);
+    });
+
+    // Execute after listener is ready
+    vscode.commands.executeCommand(command);
+  });
+}
+
+/**
  * Navigate to the next/previous terminal, traversing split panes within
  * groups before moving to the next group. Uses VS Code native commands
  * to respect visual order.
@@ -379,7 +408,7 @@ export async function navigateTerminal(direction: 1 | -1, allRepoPaths: string[]
   // Ensure terminal panel is visible
   if (!vscode.window.activeTerminal) {
     await vscode.commands.executeCommand("workbench.action.terminal.focus");
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 100));
   }
 
   const before = vscode.window.activeTerminal;
@@ -394,19 +423,16 @@ export async function navigateTerminal(direction: 1 | -1, allRepoPaths: string[]
   const paneCmd = direction === 1
     ? "workbench.action.terminal.focusNextPane"
     : "workbench.action.terminal.focusPreviousPane";
-  await vscode.commands.executeCommand(paneCmd);
-  await new Promise((r) => setTimeout(r, 50));
 
-  const after = vscode.window.activeTerminal;
+  const afterPane = await execAndWaitForChange(paneCmd, before, 200);
 
-  if (!after || after === before || groupVisited.has(after)) {
+  if (!afterPane || groupVisited.has(afterPane)) {
     // Single pane (no change) or wrapped around to visited terminal → next group
     groupVisited.clear();
     const groupCmd = direction === 1
       ? "workbench.action.terminal.focusNext"
       : "workbench.action.terminal.focusPrevious";
-    await vscode.commands.executeCommand(groupCmd);
-    await new Promise((r) => setTimeout(r, 50));
+    await execAndWaitForChange(groupCmd, vscode.window.activeTerminal, 200);
   }
 
   const current = vscode.window.activeTerminal;
