@@ -281,12 +281,26 @@ export function findRepoForTerminal(terminal: vscode.Terminal, allRepoPaths: str
   for (const rp of sorted) {
     const repoName = path.basename(rp);
     if (name.includes(repoName)) {
-      // Adopt into tracking map — infer kind from name or legacy prefix
-      const kind: TerminalKind =
+      // Infer kind from name or legacy prefix, then icon
+      let kind: TerminalKind =
         /claude/i.test(name) ? "claude" :
         /yolonew/i.test(name) ? "yolonew" :
         /yolo/i.test(name) ? "yolo" :
-        /^DC:/i.test(name) ? "shell" : "shell";
+        /^DC:/i.test(name) ? "shell" :
+        inferKindFromIcon(terminal) ?? "shell";
+
+      // Don't overwrite a slot occupied by a different alive terminal
+      const existing = repoTerminals.get(key(rp, kind));
+      if (existing && existing !== terminal && vscode.window.terminals.includes(existing)) {
+        // Slot taken — try other kinds
+        const allKinds: TerminalKind[] = ["claude", "yolo", "yolonew", "shell"];
+        const freeKind = allKinds.find((k) => {
+          const t = repoTerminals.get(key(rp, k));
+          return !t || t === terminal || !vscode.window.terminals.includes(t);
+        });
+        if (freeKind) kind = freeKind; else return rp; // all slots full, just return repo
+      }
+
       repoTerminals.set(key(rp, kind), terminal);
       return rp;
     }
