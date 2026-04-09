@@ -157,6 +157,12 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   const repoTreeView = vscode.window.createTreeView(VIEW_REPOS, { treeDataProvider: repoTree });
   const changedFilesView = vscode.window.createTreeView(VIEW_CHANGED_FILES, { treeDataProvider: changedFiles });
 
+  // Track whether diffchestrator sidebar is actively visible (not just existing)
+  let sidebarVisible = false;
+  changedFilesView.onDidChangeVisibility((e) => { sidebarVisible = e.visible; });
+  activeReposView.onDidChangeVisibility((e) => { if (e.visible) sidebarVisible = true; });
+  repoTreeView.onDidChangeVisibility((e) => { if (e.visible) sidebarVisible = true; });
+
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider("git-show", gitContentProvider),
     gitContentProvider,
@@ -1005,7 +1011,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         repoManager.selectRepo(target.path);
 
         // Step 3: Focus changed files view (only if diffchestrator sidebar is already active)
-        if (changedFilesView.visible || activeReposView.visible || repoTreeView.visible) {
+        if (sidebarVisible) {
           await vscode.commands.executeCommand(`${VIEW_CHANGED_FILES}.focus`);
         }
 
@@ -1282,7 +1288,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
 
           repoManager.selectRepo(repoPath);
           // Only steal sidebar focus if diffchestrator panel is already visible
-          if (changedFilesView.visible || activeReposView.visible || repoTreeView.visible) {
+          if (sidebarVisible) {
             await vscode.commands.executeCommand(`${VIEW_CHANGED_FILES}.focus`);
           }
           // Don't override user's terminal choice when triggered by clicking a terminal tab
