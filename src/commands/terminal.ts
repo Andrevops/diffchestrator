@@ -353,38 +353,35 @@ export async function closeRepoTerminal(repoPath: string): Promise<void> {
 }
 
 /**
- * Get all diffchestrator terminals in a stable order.
+ * Get all diffchestrator terminals in VS Code's panel order.
  * Scans vscode.window.terminals by name to adopt untracked ones.
- * Returns [terminal, repoPath][] sorted by repo path then kind.
+ * Returns [terminal, repoPath][] in the same order as the terminal panel.
  */
 function getAllTrackedTerminals(allRepoPaths: string[]): [vscode.Terminal, string][] {
-  // First adopt any untracked terminals by scanning all open terminals
+  const result: [vscode.Terminal, string][] = [];
+
+  // Iterate in panel order — vscode.window.terminals preserves visual order
   for (const terminal of vscode.window.terminals) {
-    // Skip if already tracked
-    let tracked = false;
-    for (const [, t] of repoTerminals) {
-      if (t === terminal) { tracked = true; break; }
+    // Check if already tracked
+    let repoPath: string | undefined;
+    for (const [k, t] of repoTerminals) {
+      if (t === terminal) {
+        repoPath = k.split("::")[0];
+        break;
+      }
     }
-    if (tracked) continue;
 
-    // Try to match by name pattern against known repos
-    findRepoForTerminal(terminal, allRepoPaths);
+    // Try to adopt untracked terminals by name
+    if (!repoPath) {
+      repoPath = findRepoForTerminal(terminal, allRepoPaths);
+    }
+
+    if (repoPath) {
+      result.push([terminal, repoPath]);
+    }
   }
 
-  const result: [vscode.Terminal, string, TerminalKind][] = [];
-  for (const [k, t] of repoTerminals) {
-    if (vscode.window.terminals.includes(t)) {
-      const [repoPath, kind] = k.split("::") as [string, TerminalKind];
-      result.push([t, repoPath, kind]);
-    }
-  }
-  // Sort by repo path, then by cycle order within repo
-  result.sort((a, b) =>
-    a[1] !== b[1]
-      ? a[1].localeCompare(b[1])
-      : CYCLE_ORDER.indexOf(a[2]) - CYCLE_ORDER.indexOf(b[2])
-  );
-  return result.map(([t, rp]) => [t, rp]);
+  return result;
 }
 
 /**
