@@ -2,6 +2,14 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.61.0
+
+### Features
+- Add cycle terminal command (Alt+D, J)
+
+### Other
+- Add release signing verification instructions to README
+
 ## 0.60.0
 
 ### Features
