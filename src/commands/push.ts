@@ -45,9 +45,23 @@ export function registerPushCommands(
           );
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
-          vscode.window.showErrorMessage(
-            `Diffchestrator: Push failed for ${repoName}: ${msg}`
-          );
+          // Detect diverged remote — offer pull first
+          if (msg.includes("rejected") || msg.includes("non-fast-forward") || msg.includes("fetch first")) {
+            const action = await vscode.window.showWarningMessage(
+              `Diffchestrator: Push rejected for ${repoName} — remote has new commits. Pull first?`,
+              "Pull",
+              "Force Push"
+            );
+            if (action === "Pull") {
+              await vscode.commands.executeCommand(CMD.pull, { path: repoPath });
+            } else if (action === "Force Push") {
+              await vscode.commands.executeCommand(CMD.forcePush, { path: repoPath });
+            }
+          } else {
+            vscode.window.showErrorMessage(
+              `Diffchestrator: Push failed for ${repoName}: ${msg}`
+            );
+          }
         }
       }
     )
