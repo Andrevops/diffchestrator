@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.63.4
+
+### Bug Fixes
+- Use VS Code native terminal navigation for correct split/group order
+
 ## 0.63.3
 
 ### Bug Fixes
