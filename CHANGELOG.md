@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.65.0
+
+### Features
+- Remove terminal name prefixes — icons now identify type
+
 ## 0.64.0
 
 ### Features
