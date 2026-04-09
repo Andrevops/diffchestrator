@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.62.1
+
+### Bug Fixes
+- Rebind close terminal to Alt+D, Alt+K
+
 ## 0.62.0
 
 ### Features
