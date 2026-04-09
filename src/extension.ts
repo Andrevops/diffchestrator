@@ -111,6 +111,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
 
   // When user clicks a terminal tab, switch to that repo (full viewDiff flow).
   // If the terminal belongs to a repo in a different root, switch roots first.
+  let terminalClickInProgress = false;
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTerminal(async (terminal) => {
       if (!terminal || switchingRepo) return;
@@ -122,7 +123,12 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
       // the tracking map can return stale paths from a previous root.
       if (repoPath && currentRootPaths.has(repoPath)) {
         if (repoPath !== repoManager.selectedRepo) {
-          vscode.commands.executeCommand(CMD.viewDiff, { path: repoPath });
+          terminalClickInProgress = true;
+          try {
+            await vscode.commands.executeCommand(CMD.viewDiff, { path: repoPath });
+          } finally {
+            terminalClickInProgress = false;
+          }
         }
         return;
       }
@@ -1216,7 +1222,10 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
 
           repoManager.selectRepo(repoPath);
           await vscode.commands.executeCommand(`${VIEW_CHANGED_FILES}.focus`);
-          await showTerminalIfExists(repoPath);
+          // Don't override user's terminal choice when triggered by clicking a terminal tab
+          if (!terminalClickInProgress) {
+            await showTerminalIfExists(repoPath);
+          }
         } finally {
           switchingRepo = false;
         }
