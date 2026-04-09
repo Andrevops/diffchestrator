@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.63.2
+
+### Bug Fixes
+- Match terminal navigation order to VS Code panel order
+
 ## 0.63.1
 
 ### Bug Fixes
