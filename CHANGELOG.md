@@ -2,6 +2,12 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.68.0
+
+### Features
+- Add autoTerminals setting with dashboard checkboxes
+- Add cross-root repo search (Alt+D, Alt+F) spanning all configured roots
+
 ## 0.67.2
 
 ### Bug Fixes

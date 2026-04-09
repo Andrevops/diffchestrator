@@ -2,7 +2,7 @@
   "name": "diffchestrator",
   "displayName": "Diffchestrator",
   "description": "Multi-repo Git orchestration built for Claude Code — AI commits, diffs, and terminal integration",
-  "version": "0.67.2",
+  "version": "0.68.0",
   "publisher": "andrevops-com",
   "license": "MIT",
   "icon": "resources/icons/icon.png",
@@ -1103,7 +1103,12 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["shell", "claude", "yolo", "yolonew"]
+            "enum": [
+              "shell",
+              "claude",
+              "yolo",
+              "yolonew"
+            ]
           },
           "default": [],
           "description": "Terminal types to auto-open when switching repos (e.g. [\"shell\", \"yolo\"]). Closing a repo also closes its terminals."
