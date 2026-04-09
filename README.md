@@ -71,8 +71,8 @@ Diffchestrator doesn't require Claude to run inside VS Code. The file watcher mo
 ### Claude Code Integration
 - **AI Commit** — runs `claude --permission-mode acceptEdits` in the repo's terminal for real-time output (`Alt+D, C`)
 - **Open Claude Code** — launches `claude -c` to continue the previous session, or `claude --add-dir` for multiple selected repos (`Alt+D, L`)
-- **Yolo** — opens terminal and runs the `yolo` alias from claude-sandbox (`Alt+D, Y`)
-- **Yolonew** — opens terminal and runs the `yolonew` alias from claude-sandbox (`Alt+D, Alt+Y`)
+- **Yolo** — opens terminal and runs the `yolo` alias from [claude-sandbox](https://github.com/aeanez/claude-sandbox) (`Alt+D, Y`)
+- **Yolonew** — opens terminal and runs the `yolonew` alias from [claude-sandbox](https://github.com/aeanez/claude-sandbox) (`Alt+D, Alt+Y`)
 - **Claude Multi-Repo Review** — opens Claude with `--add-dir` for all repos with changes and a review prompt
 - **Ask Claude** button per diff hunk in the multi-repo diff webview
 - **Per-repo terminal tracking** — each repo tracks its own Claude, Yolo, Yolonew, and shell terminals independently. Switching repos auto-switches the terminal panel to the correct session
@@ -374,6 +374,8 @@ Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/item
    }
    ```
    Options: `default`, `acceptEdits`, `full`.
+
+6. **Optional: Install claude-sandbox** — the Yolo and Yolonew commands (`Alt+D, Y` / `Alt+D, Alt+Y`) require [claude-sandbox](https://github.com/aeanez/claude-sandbox), which provides Docker-based sandboxed Claude Code sessions. Install it and source the aliases in your shell to enable these features.
 
 ### Quick Tour
 
