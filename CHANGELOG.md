@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.63.1
+
+### Bug Fixes
+- Adopt untracked terminals before cross-repo navigation
+
 ## 0.63.0
 
 ### Features
