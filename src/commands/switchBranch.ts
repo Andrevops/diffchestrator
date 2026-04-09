@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
+import { resolveRepoPath } from "../utils/fileItem";
 
 export function registerSwitchBranchCommands(
   context: vscode.ExtensionContext,
@@ -14,7 +15,7 @@ export function registerSwitchBranchCommands(
       CMD.switchBranch,
       async (item?: any) => {
         const repoPath =
-          item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+          resolveRepoPath(item, repoManager.selectedRepo);
         if (!repoPath) {
           vscode.window.showWarningMessage(
             "Diffchestrator: No repository selected."

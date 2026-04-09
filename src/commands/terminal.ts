@@ -5,6 +5,7 @@ import { promisify } from "util";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 import { escapeForTerminal } from "../utils/shell";
+import { resolveRepoPath } from "../utils/fileItem";
 
 const execFileAsync = promisify(execFile);
 
@@ -494,7 +495,7 @@ export function registerTerminalCommand(
     vscode.commands.registerCommand(
       CMD.openTerminal,
       (item?: any) => {
-        const targetPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+        const targetPath = resolveRepoPath(item, repoManager.selectedRepo);
         if (!targetPath) {
           vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
           return;
@@ -514,7 +515,7 @@ export function registerTerminalCommand(
         if (!(await validateCli("yolo"))) return;
 
         const selectedPaths = repoManager.selectedRepoPaths;
-        const singlePath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+        const singlePath = resolveRepoPath(item, repoManager.selectedRepo);
 
         if (selectedPaths.size > 1) {
           // Multi-repo mode: open yolo with --add-dir for each selected repo
@@ -561,7 +562,7 @@ export function registerTerminalCommand(
         if (!(await validateCli("yolo"))) return;
 
         const selectedPaths = repoManager.selectedRepoPaths;
-        const singlePath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+        const singlePath = resolveRepoPath(item, repoManager.selectedRepo);
 
         if (selectedPaths.size > 1) {
           const addDirArgs = [...selectedPaths]

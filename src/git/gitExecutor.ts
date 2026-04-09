@@ -14,6 +14,27 @@ interface RunResult {
 }
 
 export class GitExecutor {
+  // Global concurrency limiter for git processes
+  private static readonly MAX_CONCURRENT = 15;
+  private _running = 0;
+  private _queue: (() => void)[] = [];
+
+  private _acquireSlot(): Promise<void> {
+    if (this._running < GitExecutor.MAX_CONCURRENT) {
+      this._running++;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      this._queue.push(() => { this._running++; resolve(); });
+    });
+  }
+
+  private _releaseSlot(): void {
+    this._running--;
+    const next = this._queue.shift();
+    if (next) next();
+  }
+
   // Short-TTL cache for status() to deduplicate concurrent calls
   private _statusCache = new Map<string, { result: RepoStatus; time: number }>();
   private _statusInflight = new Map<string, Promise<RepoStatus>>();
@@ -56,6 +77,7 @@ export class GitExecutor {
   }
 
   private async _run(args: string[], cwd: string): Promise<RunResult> {
+    await this._acquireSlot();
     try {
       const { stdout, stderr } = await execFileAsync("git", args, {
         cwd,
@@ -71,6 +93,8 @@ export class GitExecutor {
         stderr: e.stderr ?? String(err),
         code: e.code ?? 1,
       };
+    } finally {
+      this._releaseSlot();
     }
   }
 

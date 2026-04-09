@@ -4,6 +4,7 @@ import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 import { registerRepoTerminal, getRepoTerminal, validateCli, terminalIcon } from "./terminal";
 import { escapeForTerminal } from "../utils/shell";
+import { resolveRepoPath } from "../utils/fileItem";
 
 export function registerClaudeCommands(
   context: vscode.ExtensionContext,
@@ -16,7 +17,7 @@ export function registerClaudeCommands(
         if (!(await validateCli("claude"))) return;
 
         const selectedPaths = repoManager.selectedRepoPaths;
-        const singlePath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+        const singlePath = resolveRepoPath(item, repoManager.selectedRepo);
 
         if (selectedPaths.size > 1) {
           // Multi-repo mode: open claude with --add-dir for each selected repo

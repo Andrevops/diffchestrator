@@ -28,6 +28,7 @@ import { WorkspaceAutoScan } from "./services/workspaceAutoScan";
 // GitExecutor accessed via repoManager.git (shared instance)
 import { showTerminalIfExists, findRepoForTerminal, cycleTerminal, closeRepoTerminal, navigateTerminal, terminalIcon } from "./commands/terminal";
 import { extractTabUri } from "./types";
+import { resolveRepoPath } from "./utils/fileItem";
 import * as path from "path";
 
 /** Public API for sibling extensions (e.g. Epic Lens) */
@@ -515,7 +516,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   // Copy repo info to clipboard (#33)
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.copyRepoInfo, async (item?: any) => {
-      const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
       if (!repoPath) {
         vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
         return;
@@ -674,7 +675,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   // Open remote URL (#37)
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.openRemoteUrl, async (item?: any) => {
-      const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
       if (!repoPath) {
         vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
         return;
@@ -698,7 +699,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   // Reveal in system file explorer
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.revealInExplorer, async (item?: any) => {
-      const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
       if (!repoPath) {
         vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
         return;
@@ -710,7 +711,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   // Repo tags (#38)
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.setRepoTag, async (item?: any) => {
-      const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
       if (!repoPath) {
         vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
         return;
@@ -832,7 +833,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   // Undo last commit (#41)
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.undoCommit, async (item?: any) => {
-      const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
       if (!repoPath) {
         vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
         return;
@@ -860,7 +861,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   // Single-repo fetch (#42)
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.fetchRepo, async (item?: any) => {
-      const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
       if (!repoPath) {
         vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
         return;

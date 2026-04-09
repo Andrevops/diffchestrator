@@ -260,22 +260,19 @@ export class DashboardWebviewPanel {
       await Promise.all(
         batch.map(async (r) => {
           try {
+            // Single git log call replaces logSinceWithDate + log(3)
             const calls: Promise<unknown>[] = [
-              this._git.logSinceWithDate(r.path, sinceISO, 50),
-              this._git.log(r.path, 3),
+              this._git.log(r.path, 50),
             ];
-            // Only fetch diff stats for dirty repos
             if (r.totalChanges > 0) {
               calls.push(this._git.diffStatSummary(r.path));
             }
-            // Only fetch stash list for repos with stashes
             if (r.stashCount > 0) {
               calls.push(this._git.stashList(r.path));
             }
             const results = await Promise.all(calls);
-            const { lastDate, commits: sessionCommits } = results[0] as { lastDate: string | undefined; commits: CommitEntry[] };
-            const recentCommits = results[1] as CommitEntry[];
-            let resultIdx = 2;
+            const allCommits = results[0] as CommitEntry[];
+            let resultIdx = 1;
             if (r.totalChanges > 0) {
               diffStats.set(r.path, results[resultIdx++] as DiffStatSummary);
             }
@@ -285,6 +282,14 @@ export class DashboardWebviewPanel {
                 stashEntries.push({ repoName: r.name, repoPath: r.path, stashes });
               }
             }
+
+            // Derive all dashboard data from single log result
+            const lastDate = allCommits.length > 0 ? allCommits[0].date : undefined;
+            const sessionCommits = allCommits.filter(
+              (c) => new Date(c.date).getTime() >= new Date(sinceISO).getTime()
+            );
+            const recentCommits = allCommits.slice(0, 3);
+
             heatmapEntries.push({
               name: r.name,
               path: r.path,
@@ -312,8 +317,8 @@ export class DashboardWebviewPanel {
                 message: c.message,
               });
             }
-          } catch {
-            // skip repos that fail
+          } catch (err) {
+            console.warn(`[Diffchestrator] Dashboard: failed to fetch data for ${r.name}:`, err);
           }
         })
       );

@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
+import { resolveRepoPath } from "../utils/fileItem";
 
 export function registerFileSearchCommand(
   context: vscode.ExtensionContext,
@@ -92,7 +93,7 @@ export function registerFileSearchCommand(
   // Browse files in a specific repo (pre-loaded, instant filter)
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.browseFiles, async (item?: any) => {
-      const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
       if (!repoPath) {
         vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
         return;
@@ -224,7 +225,7 @@ export function registerFileSearchCommand(
   // Search in selected repo
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.grepInRepo, async (item?: any) => {
-      const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
       if (!repoPath) {
         vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
         return;
@@ -265,7 +266,7 @@ export function registerFileSearchCommand(
   // Open repo in new VS Code window — gives full native search, explorer, etc.
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.searchInRepo, async (item?: any) => {
-      const repoPath = item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
       if (!repoPath) {
         vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
         return;

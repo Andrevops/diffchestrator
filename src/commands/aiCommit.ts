@@ -5,6 +5,7 @@ import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 import { getOrCreateTerminal, validateCli } from "./terminal";
 import { escapeForTerminal } from "../utils/shell";
+import { resolveRepoPath } from "../utils/fileItem";
 
 const AI_COMMIT_PROMPT =
   "Review the current git changes and create an appropriate commit. " +
@@ -20,7 +21,7 @@ export function registerAiCommitCommands(
       CMD.aiCommit,
       async (item?: any) => {
         const repoPath =
-          item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+          resolveRepoPath(item, repoManager.selectedRepo);
         if (!repoPath) {
           vscode.window.showWarningMessage(
             "Diffchestrator: No repository selected for AI commit."

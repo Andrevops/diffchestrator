@@ -3,6 +3,7 @@ import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 import { timeAgo } from "../utils/time";
+import { resolveRepoPath } from "../utils/fileItem";
 
 export function registerCommitHistoryCommands(
   context: vscode.ExtensionContext,
@@ -15,7 +16,7 @@ export function registerCommitHistoryCommands(
       CMD.commitHistory,
       async (item?: any) => {
         const repoPath =
-          item?.repo?.path ?? item?.fullPath ?? item?.path ?? repoManager.selectedRepo;
+          resolveRepoPath(item, repoManager.selectedRepo);
         if (!repoPath) {
           vscode.window.showWarningMessage(
             "Diffchestrator: No repository selected."

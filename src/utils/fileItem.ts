@@ -9,3 +9,14 @@ export function resolveFileItem(item: any): { repoPath: string; filePath: string
   if (repoPath && filePath) return { repoPath, filePath };
   return undefined;
 }
+
+/**
+ * Extract a repo path from the various shapes that command handlers receive:
+ * - RepoTreeItem: { repo: { path } }
+ * - DirectoryTreeItem: { fullPath }
+ * - Context menu: { path }
+ * Falls back to the currently selected repo.
+ */
+export function resolveRepoPath(item: any, fallback?: string): string | undefined {
+  return item?.repo?.path ?? item?.fullPath ?? item?.path ?? fallback;
+}
