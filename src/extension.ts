@@ -1356,7 +1356,19 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         try {
           const repoPath = await navigateTerminal(direction, repoManager.allRepos.map((r) => r.path));
           if (repoPath && repoPath !== repoManager.selectedRepo) {
-            repoManager.selectRepo(repoPath);
+            // Check if repo is in current root
+            const inCurrentRoot = repoManager.allRepos.some((r) => r.path === repoPath);
+            if (inCurrentRoot) {
+              repoManager.selectRepo(repoPath);
+            } else {
+              // Try to find in other roots and switch
+              const terminal = vscode.window.activeTerminal;
+              const match = terminal && repoManager.findRepoInOtherRoots(terminal.name);
+              if (match) {
+                await vscode.commands.executeCommand(CMD.switchRoot, match.root);
+                repoManager.selectRepo(match.path);
+              }
+            }
           }
         } finally {
           suppressTerminalSwitch = false;
