@@ -114,7 +114,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   let suppressTerminalSwitch = false;
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTerminal(async (terminal) => {
-      if (!terminal || switchingRepo) return;
+      if (!terminal || switchingRepo || suppressTerminalSwitch) return;
       const allPaths = repoManager.repos.map((r) => r.path);
       const currentRootPaths = new Set(allPaths);
       const repoPath = findRepoForTerminal(terminal, allPaths);
@@ -123,6 +123,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
       // the tracking map can return stale paths from a previous root.
       if (repoPath && currentRootPaths.has(repoPath)) {
         if (repoPath !== repoManager.selectedRepo) {
+          // Suppress showTerminalIfExists inside viewDiff — user already chose this terminal
           suppressTerminalSwitch = true;
           try {
             await vscode.commands.executeCommand(CMD.viewDiff, { path: repoPath });
