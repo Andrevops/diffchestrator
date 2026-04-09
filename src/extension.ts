@@ -26,7 +26,8 @@ import { FileWatcher } from "./services/fileWatcher";
 import { InlineBlameService } from "./services/inlineBlame";
 import { WorkspaceAutoScan } from "./services/workspaceAutoScan";
 // GitExecutor accessed via repoManager.git (shared instance)
-import { showTerminalIfExists, findRepoForTerminal, cycleTerminal, closeRepoTerminal, navigateTerminal, terminalIcon, adoptExistingTerminals } from "./commands/terminal";
+import { showTerminalIfExists, findRepoForTerminal, cycleTerminal, closeRepoTerminal, navigateTerminal, terminalIcon, adoptExistingTerminals, getRepoTerminal } from "./commands/terminal";
+import type { TerminalKind } from "./commands/terminal";
 import { extractTabUri } from "./types";
 import { resolveRepoPath } from "./utils/fileItem";
 import * as path from "path";
@@ -1037,6 +1038,17 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
       const repoPath = repoManager.selectedRepo;
       if (!repoPath) return;
       await closeEditorsForRepo(repoPath);
+      // Close terminals if autoTerminals is configured
+      const autoTerminals = vscode.workspace
+        .getConfiguration("diffchestrator")
+        .get<string[]>("autoTerminals", []);
+      if (autoTerminals.length > 0) {
+        const kinds: TerminalKind[] = ["claude", "yolo", "yolonew", "shell"];
+        for (const k of kinds) {
+          const t = getRepoTerminal(repoPath, k);
+          if (t) t.dispose();
+        }
+      }
       repoManager.closeRecentRepo(repoPath);
       // Switch to next repo if one exists
       const next = repoManager.selectedRepo;
@@ -1271,6 +1283,22 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
           // Don't override user's terminal choice when triggered by clicking a terminal tab
           if (!suppressTerminalSwitch) {
             await showTerminalIfExists(repoPath);
+          }
+
+          // Auto-open configured terminal types if not already running
+          const autoTerminals = vscode.workspace
+            .getConfiguration("diffchestrator")
+            .get<string[]>("autoTerminals", []);
+          for (const kind of autoTerminals) {
+            if (kind === "shell") {
+              await vscode.commands.executeCommand(CMD.openTerminal, { path: repoPath });
+            } else if (kind === "yolo") {
+              await vscode.commands.executeCommand(CMD.yolo, { path: repoPath });
+            } else if (kind === "yolonew") {
+              await vscode.commands.executeCommand(CMD.yolonew, { path: repoPath });
+            } else if (kind === "claude") {
+              await vscode.commands.executeCommand(CMD.openClaudeCode, { path: repoPath });
+            }
           }
         } finally {
           switchingRepo = false;

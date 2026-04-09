@@ -687,6 +687,22 @@
   cursor: pointer;
 }
 
+.setting-checkboxes {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.setting-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.setting-checkbox-label input {
+  accent-color: var(--vscode-focusBorder, #007fd4);
+}
+
 .setting-array {
   width: 100%;
 }

@@ -14,6 +14,7 @@ interface Settings {
   claudePermissionMode: string;
   autoPushAfterCommit: boolean;
   pinnedRepos: string[];
+  autoTerminals: string[];
 }
 
 function SettingToggle({ label, description, value, onChange }: {
@@ -208,6 +209,40 @@ export default function SettingsPanel() {
           value={settings.autoPushAfterCommit}
           onChange={(v) => update("autoPushAfterCommit", v)}
         />
+      </div>
+
+      <div className="settings-section">
+        <div className="settings-section-title">Terminals</div>
+        <div className="setting-row setting-row--array">
+          <div>
+            <div className="setting-label">Auto-Open Terminals</div>
+            <div className="setting-description">
+              Automatically open these terminal types when switching repos. Closing a repo also closes its terminals.
+            </div>
+          </div>
+          <div className="setting-checkboxes">
+            {([
+              ["shell", "Shell"],
+              ["yolo", "Yolo"],
+              ["yolonew", "Yolonew"],
+              ["claude", "Claude"],
+            ] as const).map(([kind, label]) => (
+              <label key={kind} className="setting-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={settings.autoTerminals.includes(kind)}
+                  onChange={(e) => {
+                    const next = e.target.checked
+                      ? [...settings.autoTerminals, kind]
+                      : settings.autoTerminals.filter((k) => k !== kind);
+                    update("autoTerminals", next);
+                  }}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="settings-section">

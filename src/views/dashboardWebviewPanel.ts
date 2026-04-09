@@ -653,6 +653,7 @@ export class DashboardWebviewPanel {
             claudePermissionMode: cfg.get<string>("claudePermissionMode", "acceptEdits"),
             autoPushAfterCommit: cfg.get<boolean>("autoPushAfterCommit", false),
             pinnedRepos: cfg.get<string[]>("pinnedRepos", []),
+            autoTerminals: cfg.get<string[]>("autoTerminals", []),
           },
         });
         break;

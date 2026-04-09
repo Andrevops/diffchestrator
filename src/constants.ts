@@ -100,6 +100,7 @@ export const CONFIG = {
   repoTags: "diffchestrator.repoTags",
   snapshots: "diffchestrator.snapshots",
   pinnedRepos: "diffchestrator.pinnedRepos",
+  autoTerminals: "diffchestrator.autoTerminals",
 } as const;
 
 export const CTX = {

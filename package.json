@@ -1098,6 +1098,15 @@
           },
           "default": [],
           "description": "Repository paths pinned to the top of Dashboard Sync Overview"
+        },
+        "diffchestrator.autoTerminals": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["shell", "claude", "yolo", "yolonew"]
+          },
+          "default": [],
+          "description": "Terminal types to auto-open when switching repos (e.g. [\"shell\", \"yolo\"]). Closing a repo also closes its terminals."
         }
       }
     },
