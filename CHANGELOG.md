@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.65.1
+
+### Bug Fixes
+- Prevent cross-type terminal collisions with icon-only names
+
 ## 0.65.0
 
 ### Features
