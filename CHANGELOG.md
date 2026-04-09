@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.63.6
+
+### Bug Fixes
+- Traverse split panes within groups before moving to next group
+
 ## 0.63.5
 
 ### Bug Fixes
