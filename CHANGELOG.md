@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.68.1
+
+### Bug Fixes
+- Skip auto-terminal open when terminal already exists for repo
+
 ## 0.68.0
 
 ### Features
