@@ -2,6 +2,12 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.68.6
+
+### Bug Fixes
+- Prevent sidebar focus steal when switching repos from other extension tabs
+- Prevent sidebar focus steal when switching repos from other extension tabs
+
 ## 0.68.4
 
 ### Other
