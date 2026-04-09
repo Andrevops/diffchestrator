@@ -353,10 +353,24 @@ export async function closeRepoTerminal(repoPath: string): Promise<void> {
 }
 
 /**
- * Get all tracked diffchestrator terminals in a stable order.
+ * Get all diffchestrator terminals in a stable order.
+ * Scans vscode.window.terminals by name to adopt untracked ones.
  * Returns [terminal, repoPath][] sorted by repo path then kind.
  */
-function getAllTrackedTerminals(): [vscode.Terminal, string][] {
+function getAllTrackedTerminals(allRepoPaths: string[]): [vscode.Terminal, string][] {
+  // First adopt any untracked terminals by scanning all open terminals
+  for (const terminal of vscode.window.terminals) {
+    // Skip if already tracked
+    let tracked = false;
+    for (const [, t] of repoTerminals) {
+      if (t === terminal) { tracked = true; break; }
+    }
+    if (tracked) continue;
+
+    // Try to match by name pattern against known repos
+    findRepoForTerminal(terminal, allRepoPaths);
+  }
+
   const result: [vscode.Terminal, string, TerminalKind][] = [];
   for (const [k, t] of repoTerminals) {
     if (vscode.window.terminals.includes(t)) {
@@ -377,8 +391,8 @@ function getAllTrackedTerminals(): [vscode.Terminal, string][] {
  * Navigate to the next/previous terminal across all repos.
  * direction: 1 = next (down), -1 = previous (up)
  */
-export function navigateTerminal(direction: 1 | -1): string | undefined {
-  const all = getAllTrackedTerminals();
+export function navigateTerminal(direction: 1 | -1, allRepoPaths: string[]): string | undefined {
+  const all = getAllTrackedTerminals(allRepoPaths);
   if (all.length === 0) {
     vscode.window.showInformationMessage("Diffchestrator: No terminals open.");
     return undefined;
