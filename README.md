@@ -85,7 +85,8 @@ Diffchestrator doesn't require Claude to run inside VS Code. The file watcher mo
 - **Toggle favorites** — star button in Active Repos title bar shows/hides favorites (filled star = visible, empty star = hidden). Hidden favorites that are active/recent remain visible as their non-favorite role
 - **Persisted across reloads** — active repos, selection, and current scan root survive VS Code restarts
 - **Cycle repos** — `Alt+D, Tab` cycles through all opened repos including favorites, switching the changed files view, terminal, and diff editor in one keystroke
-- **Close active repos** — `Alt+D, Q` closes current, `Alt+D, Shift+Q` picks which to close, `Alt+D, Shift+Tab` closes all
+- **Close active repos** — `Alt+D, Q` closes current (and its terminals if auto-terminals is configured), `Alt+D, Shift+Q` picks which to close, `Alt+D, Shift+Tab` closes all
+- **Auto-terminals** — configure terminal types to auto-open when switching repos (Shell, Yolo, Yolonew, Claude). Configurable via Dashboard Settings tab checkboxes. Closing a repo also closes its terminals when enabled
 - **Terminal indicators** — each repo shows which terminal types are running (Claude, Yolo, Yolonew, Shell) via icon badges
 - **Auto-switch terminal** — clicking a repo in Active Repos or Repositories auto-surfaces that repo's terminal (priority: Claude > Yolo > Yolonew > Shell)
 - **Cycle terminal** — `Alt+D, J` rotates through all alive terminals for the current repo (Claude → Yolo → Yolonew → Shell)
@@ -136,10 +137,14 @@ Diffchestrator doesn't require Claude to run inside VS Code. The file watcher mo
 - **Stage / Unstage** individual files or all files (inline buttons + context menu + editor title bar)
 - **Discard changes** — revert a single file, delete an untracked file, or discard all changes with confirmation dialog
 - **Commit** with conventional commit prefix picker (feat/fix/chore/refactor/docs/test/ci) (`Alt+D, M`)
+- **Amend last commit** (`Alt+D, Shift+M`) — edit the last commit message with pre-filled content
 - **Undo last commit** (`Alt+D, Z`) — soft reset keeping changes staged, with confirmation showing the commit message
 - **Auto-push after commit** — optionally push immediately after a successful commit
 - **Push** with progress notification (`Alt+D, P`)
+- **Force push** (`Alt+D, Shift+P`) — uses `--force-with-lease` with modal confirmation
 - **Pull** with progress notification (`Alt+D, U`)
+- **Pull-before-push reminder** — when push is rejected by remote, offers "Pull" or "Force Push" quick actions
+- **Sync All** — fetch all repos, pull those behind, push those ahead — one button in the Dashboard
 - **Fetch** — single-repo fetch via right-click context menu, or bulk fetch all from title bar
 - **Bulk commit/push** across multiple selected repos
 - **Copy repo info** — right-click to copy path, branch, remote URL, or name to clipboard
@@ -151,7 +156,7 @@ Diffchestrator doesn't require Claude to run inside VS Code. The file watcher mo
 ### Branch & Stash Management
 - **Branch Switcher** (`Alt+D, B`) — QuickPick listing all local branches with current branch marked, plus "Create new branch..." option
 - **Branch Cleanup** (`Alt+D, X`) — find merged branches across all repos and delete them in bulk
-- **Stash Management** (`Alt+D, A`) — stash push (with message), list stashes, pop latest, apply specific stash, view stash diffs
+- **Stash Management** (`Alt+D, A`) — stash push (with message), list stashes, pop latest, apply specific stash, drop stash, view stash diffs. Dashboard shows relative timestamps per stash
 - **Commit History** (`Alt+D, H`) — QuickPick showing last 15 commits, select to view full diff in editor
 - **Cross-repo Activity Log** — recent commits across ALL repos sorted by date
 
@@ -162,6 +167,7 @@ Diffchestrator doesn't require Claude to run inside VS Code. The file watcher mo
 - Selecting a search result from a different repo auto-switches to it (terminal, changed files, everything)
 - **Browse Files** (`Alt+D, F`) — QuickPick with all files in a repo via `git ls-files`, instant filtering
 - **Switch Repo** (`Alt+D, R`) — QuickPick sorted by changes, current repo first
+- **Switch Repo All Roots** (`Alt+D, Alt+F`) — QuickPick listing ALL repos across all configured scan roots, with cross-root switching
 - **Open in New Window** (`Alt+D, W`) — opens the selected repo in a new VS Code window for full native search
 
 ### File Watcher
@@ -251,8 +257,11 @@ All shortcuts use **Alt+D** as a chord prefix — press `Alt+D`, release, then p
 | `Alt+D, ↓` | Next terminal (across all repos) |
 | `Alt+D, ↑` | Previous terminal (across all repos) |
 | `Alt+D, R` | Switch active repo |
+| `Alt+D, Alt+F` | Switch repo (all roots) |
 | `Alt+D, F` | Browse files in repo |
 | `Alt+D, P` | Push |
+| `Alt+D, Shift+P` | Force push (--force-with-lease) |
+| `Alt+D, Shift+M` | Amend last commit |
 | `Alt+D, U` | Pull |
 | `Alt+D, D` | Toggle changed-only filter |
 | `Alt+D, H` | Commit history |
@@ -326,6 +335,7 @@ Right-click a **changed file**:
 | `diffchestrator.repoTags` | `{}` | Repo tags for filtering (managed by extension) |
 | `diffchestrator.snapshots` | `{}` | Workspace snapshots (managed by extension) |
 | `diffchestrator.pinnedRepos` | `[]` | Pinned repo paths in Dashboard Sync Overview (managed by extension) |
+| `diffchestrator.autoTerminals` | `[]` | Terminal types to auto-open on repo switch (`shell`, `yolo`, `yolonew`, `claude`). Closing a repo also closes its terminals |
 
 ## Getting Started
 
