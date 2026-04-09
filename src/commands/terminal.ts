@@ -353,31 +353,33 @@ export async function closeRepoTerminal(repoPath: string): Promise<void> {
 }
 
 /**
- * Navigate to the next/previous terminal in VS Code's panel order.
- * Includes ALL terminals, not just diffchestrator-tracked ones.
- * Returns the repo path if the target terminal can be identified, for auto-select.
+ * Navigate to the next/previous terminal using VS Code's native commands.
+ * Handles splits and groups correctly by delegating to the editor.
+ * Returns the repo path of the newly active terminal for auto-select.
  * direction: 1 = next (down), -1 = previous (up)
  */
-export function navigateTerminal(direction: 1 | -1, allRepoPaths: string[]): string | undefined {
-  const all = vscode.window.terminals;
-  if (all.length === 0) {
+export async function navigateTerminal(direction: 1 | -1, allRepoPaths: string[]): Promise<string | undefined> {
+  if (vscode.window.terminals.length === 0) {
     vscode.window.showInformationMessage("Diffchestrator: No terminals open.");
     return undefined;
   }
 
-  const active = vscode.window.activeTerminal;
-  let idx = active ? all.indexOf(active) : -1;
-
-  if (idx === -1) {
-    idx = direction === 1 ? 0 : all.length - 1;
-  } else {
-    idx = (idx + direction + all.length) % all.length;
+  // Ensure terminal panel is visible
+  if (!vscode.window.activeTerminal) {
+    await vscode.commands.executeCommand("workbench.action.terminal.focus");
   }
 
-  const terminal = all[idx];
-  terminal.show(false);
+  // Use VS Code's native navigation which respects visual order + splits
+  const cmd = direction === 1
+    ? "workbench.action.terminal.focusNext"
+    : "workbench.action.terminal.focusPrevious";
+  await vscode.commands.executeCommand(cmd);
 
-  // Best-effort repo identification for auto-select
+  // Wait for focus to settle, then identify the repo
+  await new Promise((r) => setTimeout(r, 50));
+  const terminal = vscode.window.activeTerminal;
+  if (!terminal) return undefined;
+
   return findRepoForTerminal(terminal, allRepoPaths);
 }
 

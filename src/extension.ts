@@ -1292,8 +1292,8 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   // Navigate terminals across repos — auto-select the target repo
   const registerNav = (cmd: string, direction: 1 | -1) => {
     context.subscriptions.push(
-      vscode.commands.registerCommand(cmd, () => {
-        const repoPath = navigateTerminal(direction, repoManager.allRepos.map((r) => r.path));
+      vscode.commands.registerCommand(cmd, async () => {
+        const repoPath = await navigateTerminal(direction, repoManager.allRepos.map((r) => r.path));
         if (repoPath && repoPath !== repoManager.selectedRepo) {
           repoManager.selectRepo(repoPath);
         }
