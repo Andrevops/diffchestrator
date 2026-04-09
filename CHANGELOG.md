@@ -2,6 +2,17 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.64.0
+
+### Features
+- Add distinct icons per terminal type (sparkle/flame/zap/terminal)
+
+### Bug Fixes
+- Remove dangling issue reference
+
+### Other
+- Document split terminal navigation limitation
+
 ## 0.63.9
 
 ### Bug Fixes
