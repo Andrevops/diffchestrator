@@ -13,6 +13,7 @@ interface ActiveRepoNode {
   repoPath: string;
   role: Role;
   terminalKinds: TerminalKind[];
+  isDirectory?: boolean;
 }
 
 const KIND_LABELS: Record<TerminalKind, string> = {
@@ -81,7 +82,9 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
     const isActive = element.repoPath === this.repoManager.selectedRepo;
 
     const parts: string[] = [];
-    if (r) {
+    if (element.isDirectory) {
+      parts.push("directory");
+    } else if (r) {
       if (r.branch) parts.push(r.branch);
       const sync: string[] = [];
       if (r.ahead > 0) sync.push(`↑${r.ahead}`);
@@ -97,25 +100,28 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
     const termLabels = element.terminalKinds.map((k) => KIND_LABELS[k]);
     const termTag = termLabels.length > 0 ? `$(terminal) ${termLabels.join("+")} ` : "";
 
+    const dirIcon = element.isDirectory;
     if (element.role === "favorite") {
       const activeMarker = isActive ? "● " : "";
       item.description = `${termTag}${activeMarker}${parts.join(" · ")}`;
-      item.iconPath = isActive
-        ? new vscode.ThemeIcon("star-full", new vscode.ThemeColor("charts.blue"))
-        : new vscode.ThemeIcon("star-full", new vscode.ThemeColor("charts.yellow"));
+      item.iconPath = dirIcon
+        ? new vscode.ThemeIcon("folder", new vscode.ThemeColor(isActive ? "charts.blue" : "charts.yellow"))
+        : isActive
+          ? new vscode.ThemeIcon("star-full", new vscode.ThemeColor("charts.blue"))
+          : new vscode.ThemeIcon("star-full", new vscode.ThemeColor("charts.yellow"));
     } else if (element.role === "active") {
       item.description = `${termTag}● ${parts.join(" · ")}`;
-      item.iconPath = new vscode.ThemeIcon("repo", new vscode.ThemeColor("charts.blue"));
+      item.iconPath = new vscode.ThemeIcon(dirIcon ? "folder" : "repo", new vscode.ThemeColor("charts.blue"));
     } else if (element.role === "selected") {
       item.description = `${termTag}${parts.join(" · ")}`;
-      item.iconPath = new vscode.ThemeIcon("check", new vscode.ThemeColor("charts.purple"));
+      item.iconPath = new vscode.ThemeIcon(dirIcon ? "folder" : "check", new vscode.ThemeColor("charts.purple"));
     } else {
       item.description = `${termTag}${parts.join(" · ")}`;
-      item.iconPath = new vscode.ThemeIcon("history", new vscode.ThemeColor("foreground"));
+      item.iconPath = new vscode.ThemeIcon(dirIcon ? "folder" : "history", new vscode.ThemeColor("foreground"));
     }
 
     item.id = `active:${element.repoPath}:${element.role}:${isActive ? "a" : "i"}`;
-    item.contextValue = "repo";
+    item.contextValue = dirIcon ? "directory" : "repo";
     (item as vscode.TreeItem & { path: string; repoPath: string }).path = element.repoPath;
     (item as vscode.TreeItem & { repoPath: string }).repoPath = element.repoPath;
 
@@ -160,17 +166,19 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
     if (showFavorites) {
       for (const favPath of favoritePaths) {
         if (!this._isUnderRoot(favPath)) continue;
-        const repo = this.repoManager.getRepo(favPath);
-        nodes.push({ repo, repoPath: favPath, role: "favorite", terminalKinds: this._getTerminalKinds(favPath) });
+        const isDir = this.repoManager.isDirectory(favPath);
+        const repo = isDir ? undefined : this.repoManager.getRepo(favPath);
+        nodes.push({ repo, repoPath: favPath, role: "favorite", terminalKinds: this._getTerminalKinds(favPath), isDirectory: isDir });
         seen.add(favPath);
       }
     }
 
-    // Active repo (show even if it's a hidden favorite — just as "active" role)
+    // Active repo or directory
     if (activePath && this._isUnderRoot(activePath) && !seen.has(activePath)) {
-      const repo = this.repoManager.getRepo(activePath);
-      if (repo) {
-        nodes.push({ repo, repoPath: activePath, role: "active", terminalKinds: this._getTerminalKinds(activePath) });
+      const isDir = this.repoManager.isDirectory(activePath);
+      const repo = isDir ? undefined : this.repoManager.getRepo(activePath);
+      if (repo || isDir) {
+        nodes.push({ repo, repoPath: activePath, role: "active", terminalKinds: this._getTerminalKinds(activePath), isDirectory: isDir });
         seen.add(activePath);
       }
     }
@@ -178,9 +186,10 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
     // Multi-selected
     for (const p of multiPaths) {
       if (seen.has(p) || !this._isUnderRoot(p)) continue;
-      const repo = this.repoManager.getRepo(p);
-      if (repo) {
-        nodes.push({ repo, repoPath: p, role: "selected", terminalKinds: this._getTerminalKinds(p) });
+      const isDir = this.repoManager.isDirectory(p);
+      const repo = isDir ? undefined : this.repoManager.getRepo(p);
+      if (repo || isDir) {
+        nodes.push({ repo, repoPath: p, role: "selected", terminalKinds: this._getTerminalKinds(p), isDirectory: isDir });
         seen.add(p);
       }
     }
@@ -188,9 +197,10 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
     // Recent
     for (const p of recentPaths) {
       if (seen.has(p) || !this._isUnderRoot(p)) continue;
-      const repo = this.repoManager.getRepo(p);
-      if (repo) {
-        nodes.push({ repo, repoPath: p, role: "recent", terminalKinds: this._getTerminalKinds(p) });
+      const isDir = this.repoManager.isDirectory(p);
+      const repo = isDir ? undefined : this.repoManager.getRepo(p);
+      if (repo || isDir) {
+        nodes.push({ repo, repoPath: p, role: "recent", terminalKinds: this._getTerminalKinds(p), isDirectory: isDir });
         seen.add(p);
       }
     }

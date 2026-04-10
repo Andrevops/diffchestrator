@@ -8,6 +8,7 @@ import { CTX } from "../constants";
 const STATE_RECENT_REPOS = "diffchestrator.recentRepoPaths";
 const STATE_SELECTED_REPO = "diffchestrator.selectedRepo";
 const STATE_CURRENT_ROOT = "diffchestrator.currentRoot";
+const STATE_DIRECTORY_PATHS = "diffchestrator.directoryPaths";
 
 export class RepoManager implements vscode.Disposable {
   private _repos = new Map<string, RepoSummary>();
@@ -18,6 +19,7 @@ export class RepoManager implements vscode.Disposable {
   private _selectionPerRoot = new Map<string, { selected?: string; multi: string[]; recent: string[] }>();
   /** Cached repo paths per root — populated during scan() and lazily for cross-root lookups */
   private _pathsByRoot = new Map<string, string[]>();
+  private _directoryPaths = new Set<string>();
   private _swapTarget: { path: string; root?: string } | undefined;
   private _swappingBack = false;
   private _state: vscode.Memento | undefined;
@@ -62,6 +64,9 @@ export class RepoManager implements vscode.Disposable {
       this._recentRepoPaths = state.get<string[]>(STATE_RECENT_REPOS, []);
       this._selectedRepo = state.get<string | undefined>(STATE_SELECTED_REPO, undefined);
       this._currentRoot = state.get<string | undefined>(STATE_CURRENT_ROOT, undefined);
+      for (const p of state.get<string[]>(STATE_DIRECTORY_PATHS, [])) {
+        this._directoryPaths.add(p);
+      }
       if (this._selectedRepo) {
         vscode.commands.executeCommand("setContext", CTX.hasSelectedRepo, true);
       }
@@ -133,6 +138,28 @@ export class RepoManager implements vscode.Disposable {
     return result;
   }
 
+  /** Check if a path is tracked as a directory (not a repo). */
+  isDirectory(p: string): boolean {
+    return this._directoryPaths.has(p) && !this._repos.has(p);
+  }
+
+  /** All tracked directory paths. */
+  get directoryPaths(): ReadonlySet<string> {
+    return this._directoryPaths;
+  }
+
+  /** Add a directory to Active Repos and select it. */
+  addDirectoryPath(dirPath: string): void {
+    this._directoryPaths.add(dirPath);
+    this.selectRepo(dirPath);
+  }
+
+  /** Remove a directory from tracking. */
+  removeDirectoryPath(dirPath: string): void {
+    this._directoryPaths.delete(dirPath);
+    this._persistState();
+  }
+
   setTagFilter(tag: string | undefined): void {
     this._tagFilter = tag;
     this._taggedPathsCache = undefined;
@@ -158,6 +185,7 @@ export class RepoManager implements vscode.Disposable {
     this._state.update(STATE_RECENT_REPOS, this._recentRepoPaths);
     this._state.update(STATE_SELECTED_REPO, this._selectedRepo);
     this._state.update(STATE_CURRENT_ROOT, this._currentRoot);
+    this._state.update(STATE_DIRECTORY_PATHS, [...this._directoryPaths]);
   }
 
   get selectedRepoPaths(): ReadonlySet<string> {
@@ -404,6 +432,7 @@ export class RepoManager implements vscode.Disposable {
    */
   closeRecentRepo(repoPath: string): void {
     this._recentRepoPaths = this._recentRepoPaths.filter((p) => p !== repoPath);
+    this._directoryPaths.delete(repoPath);
     if (this._selectedRepo === repoPath) {
       if (this._recentRepoPaths.length > 0) {
         this._selectedRepo = this._recentRepoPaths[0];
@@ -418,6 +447,7 @@ export class RepoManager implements vscode.Disposable {
 
   clearAllRecentRepos(): void {
     this._recentRepoPaths = [];
+    this._directoryPaths.clear();
     this._selectedRepo = undefined;
     vscode.commands.executeCommand("setContext", CTX.hasSelectedRepo, false);
     this._persistState();
@@ -471,7 +501,7 @@ export class RepoManager implements vscode.Disposable {
     // Cycle through all recently opened repos (which includes any opened favorites),
     // filtered by current root
     const cyclePaths = this._recentRepoPaths.filter(
-      (p) => isUnderRoot(p) && this._repos.has(p)
+      (p) => isUnderRoot(p) && (this._repos.has(p) || this._directoryPaths.has(p))
     );
 
     if (cyclePaths.length < 2) return undefined;

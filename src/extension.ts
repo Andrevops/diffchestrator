@@ -26,7 +26,7 @@ import { FileWatcher } from "./services/fileWatcher";
 import { InlineBlameService } from "./services/inlineBlame";
 import { WorkspaceAutoScan } from "./services/workspaceAutoScan";
 // GitExecutor accessed via repoManager.git (shared instance)
-import { showTerminalIfExists, findRepoForTerminal, cycleTerminal, closeRepoTerminal, navigateTerminal, terminalIcon, adoptExistingTerminals, getRepoTerminal } from "./commands/terminal";
+import { showTerminalIfExists, findRepoForTerminal, cycleTerminal, closeRepoTerminal, navigateTerminal, terminalIcon, adoptExistingTerminals, getRepoTerminal, registerRepoTerminal } from "./commands/terminal";
 import type { TerminalKind } from "./commands/terminal";
 import { extractTabUri } from "./types";
 import { resolveRepoPath } from "./utils/fileItem";
@@ -116,7 +116,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTerminal(async (terminal) => {
       if (!terminal || switchingRepo || suppressTerminalSwitch) return;
-      const allPaths = repoManager.repos.map((r) => r.path);
+      const allPaths = [...repoManager.repos.map((r) => r.path), ...repoManager.directoryPaths];
       const currentRootPaths = new Set(allPaths);
       const repoPath = findRepoForTerminal(terminal, allPaths);
 
@@ -413,6 +413,8 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         cwd: root,
         iconPath: new vscode.ThemeIcon("folder-opened"),
       });
+      registerRepoTerminal(root, "shell", terminal);
+      repoManager.addDirectoryPath(root);
       terminal.show();
     })
   );
@@ -1050,7 +1052,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
       const autoTerminals = vscode.workspace
         .getConfiguration("diffchestrator")
         .get<string[]>("autoTerminals", []);
-      if (autoTerminals.length > 0) {
+      if (autoTerminals.length > 0 || repoManager.isDirectory(repoPath)) {
         const kinds: TerminalKind[] = ["claude", "yolo", "yolonew", "shell"];
         for (const k of kinds) {
           const t = getRepoTerminal(repoPath, k);
@@ -1322,6 +1324,9 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
           switchingRepo = false;
         }
 
+        // Directory entries: terminal only, no file operations
+        if (repoManager.isDirectory(repoPath)) return;
+
         // Priority: changed files first (review workflow), then remembered file
         try {
           const status = await sharedGit.status(repoPath);
@@ -1400,7 +1405,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
       vscode.commands.registerCommand(cmd, async () => {
         suppressTerminalSwitch = true;
         try {
-          const repoPath = await navigateTerminal(direction, repoManager.allRepos.map((r) => r.path));
+          const repoPath = await navigateTerminal(direction, [...repoManager.allRepos.map((r) => r.path), ...repoManager.directoryPaths]);
           if (repoPath && repoPath !== repoManager.selectedRepo) {
             // Check if repo is in current root
             const inCurrentRoot = repoManager.allRepos.some((r) => r.path === repoPath);
@@ -1444,7 +1449,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     if (startupRoot) {
       repoManager.scan(startupRoot).then(() => {
         fileWatcher.watchAll();
-        adoptExistingTerminals(repoManager.allRepos.map((r) => r.path));
+        adoptExistingTerminals([...repoManager.allRepos.map((r) => r.path), ...repoManager.directoryPaths]);
       }).catch((err) => {
         outputChannel.appendLine(`[startup scan] ${err instanceof Error ? err.message : err}`);
       });
