@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.69.1
+
+### Bug Fixes
+- Register directory entries when opening terminals from non-repo directories
+
 ## 0.69.0
 
 ### Features
