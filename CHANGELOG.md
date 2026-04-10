@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.70.2
+
+### Other
+- Add Andrevops ecosystem section with integration map
+
 ## 0.70.1
 
 ### Bug Fixes
