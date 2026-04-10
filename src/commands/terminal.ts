@@ -587,7 +587,12 @@ export function registerTerminalCommand(
           vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
           return;
         }
-        repoManager.selectRepo(targetPath);
+        // If path is not a known repo, track as directory entry
+        if (!repoManager.getRepo(targetPath)) {
+          repoManager.addDirectoryPath(targetPath);
+        } else {
+          repoManager.selectRepo(targetPath);
+        }
         const terminal = getOrCreateTerminal(targetPath);
         terminal.show();
       }
@@ -618,7 +623,11 @@ export function registerTerminalCommand(
           terminal.show();
           terminal.sendText(`yolo ${addDirArgs}`);
         } else if (singlePath) {
-          repoManager.selectRepo(singlePath);
+          if (!repoManager.getRepo(singlePath)) {
+            repoManager.addDirectoryPath(singlePath);
+          } else {
+            repoManager.selectRepo(singlePath);
+          }
           const existing = getAlive(singlePath, "yolo");
           if (existing) {
             existing.show();
@@ -664,7 +673,11 @@ export function registerTerminalCommand(
           terminal.show();
           terminal.sendText(`yolonew ${addDirArgs}`);
         } else if (singlePath) {
-          repoManager.selectRepo(singlePath);
+          if (!repoManager.getRepo(singlePath)) {
+            repoManager.addDirectoryPath(singlePath);
+          } else {
+            repoManager.selectRepo(singlePath);
+          }
           const existing = getAlive(singlePath, "yolonew");
           if (existing) {
             existing.show();

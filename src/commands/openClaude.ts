@@ -33,7 +33,11 @@ export function registerClaudeCommands(
           terminal.show();
           terminal.sendText(`claude ${addDirArgs}`);
         } else if (singlePath) {
-          repoManager.selectRepo(singlePath);
+          if (!repoManager.getRepo(singlePath)) {
+            repoManager.addDirectoryPath(singlePath);
+          } else {
+            repoManager.selectRepo(singlePath);
+          }
           // Reuse existing Claude terminal if alive
           const existing = getRepoTerminal(singlePath, "claude");
           if (existing) {
