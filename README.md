@@ -167,7 +167,7 @@ Diffchestrator doesn't require Claude to run inside VS Code. The file watcher mo
 - Selecting a search result from a different repo auto-switches to it (terminal, changed files, everything)
 - **Browse Files** (`Alt+D, F`) — QuickPick with all files in a repo via `git ls-files`, instant filtering
 - **Switch Repo** (`Alt+D, R`) — QuickPick sorted by changes, current repo first
-- **Switch Repo All Roots** (`Alt+D, Alt+F`) — QuickPick listing ALL repos across all configured scan roots, with cross-root switching
+- **Switch Repo All Roots** (`Alt+D, Alt+R`) — QuickPick listing ALL repos across all configured scan roots, with cross-root switching
 - **Open in New Window** (`Alt+D, W`) — opens the selected repo in a new VS Code window for full native search
 
 ### File Watcher
@@ -257,7 +257,7 @@ All shortcuts use **Alt+D** as a chord prefix — press `Alt+D`, release, then p
 | `Alt+D, ↓` | Next terminal (across all repos) |
 | `Alt+D, ↑` | Previous terminal (across all repos) |
 | `Alt+D, R` | Switch active repo |
-| `Alt+D, Alt+F` | Switch repo (all roots) |
+| `Alt+D, Alt+R` | Switch repo (all roots) |
 | `Alt+D, F` | Browse files in repo |
 | `Alt+D, P` | Push |
 | `Alt+D, Shift+P` | Force push (--force-with-lease) |

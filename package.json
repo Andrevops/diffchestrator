@@ -990,8 +990,8 @@
       },
       {
         "command": "diffchestrator.switchRepoAllRoots",
-        "key": "alt+d alt+f",
-        "mac": "alt+d alt+f"
+        "key": "alt+d alt+r",
+        "mac": "alt+d alt+r"
       },
       {
         "command": "diffchestrator.forcePush",

@@ -1,7 +1,7 @@
 const shortcuts = [
   ["Alt+D, S", "Scan repos"],
   ["Alt+D, R", "Switch repo"],
-  ["Alt+D, Alt+F", "Switch repo (all roots)"],
+  ["Alt+D, Alt+R", "Switch repo (all roots)"],
   ["Alt+D, Tab", "Cycle active repos"],
   ["Alt+D, V", "Dashboard"],
   ["Alt+D, D", "Toggle changed-only"],
