@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.72.1
+
+### Bug Fixes
+- Use user's default shell for alias detection (fixes yolo on macOS/zsh)
+
 ## 0.72.0
 
 ### Features
