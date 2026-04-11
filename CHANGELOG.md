@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.72.0
+
+### Features
+- Claude continue fallback + claudenew terminal kind for fresh sessions
+
 ## 0.71.3
 
 ### Other
