@@ -250,27 +250,34 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     const selected = repoManager.selectedRepo;
     const folders = vscode.workspace.workspaceFolders || [];
 
-    // Remove previously synced folders that are no longer the selected repo
+    // Find the old synced folder to replace (if any)
+    let oldIdx = -1;
     for (const synced of syncedFolders) {
-      if (synced === selected) continue;
-      const idx = folders.findIndex(f => f.uri.fsPath === synced);
-      if (idx !== -1) {
-        vscode.workspace.updateWorkspaceFolders(idx, 1);
-        syncedFolders.delete(synced);
-      }
+      if (synced === selected) break;
+      oldIdx = folders.findIndex(f => f.uri.fsPath === synced);
+      syncedFolders.delete(synced);
     }
 
-    if (!selected) return;
+    if (!selected) {
+      // No selection — just remove the old synced folder
+      if (oldIdx !== -1) vscode.workspace.updateWorkspaceFolders(oldIdx, 1);
+      return;
+    }
 
-    // Don't add if already present in workspace (user's own folder or already synced)
-    const currentFolders = vscode.workspace.workspaceFolders || [];
-    if (currentFolders.some(f => f.uri.fsPath === selected)) {
+    // Already present in workspace — nothing to do
+    if (folders.some(f => f.uri.fsPath === selected)) {
       syncedFolders.add(selected);
       return;
     }
 
-    // Add the selected repo at the end of workspace folders
-    vscode.workspace.updateWorkspaceFolders(currentFolders.length, 0, { uri: vscode.Uri.file(selected) });
+    // Single atomic call: replace old synced folder, or append new one
+    if (oldIdx !== -1) {
+      // Swap old folder for new in one call — stays multi-root, no reload
+      vscode.workspace.updateWorkspaceFolders(oldIdx, 1, { uri: vscode.Uri.file(selected) });
+    } else {
+      // First sync — add at end (one-time transition to multi-root)
+      vscode.workspace.updateWorkspaceFolders(folders.length, 0, { uri: vscode.Uri.file(selected) });
+    }
     syncedFolders.add(selected);
   };
 
