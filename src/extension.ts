@@ -240,21 +240,38 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     }
   };
 
+  // Track workspace folders added by syncWorkspace so we never touch the user's original folders
+  const syncedFolders = new Set<string>();
+
   const syncWorkspaceWithSelection = () => {
     const config = vscode.workspace.getConfiguration();
     if (!config.get<boolean>(CONFIG.syncWorkspace, false)) return;
 
     const selected = repoManager.selectedRepo;
-    if (!selected) return;
-
     const folders = vscode.workspace.workspaceFolders || [];
 
-    // Check if the current workspace exactly matches the selected repo
-    // to avoid unnecessary extension host restarts or UI flashing
-    if (folders.length === 1 && folders[0].uri.fsPath === selected) return;
+    // Remove previously synced folders that are no longer the selected repo
+    for (const synced of syncedFolders) {
+      if (synced === selected) continue;
+      const idx = folders.findIndex(f => f.uri.fsPath === synced);
+      if (idx !== -1) {
+        vscode.workspace.updateWorkspaceFolders(idx, 1);
+        syncedFolders.delete(synced);
+      }
+    }
 
-    // Replace all existing workspace folders with the single selected repository
-    vscode.workspace.updateWorkspaceFolders(0, folders.length, { uri: vscode.Uri.file(selected) });
+    if (!selected) return;
+
+    // Don't add if already present in workspace (user's own folder or already synced)
+    const currentFolders = vscode.workspace.workspaceFolders || [];
+    if (currentFolders.some(f => f.uri.fsPath === selected)) {
+      syncedFolders.add(selected);
+      return;
+    }
+
+    // Add the selected repo at the end of workspace folders
+    vscode.workspace.updateWorkspaceFolders(currentFolders.length, 0, { uri: vscode.Uri.file(selected) });
+    syncedFolders.add(selected);
   };
 
   repoManager.onDidChangeRepos(updateViewInfo);
