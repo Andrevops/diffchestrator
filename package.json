@@ -1030,6 +1030,11 @@
           "default": false,
           "description": "Show only repos with changes by default"
         },
+        "diffchestrator.syncWorkspace": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically sync the VS Code Explorer workspace folders to the currently selected repository"
+        },
         "diffchestrator.autoRefreshInterval": {
           "type": "number",
           "default": 10,

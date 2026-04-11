@@ -3,7 +3,7 @@ import { RepoManager } from "./services/repoManager";
 import { RepoTreeProvider } from "./providers/repoTreeProvider";
 import { ChangedFilesProvider } from "./providers/changedFilesProvider";
 import { escapeForTerminal } from "./utils/shell";
-import { CMD, VIEW_ACTIVE_REPOS, VIEW_REPOS, VIEW_CHANGED_FILES } from "./constants";
+import { CMD, CONFIG, VIEW_ACTIVE_REPOS, VIEW_REPOS, VIEW_CHANGED_FILES } from "./constants";
 import { registerScanCommands } from "./commands/scan";
 import { registerStageCommands, openNextPendingFile, openFileDiff } from "./commands/stage";
 import { registerCommitCommands } from "./commands/commit";
@@ -240,8 +240,28 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     }
   };
 
+  const syncWorkspaceWithSelection = () => {
+    const config = vscode.workspace.getConfiguration();
+    if (!config.get<boolean>(CONFIG.syncWorkspace, false)) return;
+
+    const selected = repoManager.selectedRepo;
+    if (!selected) return;
+
+    const folders = vscode.workspace.workspaceFolders || [];
+
+    // Check if the current workspace exactly matches the selected repo
+    // to avoid unnecessary extension host restarts or UI flashing
+    if (folders.length === 1 && folders[0].uri.fsPath === selected) return;
+
+    // Replace all existing workspace folders with the single selected repository
+    vscode.workspace.updateWorkspaceFolders(0, folders.length, { uri: vscode.Uri.file(selected) });
+  };
+
   repoManager.onDidChangeRepos(updateViewInfo);
-  repoManager.onDidChangeSelection(updateViewInfo);
+  repoManager.onDidChangeSelection(() => {
+    updateViewInfo();
+    syncWorkspaceWithSelection();
+  });
 
   // Notifications when Claude/external tools commit or modify files
   // Queue notifications when unfocused, show grouped summary on refocus
