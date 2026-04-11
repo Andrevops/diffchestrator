@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.72.2
+
+### Other
+- Document macOS support for claude-sandbox integration
+
 ## 0.72.1
 
 ### Bug Fixes
