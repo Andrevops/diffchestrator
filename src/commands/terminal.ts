@@ -44,8 +44,9 @@ async function commandExists(cmd: string): Promise<boolean> {
  */
 async function aliasOrCommandExists(name: string): Promise<boolean> {
   try {
-    // Must use interactive shell (-ic) so bash loads aliases from .bashrc
-    await execFileAsync("/bin/bash", ["-ic", `type ${name}`], { timeout: 5000 });
+    // Use the user's default shell so aliases from .zshrc/.bashrc are loaded
+    const shell = vscode.env.shell || process.env.SHELL || "/bin/bash";
+    await execFileAsync(shell, ["-ic", `type ${name}`], { timeout: 5000 });
     return true;
   } catch {
     return false;
