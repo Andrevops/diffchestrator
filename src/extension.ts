@@ -3,7 +3,7 @@ import { RepoManager } from "./services/repoManager";
 import { RepoTreeProvider } from "./providers/repoTreeProvider";
 import { ChangedFilesProvider } from "./providers/changedFilesProvider";
 import { escapeForTerminal } from "./utils/shell";
-import { CMD, VIEW_ACTIVE_REPOS, VIEW_REPOS, VIEW_CHANGED_FILES } from "./constants";
+import { CMD, CONFIG, VIEW_ACTIVE_REPOS, VIEW_REPOS, VIEW_CHANGED_FILES } from "./constants";
 import { registerScanCommands } from "./commands/scan";
 import { registerStageCommands, openNextPendingFile, openFileDiff } from "./commands/stage";
 import { registerCommitCommands } from "./commands/commit";
@@ -241,8 +241,8 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   };
 
   const syncWorkspaceWithSelection = () => {
-    const config = vscode.workspace.getConfiguration("diffchestrator");
-    if (!config.get<boolean>("syncWorkspace", false)) return;
+    const config = vscode.workspace.getConfiguration();
+    if (!config.get<boolean>(CONFIG.syncWorkspace, false)) return;
 
     const selected = repoManager.selectedRepo;
     if (!selected) return;
