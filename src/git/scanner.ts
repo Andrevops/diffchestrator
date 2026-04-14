@@ -24,12 +24,14 @@ const SKIP_DIRS = new Set([
 export class Scanner extends EventEmitter {
   private maxDepth: number;
   private extraSkipDirs: Set<string>;
+  private _log: ((msg: string) => void) | undefined;
   dirsScanned = 0;
 
-  constructor(private git: GitExecutor, maxDepth: number, extraSkipDirs: string[] = []) {
+  constructor(private git: GitExecutor, maxDepth: number, extraSkipDirs: string[] = [], log?: (msg: string) => void) {
     super();
     this.maxDepth = maxDepth;
     this.extraSkipDirs = new Set([...SKIP_DIRS, ...extraSkipDirs]);
+    this._log = log;
   }
 
   /**
@@ -42,6 +44,7 @@ export class Scanner extends EventEmitter {
     const queue: Array<{ path: string; depth: number }> = [
       { path: rootPath, depth: 0 },
     ];
+    this._log?.(`[scan] start BFS root=${rootPath} maxDepth=${this.maxDepth}`);
 
     while (queue.length > 0) {
       const { path: dirPath, depth } = queue.shift()!;
@@ -49,7 +52,10 @@ export class Scanner extends EventEmitter {
 
       const gitDir = path.join(dirPath, ".git");
       try {
-        if (fs.existsSync(gitDir) && fs.statSync(gitDir).isDirectory()) {
+        if (fs.existsSync(gitDir)) {
+          // .git directory (normal repo) or .git file (worktree/submodule gitdir pointer).
+          // Don't require isDirectory() — 9p/drvfs mounts may report wrong type.
+          this._log?.(`[scan] FOUND repo depth=${depth} ${dirPath}`);
           repos.push({
             path: dirPath,
             name: path.basename(dirPath),
@@ -65,27 +71,36 @@ export class Scanner extends EventEmitter {
           });
           continue;
         }
-      } catch {
-        /* stat failure — skip */
+        this._log?.(`[scan] no .git depth=${depth} ${dirPath}`);
+      } catch (err) {
+        this._log?.(`[scan] .git check error depth=${depth} ${dirPath}: ${err instanceof Error ? err.message : err}`);
       }
 
-      if (depth >= this.maxDepth) continue;
+      if (depth >= this.maxDepth) {
+        this._log?.(`[scan] maxDepth reached depth=${depth} ${dirPath}`);
+        continue;
+      }
 
       try {
         const entries = fs.readdirSync(dirPath, { withFileTypes: true });
         for (const entry of entries) {
-          if (entry.isDirectory() && !this.extraSkipDirs.has(entry.name)) {
+          const isDir = entry.isDirectory();
+          const skipped = this.extraSkipDirs.has(entry.name);
+          if (isDir && !skipped) {
             queue.push({
               path: path.join(dirPath, entry.name),
               depth: depth + 1,
             });
+          } else {
+            this._log?.(`[scan] skip entry="${entry.name}" isDir=${isDir} skipped=${skipped} in ${dirPath}`);
           }
         }
-      } catch {
-        /* permission denied etc */
+      } catch (err) {
+        this._log?.(`[scan] readdir error depth=${depth} ${dirPath}: ${err instanceof Error ? err.message : err}`);
       }
     }
 
+    this._log?.(`[scan] done: ${repos.length} repos found, ${this.dirsScanned} dirs scanned`);
     return repos;
   }
 

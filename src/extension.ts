@@ -73,6 +73,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   // Shared output channel for logging
   const outputChannel = vscode.window.createOutputChannel("Diffchestrator");
   context.subscriptions.push(outputChannel);
+  repoManager.setLogger((msg) => outputChannel.appendLine(msg));
 
   // Track last open file per repo so switching back restores context (LRU, max 20)
   const MAX_LAST_OPEN = 20;

@@ -30,6 +30,7 @@ export class RepoManager implements vscode.Disposable {
   private _fileWatcher?: { suppressRefresh(repoPath: string, ms?: number): void };
   private _windowFocused = true;
   private _focusDisposable: vscode.Disposable | undefined;
+  private _log: ((msg: string) => void) | undefined;
 
   private _onDidChangeRepos = new vscode.EventEmitter<void>();
   readonly onDidChangeRepos = this._onDidChangeRepos.event;
@@ -52,6 +53,10 @@ export class RepoManager implements vscode.Disposable {
     reposFound: number;
   }>();
   readonly onDidScanProgress = this._onDidScanProgress.event;
+
+  setLogger(log: (msg: string) => void): void {
+    this._log = log;
+  }
 
   constructor(state?: vscode.Memento) {
     this._state = state;
@@ -127,7 +132,7 @@ export class RepoManager implements vscode.Disposable {
       } else {
         // Lazily discover repos for other roots
         if (!this._pathsByRoot.has(root)) {
-          const scanner = new Scanner(this._git, maxDepth, extraSkip);
+          const scanner = new Scanner(this._git, maxDepth, extraSkip, this._log);
           this._pathsByRoot.set(root, scanner.scanFast(root).map((r) => r.path));
         }
         for (const p of this._pathsByRoot.get(root) ?? []) {
@@ -269,7 +274,7 @@ export class RepoManager implements vscode.Disposable {
     const maxDepth = config.get<number>("scanMaxDepth", 6);
     const extraSkip = config.get<string[]>("scanExtraSkipDirs", []);
 
-    const scanner = new Scanner(this._git, maxDepth, extraSkip);
+    const scanner = new Scanner(this._git, maxDepth, extraSkip, this._log);
 
     // Phase 1: Fast BFS — no git calls, repos appear instantly
     const repos = scanner.scanFast(rootPath);
@@ -320,7 +325,7 @@ export class RepoManager implements vscode.Disposable {
 
       // Lazily discover repo paths for this root
       if (!this._pathsByRoot.has(root)) {
-        const scanner = new Scanner(this._git, maxDepth, extraSkip);
+        const scanner = new Scanner(this._git, maxDepth, extraSkip, this._log);
         this._pathsByRoot.set(root, scanner.scanFast(root).map((r) => r.path));
       }
 
