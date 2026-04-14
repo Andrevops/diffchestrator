@@ -146,6 +146,22 @@ describe("GitExecutor Stash Validation", () => {
   });
 });
 
+
+describe("GitExecutor Error Handling", () => {
+  const executor = new GitExecutor();
+
+  test("should handle execFileAsync failure with fallback RunResult", async () => {
+    // We can simulate an internal failure by providing an invalid cwd with a null byte,
+    // which causes child_process.execFile to throw synchronously.
+    const result = await (executor as any)._run(["status"], "\0invalid-cwd");
+
+    assert.strictEqual(result.stdout, "");
+    assert.ok(result.stderr.includes("ERR_INVALID_ARG_VALUE") || result.stderr.includes("invalid"), "Stderr should contain the error message");
+    // Depending on node version, code might be 'ERR_INVALID_ARG_VALUE' or something else, but it should not be 0.
+    assert.notStrictEqual(result.code, 0);
+  });
+});
+
 describe("GitExecutor Meta Cache", () => {
   const executor = new GitExecutor();
 
