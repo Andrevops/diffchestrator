@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.73.1
+
+### Bug Fixes
+- Fall back to statSync when Dirent reports unknown type on 9p/drvfs
+
 ## 0.73.0
 
 ### Features
