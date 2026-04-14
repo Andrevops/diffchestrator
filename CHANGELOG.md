@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.70.3
+
+### Bug Fixes
+- Detect .git on 9p/drvfs mounts where statSync reports wrong type
+
 ## 0.70.2
 
 ### Other
