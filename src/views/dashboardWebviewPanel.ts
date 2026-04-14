@@ -88,6 +88,7 @@ export class DashboardWebviewPanel {
   private _sessionStartTime: number;
   private _updateThrottleTimer: ReturnType<typeof setTimeout> | undefined;
   private _updateInProgress = false;
+  private _disposed = false;
 
   static createOrShow(
     extensionUri: vscode.Uri,
@@ -156,7 +157,7 @@ export class DashboardWebviewPanel {
   }
 
   private _scheduleUpdate(): void {
-    if (this._updateThrottleTimer || this._updateInProgress) return;
+    if (this._disposed || this._updateThrottleTimer || this._updateInProgress) return;
     this._updateThrottleTimer = setTimeout(async () => {
       this._updateThrottleTimer = undefined;
       if (this._updateInProgress) return;
@@ -207,6 +208,7 @@ export class DashboardWebviewPanel {
   }
 
   private async _update(): Promise<void> {
+    if (this._disposed) return;
     const repos = this._repoManager.allRepos;
     const sinceISO = new Date(this._sessionStartTime).toISOString();
 
@@ -693,6 +695,7 @@ export class DashboardWebviewPanel {
   }
 
   dispose(): void {
+    this._disposed = true;
     DashboardWebviewPanel.currentPanel = undefined;
     if (this._updateThrottleTimer) {
       clearTimeout(this._updateThrottleTimer);

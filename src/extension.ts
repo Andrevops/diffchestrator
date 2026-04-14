@@ -42,12 +42,14 @@ export interface DiffchestratorApi {
   onDidChangeSelection: vscode.Event<void>;
 }
 
-export async function activate(context: vscode.ExtensionContext): Promise<DiffchestratorApi> {
-  // Check git is installed (async to avoid blocking extension host)
-  const { execFile } = require("child_process");
-  const gitInstalled = await new Promise<boolean>((resolve) => {
-    execFile("git", ["--version"], (err: Error | null) => resolve(!err));
-  });
+export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
+  // Check git is installed (sync with timeout — faster than async for a single quick check)
+  const { execFileSync } = require("child_process");
+  let gitInstalled = false;
+  try {
+    execFileSync("git", ["--version"], { timeout: 5000 });
+    gitInstalled = true;
+  } catch { /* git missing or timed out */ }
   if (!gitInstalled) {
     vscode.window.showErrorMessage(
       "Diffchestrator: Git is not installed or not on PATH. The extension requires git to function.",

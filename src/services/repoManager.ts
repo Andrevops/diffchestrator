@@ -32,6 +32,7 @@ export class RepoManager implements vscode.Disposable {
   private _focusDisposable: vscode.Disposable | undefined;
   private _log: ((msg: string) => void) | undefined;
   private _configDisposable: vscode.Disposable | undefined;
+  private _scanEpoch = 0;
 
   private _onDidChangeRepos = new vscode.EventEmitter<void>();
   readonly onDidChangeRepos = this._onDidChangeRepos.event;
@@ -247,6 +248,8 @@ export class RepoManager implements vscode.Disposable {
   }
 
   async scan(rootPath: string): Promise<void> {
+    const epoch = ++this._scanEpoch;
+
     // Save current root's selection state before switching
     if (this._currentRoot) {
       this._selectionPerRoot.set(this._currentRoot, {
@@ -296,23 +299,28 @@ export class RepoManager implements vscode.Disposable {
     this._onDidChangeRepos.fire();
 
     // Phase 2: Fetch git metadata in background, update tree as batches complete
+    // Epoch guard: bail if a newer scan() was called (user switched roots again)
     const fetchOnScan = config.get<boolean>("fetchOnScan", false);
     await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Window, title: `Diffchestrator: Scanning repos${fetchOnScan ? " + fetching" : ""}` },
       async (progress) => {
         for (let i = 0; i < repos.length; i += BATCH_LARGE) {
+          if (epoch !== this._scanEpoch) return; // superseded by newer scan
           progress.report({ message: `${Math.min(i + BATCH_LARGE, repos.length)}/${repos.length}` });
           await Promise.all(repos.slice(i, i + BATCH_LARGE).map(async (r) => {
+            if (epoch !== this._scanEpoch) return; // superseded
             await scanner.fetchMetadata(r);
             if (fetchOnScan) {
               try { await this._git.fetch(r.path); } catch { /* ignore fetch failures */ }
             }
           }));
+          if (epoch !== this._scanEpoch) return; // superseded
           this._fireRepoChangeCoalesced();
         }
       }
     );
 
+    if (epoch !== this._scanEpoch) return; // superseded — don't overwrite newer scan's data
     this._pathsByRoot.set(rootPath, repos.map((r) => r.path));
 
     this.startAutoRefresh();

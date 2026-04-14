@@ -10,6 +10,7 @@ export class FileWatcher implements vscode.Disposable {
   private _repoManager: RepoManager;
   private _disposables: vscode.Disposable[] = [];
   private _suppressUntil = new Map<string, number>();
+  private _disposed = false;
 
   constructor(repoManager: RepoManager) {
     this._repoManager = repoManager;
@@ -64,6 +65,7 @@ export class FileWatcher implements vscode.Disposable {
   }
 
   private _debouncedRefresh(repoPath: string): void {
+    if (this._disposed) return;
     // Check suppression
     const until = this._suppressUntil.get(repoPath);
     if (until && Date.now() < until) return;
@@ -74,7 +76,7 @@ export class FileWatcher implements vscode.Disposable {
 
     const timer = setTimeout(() => {
       this._debounceTimers.delete(repoPath);
-      this._repoManager.refreshRepo(repoPath);
+      if (!this._disposed) this._repoManager.refreshRepo(repoPath);
     }, 500);
 
     this._debounceTimers.set(repoPath, timer);
@@ -113,6 +115,7 @@ export class FileWatcher implements vscode.Disposable {
   }
 
   dispose(): void {
+    this._disposed = true;
     this.disposeWatchers();
     for (const d of this._disposables) {
       d.dispose();
