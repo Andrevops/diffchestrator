@@ -114,10 +114,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<Diffch
 
   // When user clicks a terminal tab, switch to that repo (full viewDiff flow).
   // If the terminal belongs to a repo in a different root, switch roots first.
+  // Epoch guard: rapid clicks (A→B→A) cancel stale switches so only the last one wins.
   let suppressTerminalSwitch = false;
+  let terminalSwitchEpoch = 0;
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTerminal(async (terminal) => {
       if (!terminal || switchingRepo || suppressTerminalSwitch) return;
+      const epoch = ++terminalSwitchEpoch;
       const allPaths = [...repoManager.repos.map((r) => r.path), ...repoManager.directoryPaths];
       const currentRootPaths = new Set(allPaths);
       const repoPath = findRepoForTerminal(terminal, allPaths);
@@ -133,6 +136,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Diffch
           } finally {
             suppressTerminalSwitch = false;
           }
+          if (epoch !== terminalSwitchEpoch) return; // superseded by newer click
           // viewDiff steals focus to sidebar/editor — restore it to the terminal the user clicked
           terminal.show(false);
         }
@@ -143,7 +147,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Diffch
       const match = repoManager.findRepoInOtherRoots(terminal.name);
       if (match) {
         await vscode.commands.executeCommand(CMD.switchRoot, match.root);
+        if (epoch !== terminalSwitchEpoch) return; // superseded by newer click
         await vscode.commands.executeCommand(CMD.viewDiff, { path: match.path });
+        if (epoch !== terminalSwitchEpoch) return; // superseded by newer click
         // Restore focus to the terminal the user clicked
         terminal.show(false);
       }
