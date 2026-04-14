@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.73.5
+
+### Bug Fixes
+- Race conditions and activation performance
+
 ## 0.73.4
 
 ### Bug Fixes
