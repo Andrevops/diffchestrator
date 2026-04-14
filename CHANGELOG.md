@@ -2,6 +2,14 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.73.3
+
+### Bug Fixes
+- Revert dashboard to single log() call to prevent git process pileup
+
+### Other
+- Add build_output.txt to .gitignore
+
 ## 0.73.2
 
 ### Performance
