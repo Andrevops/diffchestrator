@@ -146,6 +146,44 @@ describe("GitExecutor Stash Validation", () => {
   });
 });
 
+describe("isGitRepo()", () => {
+  const executor = new GitExecutor();
+  let tmpDir: string;
+
+  before(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "git-executor-test-"));
+  });
+
+  after(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("returns true if .git is a directory", async () => {
+    const repoDir = path.join(tmpDir, "valid-repo");
+    fs.mkdirSync(path.join(repoDir, ".git"), { recursive: true });
+
+    const result = await executor.isGitRepo(repoDir);
+    assert.strictEqual(result, true);
+  });
+
+  test("returns false if .git is a file", async () => {
+    const repoDir = path.join(tmpDir, "file-repo");
+    fs.mkdirSync(repoDir, { recursive: true });
+    fs.writeFileSync(path.join(repoDir, ".git"), "gitdir: ../somewhere");
+
+    const result = await executor.isGitRepo(repoDir);
+    assert.strictEqual(result, false);
+  });
+
+  test("returns false if statSync throws (does not exist)", async () => {
+    const repoDir = path.join(tmpDir, "not-a-repo");
+    fs.mkdirSync(repoDir, { recursive: true });
+
+    const result = await executor.isGitRepo(repoDir);
+    assert.strictEqual(result, false);
+  });
+});
+
 describe("GitExecutor Meta Cache", () => {
   const executor = new GitExecutor();
 
