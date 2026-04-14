@@ -20,7 +20,6 @@ import { registerSwitchBranchCommands } from "./commands/switchBranch";
 import { registerStashCommands } from "./commands/stash";
 import { ActiveReposProvider } from "./providers/activeReposProvider";
 import { GitContentProvider } from "./providers/gitContentProvider";
-import { RepoExplorerProvider } from "./providers/repoExplorerProvider";
 import { DiffWebviewPanel } from "./views/diffWebviewPanel";
 import { DashboardWebviewPanel } from "./views/dashboardWebviewPanel";
 import { FileWatcher } from "./services/fileWatcher";
@@ -74,6 +73,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   // Shared output channel for logging
   const outputChannel = vscode.window.createOutputChannel("Diffchestrator");
   context.subscriptions.push(outputChannel);
+  repoManager.setLogger((msg) => outputChannel.appendLine(msg));
 
   // Track last open file per repo so switching back restores context (LRU, max 20)
   const MAX_LAST_OPEN = 20;
