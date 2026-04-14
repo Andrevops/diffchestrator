@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.73.4
+
+### Bug Fixes
+- Prevent stale selection on rapid cross-root terminal switching
+
 ## 0.73.3
 
 ### Bug Fixes
