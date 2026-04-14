@@ -2,6 +2,14 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.73.2
+
+### Performance
+- Optimize runtime performance, build output, and code quality
+
+### Other
+- Add unit tests for getMessageRepoPath
+
 ## 0.73.1
 
 ### Bug Fixes
