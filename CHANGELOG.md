@@ -2,6 +2,25 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.73.0
+
+### Features
+- Claude continue fallback + claudenew terminal kind for fresh sessions
+- Sync VS Code workspace with selected repository
+- Sync VS Code workspace with selected repository
+
+### Bug Fixes
+- Detect .git on 9p/drvfs mounts where statSync reports wrong type
+- Use user's default shell for alias detection (fixes yolo on macOS/zsh)
+- Atomic workspace folder swap to prevent double extension host reload
+- Use additive workspace folder sync to prevent extension host reloads
+
+### Other
+- Add collaboration section and fix stale Claudenew references in README
+- Document macOS support for claude-sandbox integration
+- Remove syncWorkspace feature (causes unavoidable extension host reloads)
+- Add collaboration section crediting @giankpetrov contributions
+
 ## 0.72.2
 
 ### Other
