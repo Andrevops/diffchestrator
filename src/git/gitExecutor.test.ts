@@ -1,7 +1,9 @@
-import { test, describe } from "node:test";
+import { test, describe, before, after } from "node:test";
 import * as assert from "node:assert";
 import { GitExecutor } from "./gitExecutor.ts";
 import * as path from "node:path";
+import * as fs from "node:fs";
+import * as os from "node:os";
 
 describe("GitExecutor Path Validation", () => {
   const executor = new GitExecutor();
@@ -166,13 +168,13 @@ describe("isGitRepo()", () => {
     assert.strictEqual(result, true);
   });
 
-  test("returns false if .git is a file", async () => {
+  test("returns true if .git is a file (worktree/submodule)", async () => {
     const repoDir = path.join(tmpDir, "file-repo");
     fs.mkdirSync(repoDir, { recursive: true });
     fs.writeFileSync(path.join(repoDir, ".git"), "gitdir: ../somewhere");
 
     const result = await executor.isGitRepo(repoDir);
-    assert.strictEqual(result, false);
+    assert.strictEqual(result, true);
   });
 
   test("returns false if statSync throws (does not exist)", async () => {

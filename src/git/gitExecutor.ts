@@ -114,7 +114,7 @@ export class GitExecutor {
     const gitDir = path.join(dirPath, ".git");
     try {
       const stat = fs.statSync(gitDir);
-      return stat.isDirectory();
+      return stat.isDirectory() || stat.isFile();
     } catch {
       return false;
     }
