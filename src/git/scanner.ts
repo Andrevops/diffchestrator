@@ -1,4 +1,4 @@
-import * as fs from "fs";
+import fs from "fs";
 import * as path from "path";
 import { EventEmitter } from "events";
 import type { GitExecutor } from "./gitExecutor";
@@ -27,8 +27,11 @@ export class Scanner extends EventEmitter {
   private _log: ((msg: string) => void) | undefined;
   dirsScanned = 0;
 
-  constructor(private git: GitExecutor, maxDepth: number, extraSkipDirs: string[] = [], log?: (msg: string) => void) {
+  private git: GitExecutor;
+
+  constructor(git: GitExecutor, maxDepth: number, extraSkipDirs: string[] = [], log?: (msg: string) => void) {
     super();
+    this.git = git;
     this.maxDepth = maxDepth;
     this.extraSkipDirs = new Set([...SKIP_DIRS, ...extraSkipDirs]);
     this._log = log;
