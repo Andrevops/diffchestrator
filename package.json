@@ -43,7 +43,8 @@
     "onView:diffchestrator.repos",
     "onView:diffchestrator.activeRepos",
     "onView:diffchestrator.changedFiles",
-    "onStartupFinished"
+    "onStartupFinished",
+    "onView:diffchestrator.repoExplorer"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -69,6 +70,10 @@
         {
           "id": "diffchestrator.repos",
           "name": "Repositories"
+        },
+        {
+          "id": "diffchestrator.repoExplorer",
+          "name": "Explorer"
         }
       ]
     },
@@ -81,6 +86,11 @@
       {
         "view": "diffchestrator.changedFiles",
         "contents": "Click a repository to see its changed files.",
+        "when": "!diffchestrator.hasSelectedRepo"
+      },
+      {
+        "view": "diffchestrator.repoExplorer",
+        "contents": "Select a repository to explore its files.",
         "when": "!diffchestrator.hasSelectedRepo"
       }
     ],

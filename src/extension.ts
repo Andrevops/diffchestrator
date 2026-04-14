@@ -20,6 +20,7 @@ import { registerSwitchBranchCommands } from "./commands/switchBranch";
 import { registerStashCommands } from "./commands/stash";
 import { ActiveReposProvider } from "./providers/activeReposProvider";
 import { GitContentProvider } from "./providers/gitContentProvider";
+import { RepoExplorerProvider } from "./providers/repoExplorerProvider";
 import { DiffWebviewPanel } from "./views/diffWebviewPanel";
 import { DashboardWebviewPanel } from "./views/dashboardWebviewPanel";
 import { FileWatcher } from "./services/fileWatcher";
@@ -154,6 +155,8 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   const repoTree = new RepoTreeProvider(repoManager);
   context.subscriptions.push(repoTree);
   const changedFiles = new ChangedFilesProvider(repoManager);
+  const repoExplorer = new RepoExplorerProvider(repoManager);
+  context.subscriptions.push(repoExplorer);
 
   // Git content provider for diff URIs
   const gitContentProvider = new GitContentProvider(repoManager.git);
@@ -161,12 +164,14 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   const activeReposView = vscode.window.createTreeView(VIEW_ACTIVE_REPOS, { treeDataProvider: activeRepos });
   const repoTreeView = vscode.window.createTreeView(VIEW_REPOS, { treeDataProvider: repoTree });
   const changedFilesView = vscode.window.createTreeView(VIEW_CHANGED_FILES, { treeDataProvider: changedFiles });
+  const repoExplorerView = vscode.window.createTreeView(VIEW_REPO_EXPLORER, { treeDataProvider: repoExplorer });
 
   // Track whether diffchestrator sidebar is actively visible (not just existing)
   let sidebarVisible = false;
   changedFilesView.onDidChangeVisibility((e) => { sidebarVisible = e.visible; });
   activeReposView.onDidChangeVisibility((e) => { if (e.visible) sidebarVisible = true; });
   repoTreeView.onDidChangeVisibility((e) => { if (e.visible) sidebarVisible = true; });
+  repoExplorerView.onDidChangeVisibility((e) => { if (e.visible) sidebarVisible = true; });
 
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider("git-show", gitContentProvider),

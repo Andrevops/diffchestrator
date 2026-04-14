@@ -3,6 +3,7 @@ export const EXTENSION_ID = "diffchestrator";
 export const VIEW_ACTIVE_REPOS = "diffchestrator.activeRepos";
 export const VIEW_REPOS = "diffchestrator.repos";
 export const VIEW_CHANGED_FILES = "diffchestrator.changedFiles";
+export const VIEW_REPO_EXPLORER = "diffchestrator.repoExplorer";
 
 export const CMD = {
   scan: "diffchestrator.scan",
