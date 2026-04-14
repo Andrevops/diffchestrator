@@ -1,6 +1,7 @@
 import * as assert from "node:assert";
 import { test, describe } from "node:test";
 import { extractTabUri, getMessageRepoPath } from "./types.ts";
+import type { DashboardMessage, DiffWebviewMessage } from "./types.ts";
 
 describe("extractTabUri", () => {
   test("should return undefined for falsy inputs", () => {
@@ -44,19 +45,24 @@ describe("extractTabUri", () => {
   });
 });
 
-describe("getMessageRepoPath", () => {
-  test("should extract repoPath from DashboardMessage", () => {
-    const msg = { type: "openRepo", repoPath: "/test/repo" } as const;
-    assert.strictEqual(getMessageRepoPath(msg), "/test/repo");
+test("getMessageRepoPath", async (t) => {
+  await t.test("should extract repoPath from DashboardMessage with repoPath", () => {
+    const msg: DashboardMessage = { type: "openRepo", repoPath: "/my/repo/path" };
+    assert.strictEqual(getMessageRepoPath(msg), "/my/repo/path");
   });
 
-  test("should extract repoPath from DiffWebviewMessage", () => {
-    const msg = { type: "stageFile", repoPath: "/test/repo", filePath: "file.txt" } as const;
-    assert.strictEqual(getMessageRepoPath(msg), "/test/repo");
+  await t.test("should extract repoPath from DiffWebviewMessage with repoPath", () => {
+    const msg: DiffWebviewMessage = { type: "stageFile", repoPath: "/my/repo/path", filePath: "file.ts" };
+    assert.strictEqual(getMessageRepoPath(msg), "/my/repo/path");
   });
 
-  test("should return undefined if repoPath is not present", () => {
-    const msg = { type: "ready" } as const;
-    assert.strictEqual(getMessageRepoPath(msg as any), undefined);
+  await t.test("should return undefined for DashboardMessage without repoPath", () => {
+    const msg: DashboardMessage = { type: "scan" };
+    assert.strictEqual(getMessageRepoPath(msg), undefined);
+  });
+
+  await t.test("should return undefined for DiffWebviewMessage without repoPath", () => {
+    const msg: DiffWebviewMessage = { type: "refresh" };
+    assert.strictEqual(getMessageRepoPath(msg), undefined);
   });
 });
