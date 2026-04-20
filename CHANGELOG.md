@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.74.0
+
+### Features
+- Add granular startup fetch modes
+
 ## 0.73.5
 
 ### Bug Fixes
