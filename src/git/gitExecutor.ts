@@ -4,6 +4,7 @@ import * as path from "path";
 import * as fs from "fs";
 import type { RepoStatus, FileChange, CommitEntry } from "../types.ts";
 import { ChangeType, FileStatus } from "../types.ts";
+import { isValidRef } from "../utils/gitValidation.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -531,6 +532,31 @@ export class GitExecutor {
       throw new Error(result.stderr || "Fetch failed");
     }
     return result.stdout || result.stderr;
+  }
+
+  async fetchBranch(repoPath: string, branch: string): Promise<string> {
+    if (!isValidRef(branch)) throw new Error("Invalid branch name");
+    const result = await this._run(["fetch", "origin", branch, "--prune"], repoPath);
+    if (result.code !== 0) {
+      throw new Error(result.stderr || "Fetch failed");
+    }
+    return result.stdout || result.stderr;
+  }
+
+  async getDefaultBranch(repoPath: string): Promise<string> {
+    const symbolic = await this._run(
+      ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+      repoPath
+    );
+    if (symbolic.code === 0 && symbolic.stdout.trim()) {
+      return symbolic.stdout.trim().replace(/^origin\//, "");
+    }
+    const master = await this._run(
+      ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/master"],
+      repoPath
+    );
+    if (master.code === 0 && master.stdout.trim()) return "master";
+    return "main";
   }
 
   async pull(repoPath: string): Promise<string> {

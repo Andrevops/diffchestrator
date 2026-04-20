@@ -97,6 +97,7 @@ export const CONFIG = {
   showInlineBlame: "diffchestrator.showInlineBlame",
   showFavorites: "diffchestrator.showFavorites",
   fetchOnScan: "diffchestrator.fetchOnScan",
+  startupFetchMode: "diffchestrator.startupFetchMode",
   autoPushAfterCommit: "diffchestrator.autoPushAfterCommit",
   repoTags: "diffchestrator.repoTags",
   snapshots: "diffchestrator.snapshots",

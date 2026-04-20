@@ -646,7 +646,7 @@ export class DashboardWebviewPanel {
             scanMaxDepth: cfg.get<number>("scanMaxDepth", 6),
             scanExtraSkipDirs: cfg.get<string[]>("scanExtraSkipDirs", []),
             scanOnStartup: cfg.get<boolean>("scanOnStartup", true),
-            fetchOnScan: cfg.get<boolean>("fetchOnScan", false),
+            startupFetchMode: cfg.get<string[]>("startupFetchMode", []),
             autoRefreshInterval: cfg.get<number>("autoRefreshInterval", 10),
             changedOnlyDefault: cfg.get<boolean>("changedOnlyDefault", false),
             showFavorites: cfg.get<boolean>("showFavorites", true),

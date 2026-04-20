@@ -1062,7 +1062,18 @@
         "diffchestrator.fetchOnScan": {
           "type": "boolean",
           "default": false,
-          "description": "Automatically git fetch during scan to show accurate ahead/behind counts"
+          "description": "Deprecated. Use diffchestrator.startupFetchMode instead. When true, behaves as if 'all' is selected in startupFetchMode.",
+          "deprecationMessage": "Use diffchestrator.startupFetchMode instead."
+        },
+        "diffchestrator.startupFetchMode": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["main", "current", "all"]
+          },
+          "uniqueItems": true,
+          "default": [],
+          "description": "Branches to fetch on scan. 'main' fetches origin's default branch (main or master), 'current' fetches the current branch, 'all' fetches all branches with --prune. Any combination allowed."
         },
         "diffchestrator.autoPushAfterCommit": {
           "type": "boolean",

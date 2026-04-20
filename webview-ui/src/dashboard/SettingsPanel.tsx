@@ -6,7 +6,7 @@ interface Settings {
   scanMaxDepth: number;
   scanExtraSkipDirs: string[];
   scanOnStartup: boolean;
-  fetchOnScan: boolean;
+  startupFetchMode: string[];
   autoRefreshInterval: number;
   changedOnlyDefault: boolean;
   showFavorites: boolean;
@@ -156,12 +156,35 @@ export default function SettingsPanel() {
           value={settings.scanOnStartup}
           onChange={(v) => update("scanOnStartup", v)}
         />
-        <SettingToggle
-          label="Fetch on Scan"
-          description="Run git fetch during scan for accurate ahead/behind counts"
-          value={settings.fetchOnScan}
-          onChange={(v) => update("fetchOnScan", v)}
-        />
+        <div className="setting-row setting-row--array">
+          <div>
+            <div className="setting-label">Fetch on Scan</div>
+            <div className="setting-description">
+              Which branches to fetch during scan. 'Main' auto-detects main or master.
+            </div>
+          </div>
+          <div className="setting-checkboxes">
+            {([
+              ["main", "Main branch"],
+              ["current", "Current branch"],
+              ["all", "All branches"],
+            ] as const).map(([mode, label]) => (
+              <label key={mode} className="setting-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={settings.startupFetchMode.includes(mode)}
+                  onChange={(e) => {
+                    const next = e.target.checked
+                      ? [...settings.startupFetchMode, mode]
+                      : settings.startupFetchMode.filter((m) => m !== mode);
+                    update("startupFetchMode", next);
+                  }}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="settings-section">

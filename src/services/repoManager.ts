@@ -300,9 +300,12 @@ export class RepoManager implements vscode.Disposable {
 
     // Phase 2: Fetch git metadata in background, update tree as batches complete
     // Epoch guard: bail if a newer scan() was called (user switched roots again)
-    const fetchOnScan = config.get<boolean>("fetchOnScan", false);
+    const fetchModes = new Set(config.get<string[]>("startupFetchMode", []));
+    // Backward compat: legacy fetchOnScan=true acts like "all"
+    if (config.get<boolean>("fetchOnScan", false)) fetchModes.add("all");
+    const willFetch = fetchModes.size > 0;
     await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Window, title: `Diffchestrator: Scanning repos${fetchOnScan ? " + fetching" : ""}` },
+      { location: vscode.ProgressLocation.Window, title: `Diffchestrator: Scanning repos${willFetch ? " + fetching" : ""}` },
       async (progress) => {
         for (let i = 0; i < repos.length; i += BATCH_LARGE) {
           if (epoch !== this._scanEpoch) return; // superseded by newer scan
@@ -310,8 +313,23 @@ export class RepoManager implements vscode.Disposable {
           await Promise.all(repos.slice(i, i + BATCH_LARGE).map(async (r) => {
             if (epoch !== this._scanEpoch) return; // superseded
             await scanner.fetchMetadata(r);
-            if (fetchOnScan) {
-              try { await this._git.fetch(r.path); } catch { /* ignore fetch failures */ }
+            if (willFetch) {
+              try {
+                if (fetchModes.has("all")) {
+                  await this._git.fetch(r.path);
+                } else {
+                  const tasks: Promise<unknown>[] = [];
+                  if (fetchModes.has("main")) {
+                    tasks.push(
+                      this._git.getDefaultBranch(r.path).then((b) => this._git.fetchBranch(r.path, b))
+                    );
+                  }
+                  if (fetchModes.has("current") && r.branch && r.branch !== "HEAD") {
+                    tasks.push(this._git.fetchBranch(r.path, r.branch));
+                  }
+                  await Promise.all(tasks);
+                }
+              } catch { /* ignore fetch failures */ }
             }
           }));
           if (epoch !== this._scanEpoch) return; // superseded
