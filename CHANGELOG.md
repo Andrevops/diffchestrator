@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.75.0
+
+### Features
+- Prefer pull over fetch when safe on startup sync
+
 ## 0.74.0
 
 ### Features
