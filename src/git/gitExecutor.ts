@@ -559,6 +559,31 @@ export class GitExecutor {
     return "main";
   }
 
+  async isWorkingTreeClean(repoPath: string): Promise<boolean> {
+    const result = await this._run(["status", "--porcelain"], repoPath);
+    return result.code === 0 && result.stdout.trim() === "";
+  }
+
+  /**
+   * Fast-forward local `branch` to match `origin/branch` without checkout.
+   * Uses `git fetch origin branch:branch` which is an atomic FF-only ref update:
+   * succeeds on FF, fails (non-throwing) on divergence or missing remote ref.
+   * Cannot be used when `branch` is the currently checked-out branch.
+   */
+  async fastForwardRef(repoPath: string, branch: string): Promise<boolean> {
+    if (!isValidRef(branch)) throw new Error("Invalid branch name");
+    const result = await this._run(
+      ["fetch", "origin", `${branch}:${branch}`],
+      repoPath
+    );
+    return result.code === 0;
+  }
+
+  async pullFastForwardOnly(repoPath: string): Promise<boolean> {
+    const result = await this._run(["pull", "--ff-only"], repoPath);
+    return result.code === 0;
+  }
+
   async pull(repoPath: string): Promise<string> {
     const result = await this._run(["pull"], repoPath);
     if (result.code !== 0) {

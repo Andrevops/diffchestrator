@@ -158,9 +158,9 @@ export default function SettingsPanel() {
         />
         <div className="setting-row setting-row--array">
           <div>
-            <div className="setting-label">Fetch on Scan</div>
+            <div className="setting-label">Sync on Scan</div>
             <div className="setting-description">
-              Which branches to fetch during scan. 'Main' auto-detects main or master.
+              Pulls (fast-forward only) when working tree is clean and not divergent; falls back to fetch otherwise. 'Main' auto-detects main or master.
             </div>
           </div>
           <div className="setting-checkboxes">

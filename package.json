@@ -1077,7 +1077,7 @@
           },
           "uniqueItems": true,
           "default": [],
-          "description": "Branches to fetch on scan. 'main' fetches origin's default branch (main or master), 'current' fetches the current branch, 'all' fetches all branches with --prune. Any combination allowed."
+          "description": "Branches to sync on scan. Prefers pull --ff-only when the working tree is clean and not divergent; falls back to fetch otherwise. 'main' targets origin's default branch (main or master), 'current' the current branch, 'all' runs a plain fetch --all --prune. Any combination allowed."
         },
         "diffchestrator.autoPushAfterCommit": {
           "type": "boolean",

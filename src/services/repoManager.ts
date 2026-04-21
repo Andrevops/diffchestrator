@@ -305,7 +305,7 @@ export class RepoManager implements vscode.Disposable {
     if (config.get<boolean>("fetchOnScan", false)) fetchModes.add("all");
     const willFetch = fetchModes.size > 0;
     await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Window, title: `Diffchestrator: Scanning repos${willFetch ? " + fetching" : ""}` },
+      { location: vscode.ProgressLocation.Window, title: `Diffchestrator: Scanning repos${willFetch ? " + syncing" : ""}` },
       async (progress) => {
         for (let i = 0; i < repos.length; i += BATCH_LARGE) {
           if (epoch !== this._scanEpoch) return; // superseded by newer scan
@@ -313,24 +313,10 @@ export class RepoManager implements vscode.Disposable {
           await Promise.all(repos.slice(i, i + BATCH_LARGE).map(async (r) => {
             if (epoch !== this._scanEpoch) return; // superseded
             await scanner.fetchMetadata(r);
-            if (willFetch) {
-              try {
-                if (fetchModes.has("all")) {
-                  await this._git.fetch(r.path);
-                } else {
-                  const tasks: Promise<unknown>[] = [];
-                  if (fetchModes.has("main")) {
-                    tasks.push(
-                      this._git.getDefaultBranch(r.path).then((b) => this._git.fetchBranch(r.path, b))
-                    );
-                  }
-                  if (fetchModes.has("current") && r.branch && r.branch !== "HEAD") {
-                    tasks.push(this._git.fetchBranch(r.path, r.branch));
-                  }
-                  await Promise.all(tasks);
-                }
-              } catch { /* ignore fetch failures */ }
-            }
+            if (!willFetch) return;
+            try {
+              await this._syncRepoOnScan(r, fetchModes);
+            } catch { /* ignore sync failures */ }
           }));
           if (epoch !== this._scanEpoch) return; // superseded
           this._fireRepoChangeCoalesced();
@@ -342,6 +328,49 @@ export class RepoManager implements vscode.Disposable {
     this._pathsByRoot.set(rootPath, repos.map((r) => r.path));
 
     this.startAutoRefresh();
+  }
+
+  /**
+   * Sync a single repo on scan based on enabled fetch modes. Prefers pulling
+   * (or fast-forwarding refs) when safe; falls back to plain fetch otherwise.
+   * - "all": fetch --all --prune (pull doesn't apply to every branch)
+   * - "main": FF local main/master to origin when FF-possible; pull if on it and clean
+   * - "current": pull --ff-only if clean, else fetch origin <current>
+   */
+  private async _syncRepoOnScan(r: RepoSummary, modes: Set<string>): Promise<void> {
+    const current = r.branch && r.branch !== "HEAD" ? r.branch : undefined;
+
+    if (modes.has("all")) {
+      try { await this._git.fetch(r.path); } catch { /* ignore */ }
+    }
+
+    if (modes.has("main")) {
+      try {
+        const defaultBranch = await this._git.getDefaultBranch(r.path);
+        if (current === defaultBranch) {
+          if (await this._git.isWorkingTreeClean(r.path)) {
+            const ok = await this._git.pullFastForwardOnly(r.path);
+            if (!ok) await this._git.fetchBranch(r.path, defaultBranch).catch(() => {});
+          } else {
+            await this._git.fetchBranch(r.path, defaultBranch).catch(() => {});
+          }
+        } else {
+          const ffOk = await this._git.fastForwardRef(r.path, defaultBranch);
+          if (!ffOk) await this._git.fetchBranch(r.path, defaultBranch).catch(() => {});
+        }
+      } catch { /* ignore */ }
+    }
+
+    if (modes.has("current") && current) {
+      try {
+        if (await this._git.isWorkingTreeClean(r.path)) {
+          const ok = await this._git.pullFastForwardOnly(r.path);
+          if (!ok) await this._git.fetchBranch(r.path, current).catch(() => {});
+        } else {
+          await this._git.fetchBranch(r.path, current).catch(() => {});
+        }
+      } catch { /* ignore */ }
+    }
   }
 
   /**
