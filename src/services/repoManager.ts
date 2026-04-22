@@ -33,6 +33,7 @@ export class RepoManager implements vscode.Disposable {
   private _log: ((msg: string) => void) | undefined;
   private _configDisposable: vscode.Disposable | undefined;
   private _scanEpoch = 0;
+  private _startupSyncDone = false;
 
   private _onDidChangeRepos = new vscode.EventEmitter<void>();
   readonly onDidChangeRepos = this._onDidChangeRepos.event;
@@ -303,9 +304,11 @@ export class RepoManager implements vscode.Disposable {
     const fetchModes = new Set(config.get<string[]>("startupFetchMode", []));
     // Backward compat: legacy fetchOnScan=true acts like "all"
     if (config.get<boolean>("fetchOnScan", false)) fetchModes.add("all");
-    const willFetch = fetchModes.size > 0;
+    // Sync only on the first scan per activation — root switches and rescans skip it
+    const willSync = fetchModes.size > 0 && !this._startupSyncDone;
+    if (willSync) this._startupSyncDone = true;
     await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Window, title: `Diffchestrator: Scanning repos${willFetch ? " + syncing" : ""}` },
+      { location: vscode.ProgressLocation.Window, title: `Diffchestrator: Scanning repos${willSync ? " + syncing" : ""}` },
       async (progress) => {
         for (let i = 0; i < repos.length; i += BATCH_LARGE) {
           if (epoch !== this._scanEpoch) return; // superseded by newer scan
@@ -313,7 +316,7 @@ export class RepoManager implements vscode.Disposable {
           await Promise.all(repos.slice(i, i + BATCH_LARGE).map(async (r) => {
             if (epoch !== this._scanEpoch) return; // superseded
             await scanner.fetchMetadata(r);
-            if (!willFetch) return;
+            if (!willSync) return;
             try {
               await this._syncRepoOnScan(r, fetchModes);
             } catch { /* ignore sync failures */ }
