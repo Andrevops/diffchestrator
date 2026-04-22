@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.75.1
+
+### Bug Fixes
+- Replace broken codicon syntax in tree item descriptions
+
 ## 0.75.0
 
 ### Features
