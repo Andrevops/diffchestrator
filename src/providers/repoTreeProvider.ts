@@ -114,7 +114,7 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode>, vsco
       if (r.behind > 0) sync.push(`↓${r.behind}`);
       if (sync.length > 0) parts.push(sync.join(" "));
       if (r.totalChanges > 0) parts.push(`${r.totalChanges} changes`);
-      if (r.stashCount > 0) parts.push(`$(archive) ${r.stashCount}`);
+      if (r.stashCount > 0) parts.push(`⚑ ${r.stashCount}`);
       if (r.mergeState) parts.push(`⚠ ${r.mergeState}`);
       // Show tags for this repo (cached)
       const repoTags = this._getRepoTags();

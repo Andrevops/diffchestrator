@@ -98,7 +98,7 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
 
     // Terminal indicator
     const termLabels = element.terminalKinds.map((k) => KIND_LABELS[k]);
-    const termTag = termLabels.length > 0 ? `$(terminal) ${termLabels.join("+")} ` : "";
+    const termTag = termLabels.length > 0 ? `⌨ ${termLabels.join("+")} ` : "";
 
     const dirIcon = element.isDirectory;
     if (element.role === "favorite") {
