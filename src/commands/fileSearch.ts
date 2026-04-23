@@ -105,16 +105,21 @@ export function registerFileSearchCommand(
       quickPick.matchOnDescription = true;
       quickPick.busy = true;
 
-      // Pre-load all files
+      // Pre-load all files. ThemeIcon.File resolves to the active file icon
+      // theme's generic file icon — matches Ctrl+P's look without per-extension
+      // icons, which aren't exposed via the public QuickPickItem API.
       try {
         const files = await git.listFiles(repoPath);
-        quickPick.items = files.map((f) => ({
-          label: `$(file) ${path.basename(f)}`,
-          description: path.dirname(f) !== "." ? path.dirname(f) : undefined,
-          detail: undefined,
-          _fullPath: path.join(repoPath, f),
-          _relPath: f,
-        }));
+        quickPick.items = files.map((f) => {
+          const fullPath = path.join(repoPath, f);
+          return {
+            label: path.basename(f),
+            description: f, // full relative path, dimmed
+            iconPath: vscode.ThemeIcon.File,
+            _fullPath: fullPath,
+            _relPath: f,
+          };
+        });
       } catch {
         quickPick.items = [{ label: "Failed to list files", description: "" }];
       }
