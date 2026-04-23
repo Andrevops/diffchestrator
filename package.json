@@ -1259,7 +1259,7 @@
     "release:patch": "node scripts/release.mjs patch",
     "release:minor": "node scripts/release.mjs minor",
     "release:major": "node scripts/release.mjs major",
-    "test": "node --experimental-strip-types --test"
+    "test": "node --experimental-strip-types --import ./src/test-setup/register.mjs --test"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
