@@ -116,44 +116,58 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
 
   // When user clicks a terminal tab, switch to that repo (full viewDiff flow).
   // If the terminal belongs to a repo in a different root, switch roots first.
-  // Epoch guard: rapid clicks (A→B→A) cancel stale switches so only the last one wins.
+  //
+  // Rapid-click race: viewDiff/switchRoot are async; a naive handler either
+  // drops clicks while one is in-flight (early return on a busy flag) or
+  // interleaves N concurrent handlers so the winner is nondeterministic.
+  // Instead, queue the latest clicked terminal and run a single worker that
+  // re-reads the queue after each await, so the user's LAST click always wins.
   let suppressTerminalSwitch = false;
-  let terminalSwitchEpoch = 0;
-  context.subscriptions.push(
-    vscode.window.onDidChangeActiveTerminal(async (terminal) => {
-      if (!terminal || switchingRepo || suppressTerminalSwitch) return;
-      const epoch = ++terminalSwitchEpoch;
-      const allPaths = [...repoManager.repos.map((r) => r.path), ...repoManager.directoryPaths];
-      const currentRootPaths = new Set(allPaths);
-      const repoPath = findRepoForTerminal(terminal, allPaths);
+  let queuedTerminal: vscode.Terminal | undefined;
+  let clickWorkerRunning = false;
 
-      // Only trust the match if the path belongs to the current root —
-      // the tracking map can return stale paths from a previous root.
-      if (repoPath && currentRootPaths.has(repoPath)) {
-        if (repoPath !== repoManager.selectedRepo) {
-          // Suppress showTerminalIfExists inside viewDiff — user already chose this terminal.
-          // preserveFocus skips sidebar/editor focus steal so keystrokes land in the clicked terminal.
-          suppressTerminalSwitch = true;
-          try {
+  const runClickWorker = async () => {
+    if (clickWorkerRunning) return;
+    clickWorkerRunning = true;
+    try {
+      while (queuedTerminal) {
+        const terminal = queuedTerminal;
+        queuedTerminal = undefined;
+
+        const allPaths = [...repoManager.repos.map((r) => r.path), ...repoManager.directoryPaths];
+        const currentRootPaths = new Set(allPaths);
+        const repoPath = findRepoForTerminal(terminal, allPaths);
+
+        // Only trust the match if the path belongs to the current root —
+        // the tracking map can return stale paths from a previous root.
+        if (repoPath && currentRootPaths.has(repoPath)) {
+          if (repoPath !== repoManager.selectedRepo) {
             await vscode.commands.executeCommand(CMD.viewDiff, { path: repoPath, preserveFocus: true });
-          } finally {
-            suppressTerminalSwitch = false;
           }
-          if (epoch !== terminalSwitchEpoch) return; // superseded by newer click
+          continue;
         }
-        return;
-      }
 
-      // No valid match in current root — search other configured roots
-      const match = repoManager.findRepoInOtherRoots(terminal.name);
-      if (match) {
-        await vscode.commands.executeCommand(CMD.switchRoot, match.root);
-        if (epoch !== terminalSwitchEpoch) return; // superseded by newer click
-        await vscode.commands.executeCommand(CMD.viewDiff, { path: match.path, preserveFocus: true });
-        if (epoch !== terminalSwitchEpoch) return; // superseded by newer click
-        // switchRoot can steal focus; restore it to the terminal the user clicked.
-        terminal.show(false);
+        // No valid match in current root — search other configured roots
+        const match = repoManager.findRepoInOtherRoots(terminal.name);
+        if (match) {
+          await vscode.commands.executeCommand(CMD.switchRoot, match.root);
+          if (queuedTerminal) continue; // newer click queued while switching roots
+          await vscode.commands.executeCommand(CMD.viewDiff, { path: match.path, preserveFocus: true });
+          if (queuedTerminal) continue; // newer click queued while viewing diff
+          // switchRoot can steal focus; restore it to the terminal the user clicked.
+          terminal.show(false);
+        }
       }
+    } finally {
+      clickWorkerRunning = false;
+    }
+  };
+
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTerminal((terminal) => {
+      if (!terminal || suppressTerminalSwitch) return;
+      queuedTerminal = terminal;
+      void runClickWorker();
     })
   );
 
@@ -1308,8 +1322,9 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
           if (sidebarVisible && !preserveFocus) {
             await vscode.commands.executeCommand(`${VIEW_CHANGED_FILES}.focus`);
           }
-          // Don't override user's terminal choice when triggered by clicking a terminal tab
-          if (!suppressTerminalSwitch) {
+          // Don't override user's terminal choice: skip when a programmatic terminal
+          // switch is running (cycle/nav) or when the caller preserves focus (terminal click).
+          if (!suppressTerminalSwitch && !preserveFocus) {
             await showTerminalIfExists(repoPath);
           }
 
