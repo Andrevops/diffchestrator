@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.77.2
+
+### Bug Fixes
+- Try file Uri as iconPath for per-extension icons
+
 ## 0.77.1
 
 ### Bug Fixes
