@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.75.3
+
+### Bug Fixes
+- Preserve focus when clicking a terminal tab switches repos
+
 ## 0.75.2
 
 ### Performance
