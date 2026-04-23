@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.77.0
+
+### Features
+- Add activity-bar view with selected repo's file tree
+
 ## 0.76.0
 
 ### Features
