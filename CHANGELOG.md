@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.75.4
+
+### Bug Fixes
+- Queue rapid terminal clicks so the last click wins
+
 ## 0.75.3
 
 ### Bug Fixes
