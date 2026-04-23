@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.77.1
+
+### Bug Fixes
+- Show theme-aware file icon and full path in quick pick
+
 ## 0.77.0
 
 ### Features
