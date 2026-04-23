@@ -20,6 +20,7 @@ import { registerSwitchBranchCommands } from "./commands/switchBranch";
 import { registerStashCommands } from "./commands/stash";
 import { registerResolveConflictsCommand } from "./commands/resolveConflicts";
 import { ActiveReposProvider } from "./providers/activeReposProvider";
+import { RepoFilesProvider } from "./providers/repoFilesProvider";
 import { GitContentProvider } from "./providers/gitContentProvider";
 import { DiffWebviewPanel } from "./views/diffWebviewPanel";
 import { DashboardWebviewPanel } from "./views/dashboardWebviewPanel";
@@ -167,6 +168,8 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   const repoTree = new RepoTreeProvider(repoManager);
   context.subscriptions.push(repoTree);
   const changedFiles = new ChangedFilesProvider(repoManager);
+  const repoFiles = new RepoFilesProvider(repoManager);
+  context.subscriptions.push(repoFiles);
 
   // Git content provider for diff URIs
   const gitContentProvider = new GitContentProvider(repoManager.git);
@@ -174,6 +177,20 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   const activeReposView = vscode.window.createTreeView(VIEW_ACTIVE_REPOS, { treeDataProvider: activeRepos });
   const repoTreeView = vscode.window.createTreeView(VIEW_REPOS, { treeDataProvider: repoTree });
   const changedFilesView = vscode.window.createTreeView(VIEW_CHANGED_FILES, { treeDataProvider: changedFiles });
+  const repoFilesView = vscode.window.createTreeView("diffchestrator.repoFiles", {
+    treeDataProvider: repoFiles,
+    showCollapseAll: true,
+  });
+
+  // Keep the Repo Files view's title in sync with the selected repo so it's
+  // always clear which tree you're looking at.
+  const updateRepoFilesTitle = () => {
+    const rp = repoManager.selectedRepo;
+    repoFilesView.message = rp ? rp : undefined;
+    repoFilesView.description = rp ? path.basename(rp) : undefined;
+  };
+  updateRepoFilesTitle();
+  context.subscriptions.push(repoManager.onDidChangeSelection(updateRepoFilesTitle));
 
   // Track whether diffchestrator sidebar is actively visible (not just existing)
   let sidebarVisible = false;
@@ -187,6 +204,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     activeReposView,
     repoTreeView,
     changedFilesView,
+    repoFilesView,
   );
 
   // Refresh git content provider when repos change (invalidates stale diffs)

@@ -53,6 +53,11 @@
           "id": "diffchestrator",
           "title": "Diffchestrator",
           "icon": "resources/icons/diffchestrator.svg"
+        },
+        {
+          "id": "diffchestratorFiles",
+          "title": "Diffchestrator Files",
+          "icon": "resources/icons/diffchestrator-files.svg"
         }
       ]
     },
@@ -70,6 +75,12 @@
           "id": "diffchestrator.repos",
           "name": "Repositories"
         }
+      ],
+      "diffchestratorFiles": [
+        {
+          "id": "diffchestrator.repoFiles",
+          "name": "Selected Repo Files"
+        }
       ]
     },
     "viewsWelcome": [
@@ -81,6 +92,11 @@
       {
         "view": "diffchestrator.changedFiles",
         "contents": "Click a repository to see its changed files.",
+        "when": "!diffchestrator.hasSelectedRepo"
+      },
+      {
+        "view": "diffchestrator.repoFiles",
+        "contents": "No repository selected.\n[Switch Repo](command:diffchestrator.switchRepo)",
         "when": "!diffchestrator.hasSelectedRepo"
       }
     ],
