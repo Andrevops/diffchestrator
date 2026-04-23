@@ -4,6 +4,67 @@ import type { RepoManager } from "../services/repoManager";
 import { CMD, BATCH_SMALL, BATCH_LARGE } from "../constants";
 import { resolveRepoPath } from "../utils/fileItem";
 
+/**
+ * Pick a codicon per file type as a coarse approximation of Ctrl+P's icon
+ * theme lookup. QuickPickItem can't reach the private file-icon-theme API
+ * that Ctrl+P uses, so we map extensions (and a few well-known filenames) to
+ * the richer codicons VS Code ships (json, markdown, html, etc.) and fall
+ * back to ThemeIcon.File for everything else.
+ */
+function pickFileIcon(relPath: string): vscode.ThemeIcon {
+  const name = path.basename(relPath).toLowerCase();
+
+  // Well-known filenames first — some have no extension
+  if (name === "dockerfile" || name.startsWith("dockerfile.")) return new vscode.ThemeIcon("file");
+  if (name === "makefile" || name === "rakefile" || name === "gemfile") return new vscode.ThemeIcon("file-code");
+  if (name === ".gitignore" || name === ".gitattributes") return new vscode.ThemeIcon("source-control");
+  if (name === ".env" || name.startsWith(".env.")) return new vscode.ThemeIcon("key");
+  if (name.endsWith(".lock") || name === "package-lock.json" || name === "yarn.lock" || name === "pnpm-lock.yaml") return new vscode.ThemeIcon("lock");
+
+  const ext = path.extname(name).slice(1);
+  switch (ext) {
+    case "json": case "jsonc": case "json5":
+      return new vscode.ThemeIcon("json");
+    case "md": case "markdown": case "mdx":
+      return new vscode.ThemeIcon("markdown");
+    case "html": case "htm":
+      return new vscode.ThemeIcon("html");
+    case "css": case "scss": case "sass": case "less":
+      return new vscode.ThemeIcon("symbol-color");
+    case "yaml": case "yml": case "toml": case "xml": case "ini": case "conf":
+      return new vscode.ThemeIcon("file-code");
+    case "ts": case "tsx": case "js": case "jsx": case "mjs": case "cjs":
+    case "py": case "rb": case "go": case "rs": case "java":
+    case "c": case "cpp": case "cc": case "h": case "hpp":
+    case "cs": case "swift": case "kt": case "kts": case "php":
+    case "lua": case "dart": case "scala": case "clj": case "ex": case "exs":
+    case "vue": case "svelte": case "astro":
+      return new vscode.ThemeIcon("file-code");
+    case "sh": case "bash": case "zsh": case "fish":
+      return new vscode.ThemeIcon("terminal-bash");
+    case "ps1": case "psm1":
+      return new vscode.ThemeIcon("terminal-powershell");
+    case "png": case "jpg": case "jpeg": case "gif": case "svg":
+    case "webp": case "ico": case "bmp":
+    case "mp3": case "mp4": case "wav": case "mov": case "avi": case "mkv": case "flac":
+      return new vscode.ThemeIcon("file-media");
+    case "pdf":
+      return new vscode.ThemeIcon("file-pdf");
+    case "zip": case "tar": case "gz": case "rar": case "7z": case "xz": case "bz2":
+      return new vscode.ThemeIcon("file-zip");
+    case "log":
+      return new vscode.ThemeIcon("output");
+    case "sql":
+      return new vscode.ThemeIcon("database");
+    case "txt": case "rtf":
+      return new vscode.ThemeIcon("file-text");
+    case "exe": case "dll": case "so": case "dylib": case "bin":
+      return new vscode.ThemeIcon("file-binary");
+    default:
+      return vscode.ThemeIcon.File;
+  }
+}
+
 export function registerFileSearchCommand(
   context: vscode.ExtensionContext,
   repoManager: RepoManager
@@ -105,9 +166,10 @@ export function registerFileSearchCommand(
       quickPick.matchOnDescription = true;
       quickPick.busy = true;
 
-      // Pre-load all files. ThemeIcon.File is the only reliable public-API
-      // path — Ctrl+P's per-extension icons use a private icon-theme lookup
-      // that QuickPickItem doesn't expose (tried Uri.file: renders nothing).
+      // Pre-load all files. Codicon per type approximates Ctrl+P's rendering
+      // (json, markdown, html have dedicated codicons; everything else bins
+      // into file-code / file-media / file-zip / etc., with ThemeIcon.File as
+      // the final fallback).
       try {
         const files = await git.listFiles(repoPath);
         quickPick.items = files.map((f) => {
@@ -115,7 +177,7 @@ export function registerFileSearchCommand(
           return {
             label: path.basename(f),
             description: f, // full relative path, dimmed
-            iconPath: vscode.ThemeIcon.File,
+            iconPath: pickFileIcon(f),
             _fullPath: fullPath,
             _relPath: f,
           };
