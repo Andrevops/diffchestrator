@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.78.0
+
+### Features
+- Codicon-per-extension icons in Alt+D F quick pick
+
 ## 0.77.3
 
 ### Bug Fixes
