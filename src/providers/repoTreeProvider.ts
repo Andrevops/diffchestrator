@@ -126,7 +126,7 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode>, vsco
       // Unique id per state so VS Code resets selection on refresh
       const state = isActive ? "active" : isMultiSelected ? "multi" : "idle";
       item.id = `repo:${r.path}:${state}`;
-      item.contextValue = "repo";
+      item.contextValue = r.mergeState ? "repo-conflicted" : "repo";
       (item as vscode.TreeItem & { path: string }).path = r.path;
       item.tooltip = this._buildTooltip(r);
 

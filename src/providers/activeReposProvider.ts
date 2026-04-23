@@ -121,7 +121,8 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
     }
 
     item.id = `active:${element.repoPath}:${element.role}:${isActive ? "a" : "i"}`;
-    item.contextValue = dirIcon ? "directory" : "repo";
+    const hasConflicts = !dirIcon && !!r?.mergeState;
+    item.contextValue = dirIcon ? "directory" : (hasConflicts ? "repo-conflicted" : "repo");
     (item as vscode.TreeItem & { path: string; repoPath: string }).path = element.repoPath;
     (item as vscode.TreeItem & { repoPath: string }).repoPath = element.repoPath;
 

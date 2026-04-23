@@ -18,6 +18,7 @@ import { registerCommitHistoryCommands } from "./commands/commitHistory";
 import { registerDiscardCommands } from "./commands/discard";
 import { registerSwitchBranchCommands } from "./commands/switchBranch";
 import { registerStashCommands } from "./commands/stash";
+import { registerResolveConflictsCommand } from "./commands/resolveConflicts";
 import { ActiveReposProvider } from "./providers/activeReposProvider";
 import { GitContentProvider } from "./providers/gitContentProvider";
 import { DiffWebviewPanel } from "./views/diffWebviewPanel";
@@ -364,6 +365,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   registerCommitHistoryCommands(context, repoManager);
   registerDiscardCommands(context, repoManager);
   registerSwitchBranchCommands(context, repoManager);
+  registerResolveConflictsCommand(context, repoManager);
   registerStashCommands(context, repoManager);
 
   // Scan Roots commands

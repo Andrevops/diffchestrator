@@ -83,6 +83,7 @@ export const CMD = {
   closeTerminal: "diffchestrator.closeTerminal",
   nextTerminal: "diffchestrator.nextTerminal",
   prevTerminal: "diffchestrator.prevTerminal",
+  resolveConflicts: "diffchestrator.resolveConflicts",
 } as const;
 
 export const CONFIG = {
