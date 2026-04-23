@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.75.5
+
+### Performance
+- Parallelize pull/sync and de-block activation
+
 ## 0.75.4
 
 ### Bug Fixes
