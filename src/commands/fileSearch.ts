@@ -105,9 +105,10 @@ export function registerFileSearchCommand(
       quickPick.matchOnDescription = true;
       quickPick.busy = true;
 
-      // Pre-load all files. ThemeIcon.File resolves to the active file icon
-      // theme's generic file icon — matches Ctrl+P's look without per-extension
-      // icons, which aren't exposed via the public QuickPickItem API.
+      // Pre-load all files. Passing the file Uri as iconPath lets recent
+      // VS Code resolve the per-extension icon from the active file icon
+      // theme (matching Ctrl+P). If the theme can't resolve it, VS Code
+      // falls back to its generic file icon automatically.
       try {
         const files = await git.listFiles(repoPath);
         quickPick.items = files.map((f) => {
@@ -115,7 +116,7 @@ export function registerFileSearchCommand(
           return {
             label: path.basename(f),
             description: f, // full relative path, dimmed
-            iconPath: vscode.ThemeIcon.File,
+            iconPath: vscode.Uri.file(fullPath),
             _fullPath: fullPath,
             _relPath: f,
           };
