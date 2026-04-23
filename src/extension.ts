@@ -43,14 +43,12 @@ export interface DiffchestratorApi {
 }
 
 export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
-  // Check git is installed (sync with timeout — faster than async for a single quick check)
-  const { execFileSync } = require("child_process");
-  let gitInstalled = false;
-  try {
-    execFileSync("git", ["--version"], { timeout: 5000 });
-    gitInstalled = true;
-  } catch { /* git missing or timed out */ }
-  if (!gitInstalled) {
+  // Verify git is on PATH in the background — don't block activation.
+  // If git is genuinely missing, ops will fail with their own errors; this
+  // banner is a courtesy so the user knows why.
+  const { execFile } = require("child_process");
+  execFile("git", ["--version"], { timeout: 5000 }, (err: Error | null) => {
+    if (!err) return;
     vscode.window.showErrorMessage(
       "Diffchestrator: Git is not installed or not on PATH. The extension requires git to function.",
       "Install Git"
@@ -59,15 +57,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         vscode.env.openExternal(vscode.Uri.parse("https://git-scm.com/downloads"));
       }
     });
-    // Return stub API so consumers don't crash
-    const noop = new vscode.EventEmitter<void>();
-    context.subscriptions.push(noop);
-    return {
-      getCurrentRoot: () => undefined,
-      getSelectedRepo: () => undefined,
-      onDidChangeSelection: noop.event,
-    };
-  }
+  });
 
   const sessionStartTime = Date.now();
   const repoManager = new RepoManager(context.workspaceState);
@@ -515,16 +505,18 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
       await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: "Diffchestrator: Pulling repos", cancellable: false },
         async (progress) => {
-          for (const r of repos) {
-            progress.report({ message: `${r.name}` });
-            try {
-              await sharedGit.pull(r.path);
-              await repoManager.refreshRepo(r.path);
-              success++;
-            } catch (err) {
-              failed++;
-              outputChannel.appendLine(`[pull] ${r.name}: ${err instanceof Error ? err.message : err}`);
-            }
+          for (let i = 0; i < repos.length; i += BATCH_SMALL) {
+            progress.report({ message: `${Math.min(i + BATCH_SMALL, repos.length)}/${repos.length}` });
+            await Promise.all(repos.slice(i, i + BATCH_SMALL).map(async (r) => {
+              try {
+                await sharedGit.pull(r.path);
+                await repoManager.refreshRepo(r.path);
+                success++;
+              } catch (err) {
+                failed++;
+                outputChannel.appendLine(`[pull] ${r.name}: ${err instanceof Error ? err.message : err}`);
+              }
+            }));
           }
         }
       );
@@ -554,13 +546,15 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
           const behind = repoManager.repos.filter((r) => r.behind > 0);
           if (behind.length > 0) {
             progress.report({ message: `Pulling ${behind.length} repos...` });
-            for (const r of behind) {
-              try {
-                await sharedGit.pull(r.path);
-                await repoManager.refreshRepo(r.path);
-              } catch (err) {
-                outputChannel.appendLine(`[sync-pull] ${r.name}: ${err instanceof Error ? err.message : err}`);
-              }
+            for (let i = 0; i < behind.length; i += BATCH_SMALL) {
+              await Promise.all(behind.slice(i, i + BATCH_SMALL).map(async (r) => {
+                try {
+                  await sharedGit.pull(r.path);
+                  await repoManager.refreshRepo(r.path);
+                } catch (err) {
+                  outputChannel.appendLine(`[sync-pull] ${r.name}: ${err instanceof Error ? err.message : err}`);
+                }
+              }));
             }
           }
 
@@ -568,13 +562,15 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
           const ahead = repoManager.repos.filter((r) => r.ahead > 0);
           if (ahead.length > 0) {
             progress.report({ message: `Pushing ${ahead.length} repos...` });
-            for (const r of ahead) {
-              try {
-                await sharedGit.push(r.path);
-                await repoManager.refreshRepo(r.path);
-              } catch (err) {
-                outputChannel.appendLine(`[sync-push] ${r.name}: ${err instanceof Error ? err.message : err}`);
-              }
+            for (let i = 0; i < ahead.length; i += BATCH_SMALL) {
+              await Promise.all(ahead.slice(i, i + BATCH_SMALL).map(async (r) => {
+                try {
+                  await sharedGit.push(r.path);
+                  await repoManager.refreshRepo(r.path);
+                } catch (err) {
+                  outputChannel.appendLine(`[sync-push] ${r.name}: ${err instanceof Error ? err.message : err}`);
+                }
+              }));
             }
           }
         }
