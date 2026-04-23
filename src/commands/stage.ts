@@ -11,13 +11,20 @@ import { resolveFileItem } from "../utils/fileItem";
  * Open the diff (or plain file) for a given FileChange — same logic as
  * ChangedFilesProvider so the review experience is consistent.
  */
-export async function openFileDiff(repoPath: string, fc: FileChange): Promise<void> {
+export async function openFileDiff(
+  repoPath: string,
+  fc: FileChange,
+  options?: { preserveFocus?: boolean }
+): Promise<void> {
   const fileName = path.basename(fc.path);
+  const showOpts: vscode.TextDocumentShowOptions | undefined =
+    options?.preserveFocus ? { preserveFocus: true } : undefined;
 
   if (fc.status === FileStatus.Untracked) {
     await vscode.commands.executeCommand(
       "vscode.open",
-      vscode.Uri.file(path.join(repoPath, fc.path))
+      vscode.Uri.file(path.join(repoPath, fc.path)),
+      showOpts
     );
     return;
   }
@@ -32,7 +39,7 @@ export async function openFileDiff(repoPath: string, fc: FileChange): Promise<vo
   });
 
   if (fc.changeType === ChangeType.Deleted) {
-    await vscode.commands.executeCommand("vscode.open", leftUri);
+    await vscode.commands.executeCommand("vscode.open", leftUri, showOpts);
     return;
   }
 
@@ -49,7 +56,8 @@ export async function openFileDiff(repoPath: string, fc: FileChange): Promise<vo
     "vscode.diff",
     leftUri,
     rightUri,
-    `${fileName} (${staged ? "Staged" : "Working Tree"})`
+    `${fileName} (${staged ? "Staged" : "Working Tree"})`,
+    showOpts
   );
 }
 

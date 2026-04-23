@@ -131,16 +131,15 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
       // the tracking map can return stale paths from a previous root.
       if (repoPath && currentRootPaths.has(repoPath)) {
         if (repoPath !== repoManager.selectedRepo) {
-          // Suppress showTerminalIfExists inside viewDiff — user already chose this terminal
+          // Suppress showTerminalIfExists inside viewDiff — user already chose this terminal.
+          // preserveFocus skips sidebar/editor focus steal so keystrokes land in the clicked terminal.
           suppressTerminalSwitch = true;
           try {
-            await vscode.commands.executeCommand(CMD.viewDiff, { path: repoPath });
+            await vscode.commands.executeCommand(CMD.viewDiff, { path: repoPath, preserveFocus: true });
           } finally {
             suppressTerminalSwitch = false;
           }
           if (epoch !== terminalSwitchEpoch) return; // superseded by newer click
-          // viewDiff steals focus to sidebar/editor — restore it to the terminal the user clicked
-          terminal.show(false);
         }
         return;
       }
@@ -150,9 +149,9 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
       if (match) {
         await vscode.commands.executeCommand(CMD.switchRoot, match.root);
         if (epoch !== terminalSwitchEpoch) return; // superseded by newer click
-        await vscode.commands.executeCommand(CMD.viewDiff, { path: match.path });
+        await vscode.commands.executeCommand(CMD.viewDiff, { path: match.path, preserveFocus: true });
         if (epoch !== terminalSwitchEpoch) return; // superseded by newer click
-        // Restore focus to the terminal the user clicked
+        // switchRoot can steal focus; restore it to the terminal the user clicked.
         terminal.show(false);
       }
     })
@@ -1287,6 +1286,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
       CMD.viewDiff,
       async (item?: any) => {
         const repoPath = resolveRepoPath(item);
+        const preserveFocus = !!item?.preserveFocus;
         if (!repoPath) {
           vscode.window.showWarningMessage(
             "Diffchestrator: No repository selected."
@@ -1304,7 +1304,8 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
 
           repoManager.selectRepo(repoPath);
           // Only steal sidebar focus if diffchestrator panel is already visible
-          if (sidebarVisible) {
+          // and caller isn't preserving focus (e.g. terminal-tab click).
+          if (sidebarVisible && !preserveFocus) {
             await vscode.commands.executeCommand(`${VIEW_CHANGED_FILES}.focus`);
           }
           // Don't override user's terminal choice when triggered by clicking a terminal tab
@@ -1348,24 +1349,26 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
           const status = await sharedGit.status(repoPath);
           const firstFile = status.unstaged[0] ?? status.untracked[0] ?? status.staged[0];
           if (firstFile) {
-            await openFileDiff(repoPath, firstFile);
+            await openFileDiff(repoPath, firstFile, { preserveFocus });
           } else {
             // No changes — restore remembered file if we have one
             const remembered = lastOpenFile.get(repoPath);
             if (remembered) {
               try {
                 if (remembered.scheme === "file") {
-                  await vscode.window.showTextDocument(remembered, { preview: false });
+                  await vscode.window.showTextDocument(remembered, { preview: false, preserveFocus });
                 } else {
                   const doc = await vscode.workspace.openTextDocument(remembered);
-                  await vscode.window.showTextDocument(doc, { preview: false });
+                  await vscode.window.showTextDocument(doc, { preview: false, preserveFocus });
                 }
               } catch (err) {
                 outputChannel.appendLine(`[restore file] ${err instanceof Error ? err.message : err}`);
                 lastOpenFile.delete(repoPath);
-                await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
+                if (!preserveFocus) {
+                  await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
+                }
               }
-            } else {
+            } else if (!preserveFocus) {
               await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
             }
           }
