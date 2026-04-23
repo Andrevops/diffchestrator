@@ -2,6 +2,14 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.76.0
+
+### Features
+- Surface and resolve merge/rebase conflicts per repo
+
+### Other
+- Cover selection, MRU, multi-select, persistence
+
 ## 0.75.5
 
 ### Performance
