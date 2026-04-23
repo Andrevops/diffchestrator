@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.77.3
+
+### Bug Fixes
+- Revert to ThemeIcon.File — Uri iconPath rendered nothing
+
 ## 0.77.2
 
 ### Bug Fixes
