@@ -6,6 +6,8 @@ import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 import { escapeForTerminal } from "../utils/shell";
 import { resolveRepoPath } from "../utils/fileItem";
+import { repoTerminals, key, findRepoForTerminal as findRepoForTerminalLogic } from "./terminalLogic";
+export { repoTerminals };
 
 const execFileAsync = promisify(execFile);
 
@@ -103,11 +105,7 @@ export async function validateCli(kind: "claude" | "yolo"): Promise<boolean> {
 }
 
 /** Map key: `${repoPath}::${kind}` */
-const repoTerminals = new Map<string, vscode.Terminal>();
-
-function key(repoPath: string, kind: TerminalKind): string {
-  return `${repoPath}::${kind}`;
-}
+// Definitions moved to terminalLogic.ts
 
 /** Infer terminal kind from its icon (creationOptions.iconPath) */
 function inferKindFromIcon(terminal: vscode.Terminal): TerminalKind | undefined {
@@ -269,50 +267,12 @@ function getAlive(repoPath: string, kind: TerminalKind): vscode.Terminal | undef
  *    Longest basename match wins to avoid "foo" matching "foo-bar"
  */
 export function findRepoForTerminal(terminal: vscode.Terminal, allRepoPaths: string[]): string | undefined {
-  // Check tracked map first
-  for (const [k, t] of repoTerminals) {
-    if (t === terminal) {
-      return k.split("::")[0];
-    }
-  }
-
-  // Fallback: find the repo whose basename appears in the terminal name.
-  // Sort by basename length descending so "diffchestrator-vscode" matches
-  // before "diffchestrator".
-  const name = terminal.name;
-  const sorted = [...allRepoPaths].sort(
-    (a, b) => path.basename(b).length - path.basename(a).length
+  return findRepoForTerminalLogic(
+    terminal,
+    allRepoPaths,
+    vscode.window.terminals,
+    inferKindFromIcon
   );
-
-  for (const rp of sorted) {
-    const repoName = path.basename(rp);
-    if (name.includes(repoName)) {
-      // Infer kind from name or legacy prefix, then icon
-      let kind: TerminalKind =
-        /claude/i.test(name) ? "claude" :
-        /yolonew/i.test(name) ? "yolonew" :
-        /yolo/i.test(name) ? "yolo" :
-        /^DC:/i.test(name) ? "shell" :
-        inferKindFromIcon(terminal) ?? "shell";
-
-      // Don't overwrite a slot occupied by a different alive terminal
-      const existing = repoTerminals.get(key(rp, kind));
-      if (existing && existing !== terminal && vscode.window.terminals.includes(existing)) {
-        // Slot taken — try other kinds
-        const allKinds: TerminalKind[] = ["claude", "claudenew", "yolo", "yolonew", "shell"];
-        const freeKind = allKinds.find((k) => {
-          const t = repoTerminals.get(key(rp, k));
-          return !t || t === terminal || !vscode.window.terminals.includes(t);
-        });
-        if (freeKind) kind = freeKind; else return rp; // all slots full, just return repo
-      }
-
-      repoTerminals.set(key(rp, kind), terminal);
-      return rp;
-    }
-  }
-
-  return undefined;
 }
 
 /**
