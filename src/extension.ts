@@ -135,7 +135,12 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         // the tracking map can return stale paths from a previous root.
         if (repoPath && currentRootPaths.has(repoPath)) {
           if (repoPath !== repoManager.selectedRepo) {
-            await vscode.commands.executeCommand(CMD.viewDiff, { path: repoPath, preserveFocus: true });
+            suppressTerminalSwitch = true;
+            try {
+              await vscode.commands.executeCommand(CMD.viewDiff, { path: repoPath, preserveFocus: true });
+            } finally {
+              suppressTerminalSwitch = false;
+            }
           }
           continue;
         }
@@ -143,12 +148,15 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         // No valid match in current root — search other configured roots
         const match = repoManager.findRepoInOtherRoots(terminal.name);
         if (match) {
-          await vscode.commands.executeCommand(CMD.switchRoot, match.root);
-          if (queuedTerminal) continue; // newer click queued while switching roots
-          await vscode.commands.executeCommand(CMD.viewDiff, { path: match.path, preserveFocus: true });
-          if (queuedTerminal) continue; // newer click queued while viewing diff
-          // switchRoot can steal focus; restore it to the terminal the user clicked.
-          terminal.show(false);
+          suppressTerminalSwitch = true;
+          try {
+            await vscode.commands.executeCommand(CMD.switchRoot, match.root);
+            await vscode.commands.executeCommand(CMD.viewDiff, { path: match.path, preserveFocus: true });
+            // switchRoot can steal focus; restore it to the terminal the user clicked.
+            terminal.show(false);
+          } finally {
+            suppressTerminalSwitch = false;
+          }
         }
       }
     } finally {
