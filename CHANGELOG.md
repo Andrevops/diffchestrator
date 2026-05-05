@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.79.1
+
+### Bug Fixes
+- Use Node fs for file operations in WSL/remote
+
 ## 0.79.0
 
 ### Features
