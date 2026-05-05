@@ -25,6 +25,7 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
   constructor(private _repoManager: RepoManager) {
     this._disposables.push(
       _repoManager.onDidChangeSelection(() => this._onDidChangeTreeData.fire()),
+      _repoManager.onDidChangeRepos(() => this._onDidChangeTreeData.fire()),
     );
   }
 
