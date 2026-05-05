@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.79.0
+
+### Features
+- Add file operations to context menu
+
 ## 0.78.2
 
 ### Bug Fixes
