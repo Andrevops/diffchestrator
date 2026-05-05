@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.79.2
+
+### Bug Fixes
+- Suppress spurious focus events during click-to-switch
+
 ## 0.79.1
 
 ### Bug Fixes
