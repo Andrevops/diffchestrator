@@ -2,6 +2,15 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.78.1
+
+### Bug Fixes
+- Auto-refresh tree when repo state changes
+
+### Other
+- Add test coverage for findRepoForTerminal by extracting logic (#36)
+- Updating package versions
+
 ## 0.78.0
 
 ### Features
