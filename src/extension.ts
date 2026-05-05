@@ -1480,6 +1480,71 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   registerNav(CMD.nextTerminal, 1);
   registerNav(CMD.prevTerminal, -1);
 
+  // Repo Files tree — file operations
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.fileDelete, async (node?: { uri: vscode.Uri }) => {
+      if (!node?.uri) return;
+      const fsPath = node.uri.fsPath;
+      const name = path.basename(fsPath);
+      const yes = await vscode.window.showWarningMessage(
+        `Delete "${name}"?`, { modal: true }, "Delete"
+      );
+      if (yes !== "Delete") return;
+      await vscode.workspace.fs.delete(node.uri, { recursive: true, useTrash: true });
+    }),
+    vscode.commands.registerCommand(CMD.fileRename, async (node?: { uri: vscode.Uri }) => {
+      if (!node?.uri) return;
+      const oldPath = node.uri.fsPath;
+      const oldName = path.basename(oldPath);
+      const newName = await vscode.window.showInputBox({
+        prompt: "New name",
+        value: oldName,
+        valueSelection: [0, oldName.lastIndexOf(".") > 0 ? oldName.lastIndexOf(".") : oldName.length],
+      });
+      if (!newName || newName === oldName) return;
+      const newUri = vscode.Uri.file(path.join(path.dirname(oldPath), newName));
+      await vscode.workspace.fs.rename(node.uri, newUri);
+    }),
+    vscode.commands.registerCommand(CMD.fileCopyPath, async (node?: { uri: vscode.Uri }) => {
+      if (!node?.uri) return;
+      await vscode.env.clipboard.writeText(node.uri.fsPath);
+    }),
+    vscode.commands.registerCommand(CMD.fileCopyRelativePath, async (node?: { uri: vscode.Uri }) => {
+      if (!node?.uri) return;
+      const root = repoManager.selectedRepo;
+      const rel = root ? path.relative(root, node.uri.fsPath) : node.uri.fsPath;
+      await vscode.env.clipboard.writeText(rel);
+    }),
+    vscode.commands.registerCommand(CMD.fileRevealInExplorer, async (node?: { uri: vscode.Uri }) => {
+      if (!node?.uri) return;
+      await vscode.commands.executeCommand("revealFileInOS", node.uri);
+    }),
+    vscode.commands.registerCommand(CMD.fileOpenTerminal, async (node?: { uri: vscode.Uri; isDirectory: boolean }) => {
+      if (!node?.uri) return;
+      const dir = node.isDirectory ? node.uri.fsPath : path.dirname(node.uri.fsPath);
+      const terminal = vscode.window.createTerminal({ cwd: dir, name: path.basename(dir) });
+      terminal.show();
+    }),
+    vscode.commands.registerCommand(CMD.fileNewFile, async (node?: { uri: vscode.Uri; isDirectory: boolean }) => {
+      const root = repoManager.selectedRepo;
+      if (!root && !node?.uri) return;
+      const dir = node?.isDirectory ? node.uri.fsPath : node?.uri ? path.dirname(node.uri.fsPath) : root!;
+      const name = await vscode.window.showInputBox({ prompt: "File name" });
+      if (!name) return;
+      const fileUri = vscode.Uri.file(path.join(dir, name));
+      await vscode.workspace.fs.writeFile(fileUri, new Uint8Array());
+      await vscode.commands.executeCommand("vscode.open", fileUri);
+    }),
+    vscode.commands.registerCommand(CMD.fileNewFolder, async (node?: { uri: vscode.Uri; isDirectory: boolean }) => {
+      const root = repoManager.selectedRepo;
+      if (!root && !node?.uri) return;
+      const dir = node?.isDirectory ? node.uri.fsPath : node?.uri ? path.dirname(node.uri.fsPath) : root!;
+      const name = await vscode.window.showInputBox({ prompt: "Folder name" });
+      if (!name) return;
+      await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.join(dir, name)));
+    }),
+  );
+
   // Phase 5: File watcher already created above (before command registrations)
 
   // Phase 6: Inline blame — git blame on current line

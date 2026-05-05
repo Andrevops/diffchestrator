@@ -84,6 +84,14 @@ export const CMD = {
   nextTerminal: "diffchestrator.nextTerminal",
   prevTerminal: "diffchestrator.prevTerminal",
   resolveConflicts: "diffchestrator.resolveConflicts",
+  fileDelete: "diffchestrator.fileDelete",
+  fileRename: "diffchestrator.fileRename",
+  fileCopyPath: "diffchestrator.fileCopyPath",
+  fileCopyRelativePath: "diffchestrator.fileCopyRelativePath",
+  fileRevealInExplorer: "diffchestrator.fileRevealInExplorer",
+  fileOpenTerminal: "diffchestrator.fileOpenTerminal",
+  fileNewFile: "diffchestrator.fileNewFile",
+  fileNewFolder: "diffchestrator.fileNewFolder",
 } as const;
 
 export const CONFIG = {

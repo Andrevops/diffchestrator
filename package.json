@@ -570,6 +570,53 @@
         "title": "Resolve Conflicts",
         "category": "Diffchestrator",
         "icon": "$(warning)"
+      },
+      {
+        "command": "diffchestrator.fileDelete",
+        "title": "Delete",
+        "category": "Diffchestrator",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "diffchestrator.fileRename",
+        "title": "Rename",
+        "category": "Diffchestrator",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "diffchestrator.fileCopyPath",
+        "title": "Copy Path",
+        "category": "Diffchestrator",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "diffchestrator.fileCopyRelativePath",
+        "title": "Copy Relative Path",
+        "category": "Diffchestrator"
+      },
+      {
+        "command": "diffchestrator.fileRevealInExplorer",
+        "title": "Reveal in File Explorer",
+        "category": "Diffchestrator",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "diffchestrator.fileOpenTerminal",
+        "title": "Open in Terminal",
+        "category": "Diffchestrator",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "diffchestrator.fileNewFile",
+        "title": "New File",
+        "category": "Diffchestrator",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "diffchestrator.fileNewFolder",
+        "title": "New Folder",
+        "category": "Diffchestrator",
+        "icon": "$(new-folder)"
       }
     ],
     "menus": {
@@ -665,6 +712,16 @@
           "command": "diffchestrator.discardAll",
           "when": "view == diffchestrator.changedFiles && diffchestrator.hasSelectedRepo",
           "group": "navigation@3"
+        },
+        {
+          "command": "diffchestrator.fileNewFile",
+          "when": "view == diffchestrator.repoFiles && diffchestrator.hasSelectedRepo",
+          "group": "navigation@1"
+        },
+        {
+          "command": "diffchestrator.fileNewFolder",
+          "when": "view == diffchestrator.repoFiles && diffchestrator.hasSelectedRepo",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -807,6 +864,46 @@
           "command": "diffchestrator.discardFile",
           "when": "viewItem == file-unstaged || viewItem == file-untracked",
           "group": "1_file@1"
+        },
+        {
+          "command": "diffchestrator.fileNewFile",
+          "when": "viewItem == repo-file-dir",
+          "group": "1_new@1"
+        },
+        {
+          "command": "diffchestrator.fileNewFolder",
+          "when": "viewItem == repo-file-dir",
+          "group": "1_new@2"
+        },
+        {
+          "command": "diffchestrator.fileRename",
+          "when": "viewItem == repo-file || viewItem == repo-file-dir",
+          "group": "2_modify@1"
+        },
+        {
+          "command": "diffchestrator.fileDelete",
+          "when": "viewItem == repo-file || viewItem == repo-file-dir",
+          "group": "2_modify@2"
+        },
+        {
+          "command": "diffchestrator.fileCopyPath",
+          "when": "viewItem == repo-file || viewItem == repo-file-dir",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "diffchestrator.fileCopyRelativePath",
+          "when": "viewItem == repo-file || viewItem == repo-file-dir",
+          "group": "3_copy@2"
+        },
+        {
+          "command": "diffchestrator.fileRevealInExplorer",
+          "when": "viewItem == repo-file || viewItem == repo-file-dir",
+          "group": "4_reveal@1"
+        },
+        {
+          "command": "diffchestrator.fileOpenTerminal",
+          "when": "viewItem == repo-file || viewItem == repo-file-dir",
+          "group": "4_reveal@2"
         }
       ]
     },
