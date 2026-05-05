@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.78.2
+
+### Bug Fixes
+- Watch working directory for filesystem changes
+
 ## 0.78.1
 
 ### Bug Fixes
