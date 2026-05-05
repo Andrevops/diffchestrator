@@ -32,6 +32,7 @@ import { showTerminalIfExists, findRepoForTerminal, cycleTerminal, closeRepoTerm
 import type { TerminalKind } from "./commands/terminal";
 import { extractTabUri } from "./types";
 import { resolveRepoPath } from "./utils/fileItem";
+import * as fs from "fs";
 import * as path from "path";
 
 /** Public API for sibling extensions (e.g. Epic Lens) */
@@ -1487,10 +1488,10 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
       const fsPath = node.uri.fsPath;
       const name = path.basename(fsPath);
       const yes = await vscode.window.showWarningMessage(
-        `Delete "${name}"?`, { modal: true }, "Delete"
+        `Delete "${name}"? This cannot be undone.`, { modal: true }, "Delete"
       );
       if (yes !== "Delete") return;
-      await vscode.workspace.fs.delete(node.uri, { recursive: true, useTrash: true });
+      await fs.promises.rm(fsPath, { recursive: true });
     }),
     vscode.commands.registerCommand(CMD.fileRename, async (node?: { uri: vscode.Uri }) => {
       if (!node?.uri) return;
@@ -1502,8 +1503,8 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         valueSelection: [0, oldName.lastIndexOf(".") > 0 ? oldName.lastIndexOf(".") : oldName.length],
       });
       if (!newName || newName === oldName) return;
-      const newUri = vscode.Uri.file(path.join(path.dirname(oldPath), newName));
-      await vscode.workspace.fs.rename(node.uri, newUri);
+      const newPath = path.join(path.dirname(oldPath), newName);
+      await fs.promises.rename(oldPath, newPath);
     }),
     vscode.commands.registerCommand(CMD.fileCopyPath, async (node?: { uri: vscode.Uri }) => {
       if (!node?.uri) return;
@@ -1531,9 +1532,9 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
       const dir = node?.isDirectory ? node.uri.fsPath : node?.uri ? path.dirname(node.uri.fsPath) : root!;
       const name = await vscode.window.showInputBox({ prompt: "File name" });
       if (!name) return;
-      const fileUri = vscode.Uri.file(path.join(dir, name));
-      await vscode.workspace.fs.writeFile(fileUri, new Uint8Array());
-      await vscode.commands.executeCommand("vscode.open", fileUri);
+      const filePath = path.join(dir, name);
+      await fs.promises.writeFile(filePath, "");
+      await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(filePath));
     }),
     vscode.commands.registerCommand(CMD.fileNewFolder, async (node?: { uri: vscode.Uri; isDirectory: boolean }) => {
       const root = repoManager.selectedRepo;
@@ -1541,7 +1542,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
       const dir = node?.isDirectory ? node.uri.fsPath : node?.uri ? path.dirname(node.uri.fsPath) : root!;
       const name = await vscode.window.showInputBox({ prompt: "Folder name" });
       if (!name) return;
-      await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.join(dir, name)));
+      await fs.promises.mkdir(path.join(dir, name), { recursive: true });
     }),
   );
 
