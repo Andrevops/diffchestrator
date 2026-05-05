@@ -21,12 +21,33 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private _disposables: vscode.Disposable[] = [];
+  private _fsWatcher: vscode.FileSystemWatcher | undefined;
 
   constructor(private _repoManager: RepoManager) {
     this._disposables.push(
-      _repoManager.onDidChangeSelection(() => this._onDidChangeTreeData.fire()),
+      _repoManager.onDidChangeSelection(() => {
+        this._watchSelectedRepo();
+        this._onDidChangeTreeData.fire();
+      }),
       _repoManager.onDidChangeRepos(() => this._onDidChangeTreeData.fire()),
     );
+    this._watchSelectedRepo();
+  }
+
+  private _watchSelectedRepo(): void {
+    this._fsWatcher?.dispose();
+    this._fsWatcher = undefined;
+
+    const root = this._repoManager.selectedRepo;
+    if (!root) return;
+
+    const pattern = new vscode.RelativePattern(root, "**/*");
+    this._fsWatcher = vscode.workspace.createFileSystemWatcher(pattern);
+
+    const refresh = () => this._onDidChangeTreeData.fire();
+    this._fsWatcher.onDidCreate(refresh);
+    this._fsWatcher.onDidDelete(refresh);
+    this._fsWatcher.onDidChange(refresh);
   }
 
   /** Currently-selected repo path; drives the tree root. */
@@ -84,6 +105,7 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
   }
 
   dispose(): void {
+    this._fsWatcher?.dispose();
     for (const d of this._disposables) d.dispose();
     this._onDidChangeTreeData.dispose();
   }
