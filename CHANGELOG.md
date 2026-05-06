@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.80.0
+
+### Features
+- Open git diff when clicking changed files in repo tree
+
 ## 0.79.2
 
 ### Bug Fixes
