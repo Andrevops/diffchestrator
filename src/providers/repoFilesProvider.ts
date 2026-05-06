@@ -2,11 +2,14 @@ import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
 import type { RepoManager } from "../services/repoManager";
+import type { FileChange } from "../types";
+import { FileStatus } from "../types";
 
 interface FileNode {
   uri: vscode.Uri;
   isDirectory: boolean;
   name: string;
+  change?: FileChange;
 }
 
 /**
@@ -22,14 +25,19 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
 
   private _disposables: vscode.Disposable[] = [];
   private _fsWatcher: vscode.FileSystemWatcher | undefined;
+  private _changedFiles = new Map<string, FileChange>();
 
   constructor(private _repoManager: RepoManager) {
     this._disposables.push(
       _repoManager.onDidChangeSelection(() => {
+        this._changedFiles.clear();
         this._watchSelectedRepo();
         this._onDidChangeTreeData.fire();
       }),
-      _repoManager.onDidChangeRepos(() => this._onDidChangeTreeData.fire()),
+      _repoManager.onDidChangeRepos(() => {
+        this._changedFiles.clear();
+        this._onDidChangeTreeData.fire();
+      }),
     );
     this._watchSelectedRepo();
   }
@@ -44,7 +52,7 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
     const pattern = new vscode.RelativePattern(root, "**/*");
     this._fsWatcher = vscode.workspace.createFileSystemWatcher(pattern);
 
-    const refresh = () => this._onDidChangeTreeData.fire();
+    const refresh = () => { this._changedFiles.clear(); this._onDidChangeTreeData.fire(); };
     this._fsWatcher.onDidCreate(refresh);
     this._fsWatcher.onDidDelete(refresh);
     this._fsWatcher.onDidChange(refresh);
@@ -56,6 +64,7 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
   }
 
   refresh(): void {
+    this._changedFiles.clear();
     this._onDidChangeTreeData.fire();
   }
 
@@ -67,21 +76,55 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
         : vscode.TreeItemCollapsibleState.None,
     );
     item.label = node.name;
-    item.resourceUri = node.uri; // lets VS Code pick the file-type icon from the active theme
+    item.resourceUri = node.uri;
     item.contextValue = node.isDirectory ? "repo-file-dir" : "repo-file";
     if (!node.isDirectory) {
-      item.command = {
-        command: "vscode.open",
-        title: "Open",
-        arguments: [node.uri],
-      };
+      const fc = node.change;
+      if (fc && fc.status !== FileStatus.Untracked) {
+        const repoPath = this.rootPath!;
+        const staged = fc.status === FileStatus.Staged;
+        const ref = staged ? "HEAD" : ":0";
+        const leftUri = vscode.Uri.parse(
+          `git-show:${path.join(repoPath, fc.path)}`,
+        ).with({ query: JSON.stringify({ path: fc.path, ref, repoPath }) });
+        const rightUri = staged
+          ? vscode.Uri.parse(
+              `git-show:${path.join(repoPath, fc.path)}`,
+            ).with({ query: JSON.stringify({ path: fc.path, ref: ":0", repoPath }) })
+          : node.uri;
+        item.command = {
+          command: "vscode.diff",
+          title: "Show Diff",
+          arguments: [leftUri, rightUri, `${node.name} (${staged ? "Staged" : "Working Tree"})`],
+        };
+      } else {
+        item.command = {
+          command: "vscode.open",
+          title: "Open",
+          arguments: [node.uri],
+        };
+      }
     }
     return item;
+  }
+
+  private async _ensureChangedFiles(): Promise<void> {
+    if (this._changedFiles.size > 0) return;
+    const root = this.rootPath;
+    if (!root) return;
+    try {
+      const status = await this._repoManager.git.status(root);
+      for (const fc of [...status.staged, ...status.unstaged, ...status.untracked]) {
+        this._changedFiles.set(fc.path, fc);
+      }
+    } catch { /* ignore */ }
   }
 
   async getChildren(node?: FileNode): Promise<FileNode[]> {
     const root = this.rootPath;
     if (!root) return [];
+
+    await this._ensureChangedFiles();
 
     const dir = node ? node.uri.fsPath : root;
     let entries: fs.Dirent[];
@@ -97,11 +140,16 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
       return a.name.localeCompare(b.name);
     });
 
-    return filtered.map((e) => ({
-      uri: vscode.Uri.file(path.join(dir, e.name)),
-      isDirectory: e.isDirectory(),
-      name: e.name,
-    }));
+    return filtered.map((e) => {
+      const absPath = path.join(dir, e.name);
+      const relPath = path.relative(root, absPath);
+      return {
+        uri: vscode.Uri.file(absPath),
+        isDirectory: e.isDirectory(),
+        name: e.name,
+        change: this._changedFiles.get(relPath),
+      };
+    });
   }
 
   dispose(): void {
