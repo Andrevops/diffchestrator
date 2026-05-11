@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.80.1
+
+### Bug Fixes
+- Reload open editors when files change on disk
+
 ## 0.80.0
 
 ### Features
