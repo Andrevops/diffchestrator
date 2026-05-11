@@ -55,7 +55,66 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
     const refresh = () => { this._changedFiles.clear(); this._onDidChangeTreeData.fire(); };
     this._fsWatcher.onDidCreate(refresh);
     this._fsWatcher.onDidDelete(refresh);
-    this._fsWatcher.onDidChange(refresh);
+    this._fsWatcher.onDidChange((uri) => {
+      refresh();
+      void this._reloadOpenEditorsFor(uri);
+    });
+  }
+
+  /**
+   * When a file in the selected repo changes on disk, force any open editor
+   * showing that file to reload from disk. VS Code's automatic reload is
+   * unreliable in WSL / when the editor is part of a diff input — leaving the
+   * buffer stale and dirty, which causes a "save?" prompt on close that can
+   * overwrite the external edit.
+   */
+  private async _reloadOpenEditorsFor(uri: vscode.Uri): Promise<void> {
+    const target = uri.fsPath;
+    const matches: { tab: vscode.Tab; group: vscode.TabGroup }[] = [];
+    for (const group of vscode.window.tabGroups.all) {
+      for (const tab of group.tabs) {
+        const input = tab.input;
+        let hit = false;
+        if (input instanceof vscode.TabInputText) {
+          hit = input.uri.scheme === "file" && input.uri.fsPath === target;
+        } else if (input instanceof vscode.TabInputTextDiff) {
+          hit =
+            (input.modified.scheme === "file" && input.modified.fsPath === target) ||
+            (input.original.scheme === "file" && input.original.fsPath === target);
+        }
+        if (hit) matches.push({ tab, group });
+      }
+    }
+    if (matches.length === 0) return;
+
+    const previouslyActive = vscode.window.activeTextEditor;
+    for (const { tab, group } of matches) {
+      try {
+        const doc = vscode.workspace.textDocuments.find(
+          (d) => d.uri.scheme === "file" && d.uri.fsPath === target,
+        );
+        if (!doc) continue;
+        await vscode.window.showTextDocument(doc, {
+          viewColumn: group.viewColumn,
+          preview: tab.isPreview,
+          preserveFocus: true,
+        });
+        await vscode.commands.executeCommand("workbench.action.files.revert");
+      } catch {
+        /* ignore — best-effort reload */
+      }
+    }
+    if (previouslyActive) {
+      try {
+        await vscode.window.showTextDocument(previouslyActive.document, {
+          viewColumn: previouslyActive.viewColumn,
+          preserveFocus: false,
+          preview: false,
+        });
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   /** Currently-selected repo path; drives the tree root. */
