@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.80.2
+
+### Bug Fixes
+- Keep focus on terminal when clicking its tab
+
 ## 0.80.1
 
 ### Bug Fixes
