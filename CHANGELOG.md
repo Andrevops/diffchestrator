@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.80.3
+
+### Performance
+- Debounce repo files watcher to stop per-event refresh
+
 ## 0.80.2
 
 ### Bug Fixes
