@@ -26,6 +26,7 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
   private _disposables: vscode.Disposable[] = [];
   private _fsWatcher: vscode.FileSystemWatcher | undefined;
   private _changedFiles = new Map<string, FileChange>();
+  private _refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private _repoManager: RepoManager) {
     this._disposables.push(
@@ -52,13 +53,39 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
     const pattern = new vscode.RelativePattern(root, "**/*");
     this._fsWatcher = vscode.workspace.createFileSystemWatcher(pattern);
 
-    const refresh = () => { this._changedFiles.clear(); this._onDidChangeTreeData.fire(); };
-    this._fsWatcher.onDidCreate(refresh);
-    this._fsWatcher.onDidDelete(refresh);
+    this._fsWatcher.onDidCreate((uri) => this._scheduleRefresh(uri));
+    this._fsWatcher.onDidDelete((uri) => this._scheduleRefresh(uri));
     this._fsWatcher.onDidChange((uri) => {
-      refresh();
-      void this._reloadOpenEditorsFor(uri);
+      this._scheduleRefresh(uri);
+      if (!this._isNoise(uri)) void this._reloadOpenEditorsFor(uri);
     });
+  }
+
+  /**
+   * The watcher fires on `**\/*`, so an active repo (build output, .git index
+   * churn, node_modules) can emit many events per second. Each refresh runs
+   * `git status` + readdir, so firing on every event hammers the disk. Coalesce
+   * bursts into a single refresh and drop events from paths that never affect
+   * the tree.
+   */
+  private _scheduleRefresh(uri: vscode.Uri): void {
+    if (this._isNoise(uri)) return;
+    if (this._refreshTimer) return; // a refresh is already pending
+    this._refreshTimer = setTimeout(() => {
+      this._refreshTimer = undefined;
+      this._changedFiles.clear();
+      this._onDidChangeTreeData.fire();
+    }, 400);
+  }
+
+  /** Paths that generate watcher noise but are irrelevant to the file tree. */
+  private _isNoise(uri: vscode.Uri): boolean {
+    const p = uri.fsPath;
+    return (
+      p.includes(`${path.sep}.git${path.sep}`) ||
+      p.endsWith(`${path.sep}.git`) ||
+      p.includes(`${path.sep}node_modules${path.sep}`)
+    );
   }
 
   /**
@@ -212,6 +239,7 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
   }
 
   dispose(): void {
+    if (this._refreshTimer) clearTimeout(this._refreshTimer);
     this._fsWatcher?.dispose();
     for (const d of this._disposables) d.dispose();
     this._onDidChangeTreeData.dispose();
