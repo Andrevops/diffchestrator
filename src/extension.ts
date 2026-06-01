@@ -141,6 +141,10 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
             } finally {
               suppressTerminalSwitch = false;
             }
+            // viewDiff closes the previous repo's editor tabs, and tab-close
+            // shifts focus to the editor group even though we open files with
+            // preserveFocus. Restore focus to the terminal the user clicked.
+            terminal.show(false);
           }
           continue;
         }
