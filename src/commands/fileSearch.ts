@@ -87,12 +87,15 @@ export function registerFileSearchCommand(
       quickPick.matchOnDetail = true;
 
       let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+      let searchGeneration = 0;
 
       quickPick.onDidChangeValue((value) => {
         if (debounceTimer) clearTimeout(debounceTimer);
+        const generation = ++searchGeneration;
 
         if (value.length < 2) {
           quickPick.items = [];
+          quickPick.busy = false;
           return;
         }
 
@@ -118,6 +121,10 @@ export function registerFileSearchCommand(
                 }
               })
             );
+
+            // A newer query started while this batch was in flight — discard
+            // these stale results and let the newer search own the UI.
+            if (generation !== searchGeneration) return;
 
             for (const batch of results) {
               items.push(...batch);
@@ -203,6 +210,12 @@ export function registerFileSearchCommand(
   );
 
   // Shared grep QuickPick across one or many repos
+  type GrepItem = vscode.QuickPickItem & {
+    _fullPath?: string;
+    _line?: number;
+    _repoPath?: string;
+    _noAction?: boolean;
+  };
   function openGrepQuickPick(repoPaths: string[], placeholder: string): void {
     const multiRepo = repoPaths.length > 1;
     const quickPick = vscode.window.createQuickPick();
@@ -211,11 +224,14 @@ export function registerFileSearchCommand(
     quickPick.matchOnDetail = true;
 
     let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+    let searchGeneration = 0;
 
     quickPick.onDidChangeValue((value) => {
       if (debounceTimer) clearTimeout(debounceTimer);
+      const generation = ++searchGeneration;
       if (value.length < 2) {
         quickPick.items = [];
+        quickPick.busy = false;
         return;
       }
 
@@ -223,7 +239,7 @@ export function registerFileSearchCommand(
         quickPick.busy = true;
         try {
           // Grep all repos in parallel (batched to 5)
-          const allMatches: (vscode.QuickPickItem & { _fullPath?: string; _line?: number; _repoPath?: string; _noAction?: boolean })[] = [];
+          const allMatches: GrepItem[] = [];
           for (let i = 0; i < repoPaths.length; i += BATCH_SMALL) {
             const batch = repoPaths.slice(i, i + BATCH_SMALL);
             const results = await Promise.all(
@@ -246,15 +262,22 @@ export function registerFileSearchCommand(
                 }
               })
             );
+
+            // A newer query started while this batch was in flight — discard
+            // these stale results and let the newer search own the UI.
+            if (generation !== searchGeneration) return;
+
             allMatches.push(...results.flat());
           }
 
           if (allMatches.length === 0) {
-            quickPick.items = [{ label: "$(info) No matches found", description: "", _noAction: true }];
+            const noMatches: GrepItem[] = [{ label: "$(info) No matches found", description: "", _noAction: true }];
+            quickPick.items = noMatches;
           } else {
             quickPick.items = allMatches.slice(0, 100);
           }
         } catch {
+          if (generation !== searchGeneration) return;
           quickPick.items = [{ label: "$(warning) Search failed", description: "" }];
         }
         quickPick.busy = false;
@@ -263,7 +286,7 @@ export function registerFileSearchCommand(
 
     quickPick.onDidAccept(() => {
       const selected = quickPick.selectedItems[0] as
-        | (vscode.QuickPickItem & { _fullPath?: string; _line?: number; _repoPath?: string; _noAction?: boolean })
+        | GrepItem
         | undefined;
       if (selected?._fullPath && !selected._noAction) {
         const line = (selected._line ?? 1) - 1;
@@ -386,7 +409,7 @@ export function registerFileSearchCommand(
   // Switch repo across ALL roots
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.switchRepoAllRoots, async () => {
-      const allRepos = repoManager.getAllRootRepoPaths();
+      const allRepos = await repoManager.getAllRootRepoPaths();
       if (allRepos.length === 0) {
         vscode.window.showWarningMessage("Diffchestrator: No repos found across configured roots.");
         return;
