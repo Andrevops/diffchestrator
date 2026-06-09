@@ -15,6 +15,7 @@ import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { classifyBump } from "./detectBump.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const pkgPath = join(root, "package.json");
@@ -43,18 +44,7 @@ function detectBump(since) {
     process.exit(1);
   }
 
-  let bump = "patch"; // default
-
-  for (const msg of lines) {
-    if (/^feat(\(.+\))?!:|BREAKING[ -]CHANGE/i.test(msg)) {
-      return "major";
-    }
-    if (/^feat(\(.+\))?:/.test(msg)) {
-      bump = "minor";
-    }
-  }
-
-  return bump;
+  return classifyBump(lines);
 }
 
 // ── Bump version ────────────────────────────────────────────────────
@@ -160,18 +150,20 @@ execSync("npm run package", { cwd: root, stdio: "inherit" });
 // Package for Open VSX (publisher: andrevops)
 const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
 const originalPublisher = pkg.publisher;
+const openvsxFile = `diffchestrator-${version}-openvsx.vsix`;
+
 pkg.publisher = "andrevops";
 writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
-
-const openvsxFile = `diffchestrator-${version}-openvsx.vsix`;
-execSync(
-  `npx @vscode/vsce package --no-dependencies -o ${openvsxFile}`,
-  { cwd: root, stdio: "inherit" }
-);
-
-// Restore original publisher
-pkg.publisher = originalPublisher;
-writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+try {
+  execSync(
+    `npx @vscode/vsce package --no-dependencies -o ${openvsxFile}`,
+    { cwd: root, stdio: "inherit" }
+  );
+} finally {
+  // Always restore the original publisher, even if packaging fails
+  pkg.publisher = originalPublisher;
+  writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+}
 
 console.log(`\nReady:`);
 console.log(`  Marketplace: diffchestrator-${version}.vsix`);

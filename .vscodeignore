@@ -15,3 +15,7 @@ pnpm-lock.yaml
 dist/**/*.map
 test/**
 __tests__/**
+CLAUDE.md
+Makefile
+public_key.pem
+CONTRIBUTING.md
