@@ -425,15 +425,15 @@ export async function closeRepoTerminal(repoPath: string): Promise<void> {
     return;
   }
 
-  const items = alive.map((k) => ({
+  const items: (vscode.QuickPickItem & { terminalKind: TerminalKind })[] = alive.map((k) => ({
     label: k.charAt(0).toUpperCase() + k.slice(1),
-    kind: k,
+    terminalKind: k,
   }));
   const picked = await vscode.window.showQuickPick(items, {
     placeHolder: "Close which terminal?",
   });
   if (picked) {
-    getAlive(repoPath, picked.kind as TerminalKind)?.dispose();
+    getAlive(repoPath, picked.terminalKind)?.dispose();
   }
 }
 
