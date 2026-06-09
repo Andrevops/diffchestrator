@@ -85,7 +85,9 @@ export function registerDiscardCommands(
         if (confirm !== "Yes") return;
 
         try {
-          await git.checkoutAll(repoPath);
+          // reset --hard discards BOTH staged and unstaged changes
+          // (checkout -- . restores from the index, so staged changes survive)
+          await git.resetHard(repoPath);
           await git.clean(repoPath);
           await repoManager.refreshRepo(repoPath);
           vscode.window.showInformationMessage(

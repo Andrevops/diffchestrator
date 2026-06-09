@@ -69,22 +69,35 @@ export class GitExecutor {
 
   invalidateMetaCache(repoPath?: string): void {
     if (repoPath) {
+      // ":" suffix prevents prefix collisions (e.g. /a/foo matching /a/foo-bar keys)
       for (const key of this._metaCache.keys()) {
-        if (key.startsWith(repoPath)) this._metaCache.delete(key);
+        if (key.startsWith(repoPath + ":")) this._metaCache.delete(key);
       }
     } else {
       this._metaCache.clear();
     }
   }
 
-  private async _run(args: string[], cwd: string): Promise<RunResult> {
+  // Network operations (pull/push/fetch) get a longer timeout than local ones
+  private static readonly NETWORK_TIMEOUT = 120_000; // ms
+
+  private async _run(
+    args: string[],
+    cwd: string,
+    opts?: { timeoutMs?: number }
+  ): Promise<RunResult> {
     await this._acquireSlot();
     try {
       const { stdout, stderr } = await execFileAsync("git", args, {
         cwd,
         maxBuffer: 10 * 1024 * 1024,
-        timeout: 30_000, // 30s per operation
-        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+        timeout: opts?.timeoutMs ?? 30_000, // 30s default per operation
+        env: {
+          ...process.env,
+          GIT_TERMINAL_PROMPT: "0",
+          LC_ALL: "C", // stable English output for error-string matching
+          GIT_OPTIONAL_LOCKS: "0", // status polling must not take index.lock
+        },
       });
       return { stdout, stderr, code: 0 };
     } catch (err: unknown) {
@@ -121,22 +134,32 @@ export class GitExecutor {
     }
   }
 
+  /** Shallow copy with copied arrays so callers can't mutate the cached object. */
+  private _cloneStatus(s: RepoStatus): RepoStatus {
+    return {
+      ...s,
+      staged: [...s.staged],
+      unstaged: [...s.unstaged],
+      untracked: [...s.untracked],
+    };
+  }
+
   async status(repoPath: string): Promise<RepoStatus> {
     // Return cached result if fresh
     const cached = this._statusCache.get(repoPath);
     if (cached && Date.now() - cached.time < GitExecutor.STATUS_CACHE_TTL) {
-      return cached.result;
+      return this._cloneStatus(cached.result);
     }
 
     // Deduplicate: if a call is already in-flight for this repo, return the same Promise
     const inflight = this._statusInflight.get(repoPath);
-    if (inflight) return inflight;
+    if (inflight) return inflight.then((r) => this._cloneStatus(r));
 
     const epoch = this._statusEpoch.get(repoPath) ?? 0;
     const promise = this._statusUncached(repoPath, epoch);
     this._statusInflight.set(repoPath, promise);
     try {
-      return await promise;
+      return this._cloneStatus(await promise);
     } finally {
       this._statusInflight.delete(repoPath);
     }
@@ -144,9 +167,14 @@ export class GitExecutor {
 
   private async _statusUncached(repoPath: string, epoch: number): Promise<RepoStatus> {
     const result = await this._run(
-      ["status", "--porcelain=v2", "--branch", "-uall"],
+      ["status", "--porcelain=v2", "--branch", "-z", "-uall"],
       repoPath
     );
+    if (result.code !== 0) {
+      throw new Error(
+        `git status failed: ${result.stderr.trim() || `exit code ${result.code}`}`
+      );
+    }
 
     let branch = "HEAD";
     let upstream: string | undefined;
@@ -156,7 +184,11 @@ export class GitExecutor {
     const unstaged: FileChange[] = [];
     const untracked: FileChange[] = [];
 
-    for (const line of result.stdout.split("\n")) {
+    // -z mode: entries are NUL-separated, paths are NOT C-quoted, and rename
+    // entries ("2 ...") consume TWO tokens: "<header fields> <path>" then "<origPath>"
+    const entries = result.stdout.split("\0");
+    for (let i = 0; i < entries.length; i++) {
+      const line = entries[i];
       if (!line) {
         continue;
       }
@@ -180,14 +212,13 @@ export class GitExecutor {
         let oldPath: string | undefined;
 
         if (isRename) {
-          // Format: 2 XY sub mH mI mW hH hI score path\torigPath
-          const tabIndex = line.indexOf("\t");
-          const pathPart = line.slice(line.lastIndexOf(" ", tabIndex) + 1);
-          const pathParts = pathPart.split("\t");
-          filePath = pathParts[0];
-          oldPath = pathParts[1];
+          // Format: 2 XY sub mH mI mW hH hI X<score> <path> NUL <origPath> NUL
+          // 9 fixed space-delimited header fields, remainder is the new path;
+          // the next NUL-separated token is the original path.
+          filePath = parts.slice(9).join(" ");
+          oldPath = entries[++i] || undefined;
         } else {
-          // Format: 1 XY sub mH mI mW hH hI path
+          // Format: 1 XY sub mH mI mW hH hI <path>
           filePath = parts.slice(8).join(" ");
         }
 
@@ -255,9 +286,14 @@ export class GitExecutor {
     repoPath: string
   ): Promise<{ staged: number; unstaged: number; untracked: number; branch: string; ahead: number; behind: number; headOid: string; mergeState?: import("../types.ts").MergeState }> {
     const result = await this._run(
-      ["status", "--porcelain=v2", "--branch", "-uall"],
+      ["status", "--porcelain=v2", "--branch", "-z", "-uall"],
       repoPath
     );
+    if (result.code !== 0) {
+      throw new Error(
+        `git status failed: ${result.stderr.trim() || `exit code ${result.code}`}`
+      );
+    }
 
     let staged = 0;
     let unstaged = 0;
@@ -267,7 +303,10 @@ export class GitExecutor {
     let behind = 0;
     let headOid = "";
 
-    for (const line of result.stdout.split("\n")) {
+    // -z mode: NUL-separated entries; rename entries consume two tokens
+    const entries = result.stdout.split("\0");
+    for (let i = 0; i < entries.length; i++) {
+      const line = entries[i];
       if (!line) {
         continue;
       }
@@ -282,6 +321,7 @@ export class GitExecutor {
           behind = parseInt(match[2], 10);
         }
       } else if (line.startsWith("1 ") || line.startsWith("2 ")) {
+        if (line.startsWith("2 ")) i++; // skip the origPath token of a rename
         const xy = line.split(" ")[1];
         if (xy[0] !== ".") staged++;
         if (xy[1] !== ".") unstaged++;
@@ -343,6 +383,7 @@ export class GitExecutor {
   async commit(repoPath: string, message: string): Promise<string> {
     const result = await this._run(["commit", "-m", message], repoPath);
     this.invalidateStatus(repoPath);
+    this.invalidateMetaCache(repoPath);
     if (result.code !== 0) {
       throw new Error(result.stderr || "Commit failed");
     }
@@ -352,6 +393,7 @@ export class GitExecutor {
   async commitAmend(repoPath: string, message: string): Promise<string> {
     const result = await this._run(["commit", "--amend", "-m", message], repoPath);
     this.invalidateStatus(repoPath);
+    this.invalidateMetaCache(repoPath);
     if (result.code !== 0) {
       throw new Error(result.stderr || "Amend failed");
     }
@@ -368,7 +410,7 @@ export class GitExecutor {
     if (force) {
       args.push("--force-with-lease");
     }
-    const result = await this._run(args, repoPath);
+    const result = await this._run(args, repoPath, { timeoutMs: GitExecutor.NETWORK_TIMEOUT });
     if (result.code !== 0) {
       throw new Error(result.stderr || "Push failed");
     }
@@ -385,6 +427,17 @@ export class GitExecutor {
 
   async resetSoft(repoPath: string, ref = "HEAD~1"): Promise<void> {
     const result = await this._run(["reset", "--soft", ref], repoPath);
+    this.invalidateStatus(repoPath);
+    this.invalidateMetaCache(repoPath);
+    if (result.code !== 0) {
+      throw new Error(result.stderr || "Reset failed");
+    }
+  }
+
+  async resetHard(repoPath: string): Promise<void> {
+    const result = await this._run(["reset", "--hard", "HEAD"], repoPath);
+    this.invalidateStatus(repoPath);
+    this.invalidateMetaCache(repoPath);
     if (result.code !== 0) {
       throw new Error(result.stderr || "Reset failed");
     }
@@ -527,7 +580,7 @@ export class GitExecutor {
   }
 
   async fetch(repoPath: string): Promise<string> {
-    const result = await this._run(["fetch", "--prune"], repoPath);
+    const result = await this._run(["fetch", "--prune"], repoPath, { timeoutMs: GitExecutor.NETWORK_TIMEOUT });
     if (result.code !== 0) {
       throw new Error(result.stderr || "Fetch failed");
     }
@@ -536,7 +589,7 @@ export class GitExecutor {
 
   async fetchBranch(repoPath: string, branch: string): Promise<string> {
     if (!isValidRef(branch)) throw new Error("Invalid branch name");
-    const result = await this._run(["fetch", "origin", branch, "--prune"], repoPath);
+    const result = await this._run(["fetch", "origin", branch, "--prune"], repoPath, { timeoutMs: GitExecutor.NETWORK_TIMEOUT });
     if (result.code !== 0) {
       throw new Error(result.stderr || "Fetch failed");
     }
@@ -574,18 +627,21 @@ export class GitExecutor {
     if (!isValidRef(branch)) throw new Error("Invalid branch name");
     const result = await this._run(
       ["fetch", "origin", `${branch}:${branch}`],
-      repoPath
+      repoPath,
+      { timeoutMs: GitExecutor.NETWORK_TIMEOUT }
     );
     return result.code === 0;
   }
 
   async pullFastForwardOnly(repoPath: string): Promise<boolean> {
-    const result = await this._run(["pull", "--ff-only"], repoPath);
+    const result = await this._run(["pull", "--ff-only"], repoPath, { timeoutMs: GitExecutor.NETWORK_TIMEOUT });
     return result.code === 0;
   }
 
   async pull(repoPath: string): Promise<string> {
-    const result = await this._run(["pull"], repoPath);
+    const result = await this._run(["pull"], repoPath, { timeoutMs: GitExecutor.NETWORK_TIMEOUT });
+    this.invalidateStatus(repoPath);
+    this.invalidateMetaCache(repoPath);
     if (result.code !== 0) {
       throw new Error(result.stderr || "Pull failed");
     }
@@ -616,6 +672,7 @@ export class GitExecutor {
   }
 
   async diffStatFile(repoPath: string, file: string, staged: boolean): Promise<{ additions: number; deletions: number }> {
+    this._validateFilePath(repoPath, file);
     const args = staged
       ? ["diff", "--cached", "--numstat", "--", file]
       : ["diff", "--numstat", "--", file];
@@ -640,12 +697,23 @@ export class GitExecutor {
   }
 
   async branches(repoPath: string): Promise<{ name: string; current: boolean }[]> {
-    const result = await this._run(["branch", "--list", "--no-color"], repoPath);
+    // --format avoids fragile text parsing: "%(HEAD)" is "*" for the current
+    // branch (space otherwise), "%09" is a tab separator, name is the short ref.
+    const result = await this._run(
+      ["branch", "--list", "--no-color", "--format=%(HEAD)%09%(refname:short)"],
+      repoPath
+    );
     if (!result.stdout.trim()) return [];
-    return result.stdout.split("\n").filter(l => l.trim()).map(line => ({
-      name: line.replace(/^\*?\s+/, "").trim(),
-      current: line.startsWith("*"),
-    }));
+    const branches: { name: string; current: boolean }[] = [];
+    for (const line of result.stdout.split("\n")) {
+      const tab = line.indexOf("\t");
+      if (tab < 0) continue;
+      const name = line.slice(tab + 1).trim();
+      // Detached HEAD shows up as "(HEAD detached at abc1234)" — not a real branch
+      if (!name || name.startsWith("(")) continue;
+      branches.push({ name, current: line.slice(0, tab) === "*" });
+    }
+    return branches;
   }
 
   async checkout(repoPath: string, branch: string): Promise<string> {
@@ -722,6 +790,8 @@ export class GitExecutor {
       args.push("-m", message);
     }
     const result = await this._run(args, repoPath);
+    this.invalidateStatus(repoPath);
+    this.invalidateMetaCache(repoPath);
     if (result.code !== 0) {
       throw new Error(result.stderr || "Stash push failed");
     }
@@ -730,6 +800,8 @@ export class GitExecutor {
 
   async stashPop(repoPath: string): Promise<string> {
     const result = await this._run(["stash", "pop"], repoPath);
+    this.invalidateStatus(repoPath);
+    this.invalidateMetaCache(repoPath);
     if (result.code !== 0) {
       throw new Error(result.stderr || "Stash pop failed");
     }
@@ -741,6 +813,8 @@ export class GitExecutor {
       throw new Error("Invalid stash index");
     }
     const result = await this._run(["stash", "apply", `stash@{${index}}`], repoPath);
+    this.invalidateStatus(repoPath);
+    this.invalidateMetaCache(repoPath);
     if (result.code !== 0) {
       throw new Error(result.stderr || "Stash apply failed");
     }
@@ -752,6 +826,7 @@ export class GitExecutor {
       throw new Error("Invalid stash index");
     }
     const result = await this._run(["stash", "drop", `stash@{${index}}`], repoPath);
+    this.invalidateMetaCache(repoPath);
     if (result.code !== 0) {
       throw new Error(result.stderr || "Stash drop failed");
     }
@@ -759,6 +834,9 @@ export class GitExecutor {
   }
 
   async stashShow(repoPath: string, index: number): Promise<string> {
+    if (!Number.isInteger(index) || index < 0) {
+      throw new Error("Invalid stash index");
+    }
     const result = await this._run(["stash", "show", "-p", `stash@{${index}}`], repoPath);
     return result.stdout;
   }
@@ -771,7 +849,7 @@ export class GitExecutor {
   } | undefined> {
     this._validateFilePath(repoPath, file);
     const result = await this._run(
-      ["blame", "-L", `${line},${line}`, "--porcelain", file],
+      ["blame", "-L", `${line},${line}`, "--porcelain", "--", file],
       repoPath
     );
     if (result.code !== 0 || !result.stdout.trim()) {
@@ -847,13 +925,18 @@ export class GitExecutor {
   }
 
   async mergedBranches(repoPath: string, mainBranch: string): Promise<string[]> {
-    // Use -- to prevent branch names from being interpreted as flags
-    const result = await this._run(["branch", "--merged", "--no-color", "--", mainBranch], repoPath);
+    // --merged=<ref> binds the value to the flag (no flag injection), and
+    // --format avoids the "* " / "+ " marker parsing entirely
+    const result = await this._run(
+      ["branch", "--no-color", `--merged=${mainBranch}`, "--format=%(refname:short)"],
+      repoPath
+    );
     if (result.code !== 0) return [];
     return result.stdout
       .split("\n")
-      .map((l) => l.trim().replace(/^\* /, ""))
-      .filter((b) => b && b !== mainBranch && b !== "main" && b !== "master" && b !== "develop");
+      .map((l) => l.trim())
+      // "(HEAD detached at ...)" pseudo-entries aren't real branches
+      .filter((b) => b && !b.startsWith("(") && b !== mainBranch && b !== "main" && b !== "master" && b !== "develop");
   }
 
   async deleteBranch(repoPath: string, branch: string): Promise<void> {
