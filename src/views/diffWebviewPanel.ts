@@ -12,6 +12,7 @@ export class DiffWebviewPanel {
   private _disposables: vscode.Disposable[] = [];
   private _repoManager: RepoManager;
   private _git;
+  private _disposed = false;
 
   static createOrShow(
     extensionUri: vscode.Uri,
@@ -118,6 +119,7 @@ export class DiffWebviewPanel {
   }
 
   private async _update(): Promise<void> {
+    if (this._disposed) return;
     const selectedPaths = this._repoManager.selectedRepoPaths;
     if (selectedPaths.size === 0) {
       // If nothing is multi-selected, fall back to all repos
@@ -133,6 +135,7 @@ export class DiffWebviewPanel {
     const repos = [];
 
     for (const repoPath of selectedPaths) {
+      if (this._disposed) return;
       const repoSummary = this._repoManager.getRepo(repoPath);
       const name = repoSummary?.name ?? path.basename(repoPath);
 
@@ -171,6 +174,7 @@ export class DiffWebviewPanel {
       }
     }
 
+    if (this._disposed) return;
     this._panel.webview.postMessage({
       type: "setDiffData",
       repos,
@@ -254,6 +258,7 @@ export class DiffWebviewPanel {
   }
 
   dispose(): void {
+    this._disposed = true;
     DiffWebviewPanel.currentPanel = undefined;
     this._panel.dispose();
     while (this._disposables.length) {

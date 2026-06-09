@@ -223,7 +223,7 @@ export default function SettingsPanel() {
           label="Permission Mode"
           description="Permission mode for Claude CLI AI commits"
           value={settings.claudePermissionMode}
-          options={["default", "acceptEdits", "full"]}
+          options={["default", "acceptEdits", "bypassPermissions"]}
           onChange={(v) => update("claudePermissionMode", v)}
         />
         <SettingToggle

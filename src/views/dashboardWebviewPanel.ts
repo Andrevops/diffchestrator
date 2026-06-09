@@ -78,6 +78,39 @@ interface DashboardPayload {
 
 const MAIN_BRANCHES = new Set(["main", "master", "develop", "development"]);
 
+const MAX_PINNED_REPOS = 100;
+
+function isStringArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((x) => typeof x === "string");
+}
+
+function isFiniteNumberInRange(v: unknown, min: number, max: number): boolean {
+  return typeof v === "number" && Number.isFinite(v) && v >= min && v <= max;
+}
+
+// Allowlist of settings the webview may update — must mirror the keys emitted
+// by _postSettings. Each entry validates the webview-supplied value.
+const UPDATABLE_SETTINGS: Record<string, (v: unknown) => boolean> = {
+  scanRoots: isStringArray,
+  scanMaxDepth: (v) => isFiniteNumberInRange(v, 1, 32),
+  scanExtraSkipDirs: isStringArray,
+  scanOnStartup: (v) => typeof v === "boolean",
+  startupFetchMode: (v) =>
+    isStringArray(v) && v.every((x) => ["main", "current", "all"].includes(x)),
+  autoRefreshInterval: (v) => isFiniteNumberInRange(v, 0, 3600),
+  changedOnlyDefault: (v) => typeof v === "boolean",
+  showFavorites: (v) => typeof v === "boolean",
+  showInlineBlame: (v) => typeof v === "boolean",
+  claudePermissionMode: (v) =>
+    typeof v === "string" &&
+    ["default", "acceptEdits", "bypassPermissions"].includes(v),
+  autoPushAfterCommit: (v) => typeof v === "boolean",
+  pinnedRepos: (v) => isStringArray(v) && v.length <= MAX_PINNED_REPOS,
+  autoTerminals: (v) =>
+    isStringArray(v) &&
+    v.every((x) => ["shell", "claude", "claudenew", "yolo", "yolonew"].includes(x)),
+};
+
 export class DashboardWebviewPanel {
   public static currentPanel: DashboardWebviewPanel | undefined;
   private readonly _panel: vscode.WebviewPanel;
@@ -88,6 +121,7 @@ export class DashboardWebviewPanel {
   private _sessionStartTime: number;
   private _updateThrottleTimer: ReturnType<typeof setTimeout> | undefined;
   private _updateInProgress = false;
+  private _updateGeneration = 0;
   private _disposed = false;
 
   static createOrShow(
@@ -209,6 +243,10 @@ export class DashboardWebviewPanel {
 
   private async _update(): Promise<void> {
     if (this._disposed) return;
+    // Generation counter: overlapping _update runs (handlers call this directly,
+    // bypassing the throttle guard) must not post stale Phase-2 data after a
+    // newer run's Phase-1 data.
+    const generation = ++this._updateGeneration;
     const repos = this._repoManager.allRepos;
     const sinceISO = new Date(this._sessionStartTime).toISOString();
 
@@ -257,6 +295,7 @@ export class DashboardWebviewPanel {
     const diffStats = new Map<string, DiffStatSummary>();
 
     for (let i = 0; i < repos.length; i += BATCH_LARGE) {
+      if (this._disposed || generation !== this._updateGeneration) return;
       const batch = repos.slice(i, i + BATCH_LARGE);
       await Promise.all(
         batch.map(async (r) => {
@@ -334,7 +373,8 @@ export class DashboardWebviewPanel {
       diffStat: diffStats.get(e.path),
     }));
 
-    // Send complete data
+    // Send complete data (skip if disposed or a newer update has started)
+    if (this._disposed || generation !== this._updateGeneration) return;
     this._panel.webview.postMessage({
       type: "dashboardUpdate",
       data: {
@@ -351,6 +391,29 @@ export class DashboardWebviewPanel {
 
   private _isKnownRepo(repoPath: string): boolean {
     return !!this._repoManager.getRepo(repoPath);
+  }
+
+  private _postSettings(): void {
+    if (this._disposed) return;
+    const cfg = vscode.workspace.getConfiguration("diffchestrator");
+    this._panel.webview.postMessage({
+      type: "settingsData",
+      settings: {
+        scanRoots: cfg.get<string[]>("scanRoots", []),
+        scanMaxDepth: cfg.get<number>("scanMaxDepth", 6),
+        scanExtraSkipDirs: cfg.get<string[]>("scanExtraSkipDirs", []),
+        scanOnStartup: cfg.get<boolean>("scanOnStartup", true),
+        startupFetchMode: cfg.get<string[]>("startupFetchMode", []),
+        autoRefreshInterval: cfg.get<number>("autoRefreshInterval", 10),
+        changedOnlyDefault: cfg.get<boolean>("changedOnlyDefault", false),
+        showFavorites: cfg.get<boolean>("showFavorites", true),
+        showInlineBlame: cfg.get<boolean>("showInlineBlame", true),
+        claudePermissionMode: cfg.get<string>("claudePermissionMode", "acceptEdits"),
+        autoPushAfterCommit: cfg.get<boolean>("autoPushAfterCommit", false),
+        pinnedRepos: cfg.get<string[]>("pinnedRepos", []),
+        autoTerminals: cfg.get<string[]>("autoTerminals", []),
+      },
+    });
   }
 
   private async _handleMessage(msg: DashboardMessage): Promise<void> {
@@ -582,9 +645,14 @@ export class DashboardWebviewPanel {
 
       case "pinRepo": {
         const repoPath = msg.repoPath;
+        // Only known repos with absolute paths may be pinned
+        if (!path.isAbsolute(repoPath) || !this._isKnownRepo(repoPath)) {
+          console.warn(`[Diffchestrator] Dashboard: rejected pinRepo for ${repoPath}`);
+          break;
+        }
         const cfg = vscode.workspace.getConfiguration("diffchestrator");
         const pinned = cfg.get<string[]>("pinnedRepos", []);
-        if (!pinned.includes(repoPath)) {
+        if (!pinned.includes(repoPath) && pinned.length < MAX_PINNED_REPOS) {
           pinned.push(repoPath);
           await cfg.update("pinnedRepos", pinned, vscode.ConfigurationTarget.Global);
         }
@@ -595,7 +663,16 @@ export class DashboardWebviewPanel {
       case "unpinRepo": {
         const repoPath = msg.repoPath;
         const cfg = vscode.workspace.getConfiguration("diffchestrator");
-        const pinned = cfg.get<string[]>("pinnedRepos", []).filter((p) => p !== repoPath);
+        const current = cfg.get<string[]>("pinnedRepos", []);
+        // Path must be absolute and either currently known or already pinned
+        if (
+          !path.isAbsolute(repoPath) ||
+          (!this._isKnownRepo(repoPath) && !current.includes(repoPath))
+        ) {
+          console.warn(`[Diffchestrator] Dashboard: rejected unpinRepo for ${repoPath}`);
+          break;
+        }
+        const pinned = current.filter((p) => p !== repoPath);
         await cfg.update("pinnedRepos", pinned, vscode.ConfigurationTarget.Global);
         await this._update();
         break;
@@ -638,31 +715,18 @@ export class DashboardWebviewPanel {
       }
 
       case "getSettings": {
-        const cfg = vscode.workspace.getConfiguration("diffchestrator");
-        this._panel.webview.postMessage({
-          type: "settingsData",
-          settings: {
-            scanRoots: cfg.get<string[]>("scanRoots", []),
-            scanMaxDepth: cfg.get<number>("scanMaxDepth", 6),
-            scanExtraSkipDirs: cfg.get<string[]>("scanExtraSkipDirs", []),
-            scanOnStartup: cfg.get<boolean>("scanOnStartup", true),
-            startupFetchMode: cfg.get<string[]>("startupFetchMode", []),
-            autoRefreshInterval: cfg.get<number>("autoRefreshInterval", 10),
-            changedOnlyDefault: cfg.get<boolean>("changedOnlyDefault", false),
-            showFavorites: cfg.get<boolean>("showFavorites", true),
-            showInlineBlame: cfg.get<boolean>("showInlineBlame", true),
-            claudePermissionMode: cfg.get<string>("claudePermissionMode", "acceptEdits"),
-            autoPushAfterCommit: cfg.get<boolean>("autoPushAfterCommit", false),
-            pinnedRepos: cfg.get<string[]>("pinnedRepos", []),
-            autoTerminals: cfg.get<string[]>("autoTerminals", []),
-          },
-        });
+        this._postSettings();
         break;
       }
 
       case "updateSetting": {
         const key = msg.key;
         const value = msg.value;
+        const validate = UPDATABLE_SETTINGS[key];
+        if (!validate || !validate(value)) {
+          console.warn(`[Diffchestrator] Dashboard: rejected updateSetting for ${key}`);
+          break;
+        }
         const cfg = vscode.workspace.getConfiguration("diffchestrator");
         await cfg.update(key, value, vscode.ConfigurationTarget.Global);
         break;
@@ -684,10 +748,7 @@ export class DashboardWebviewPanel {
             await cfg.update("scanRoots", roots, vscode.ConfigurationTarget.Global);
           }
           // Send updated settings back
-          this._panel.webview.postMessage({
-            type: "settingsData",
-            settings: { ...cfg, scanRoots: roots },
-          });
+          this._postSettings();
         }
         break;
       }
