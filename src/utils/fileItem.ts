@@ -15,8 +15,9 @@ export function resolveFileItem(item: any): { repoPath: string; filePath: string
  * - RepoTreeItem: { repo: { path } }
  * - DirectoryTreeItem: { fullPath }
  * - Context menu: { path }
+ * - Changed-file / active-repo tree items: { repoPath }
  * Falls back to the currently selected repo.
  */
 export function resolveRepoPath(item: any, fallback?: string): string | undefined {
-  return item?.repo?.path ?? item?.fullPath ?? item?.path ?? fallback;
+  return item?.repo?.path ?? item?.fullPath ?? item?.path ?? item?.repoPath ?? fallback;
 }

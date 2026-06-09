@@ -14,6 +14,14 @@ export class FileWatcher implements vscode.Disposable {
 
   constructor(repoManager: RepoManager) {
     this._repoManager = repoManager;
+
+    // Re-watch when the repo list changes. Subscribe ONCE here — watchAll()
+    // is called after every scan/root switch and must not stack listeners.
+    this._repoManager.onDidChangeRepos(
+      () => this._syncWatchers(),
+      null,
+      this._disposables
+    );
   }
 
   /**
@@ -34,13 +42,6 @@ export class FileWatcher implements vscode.Disposable {
     for (const repoPath of this._repoManager.activeRepoPaths) {
       this._watchRepo(repoPath);
     }
-
-    // Also re-watch when the repo list changes
-    this._repoManager.onDidChangeRepos(
-      () => this._syncWatchers(),
-      null,
-      this._disposables
-    );
   }
 
   private _watchRepo(repoPath: string): void {

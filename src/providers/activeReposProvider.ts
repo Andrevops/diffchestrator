@@ -18,45 +18,54 @@ interface ActiveRepoNode {
 
 const KIND_LABELS: Record<TerminalKind, string> = {
   claude: "Claude",
+  claudenew: "Claudenew",
   yolo: "Yolo",
   yolonew: "Yolonew",
   shell: "Shell",
 };
 
 function activeKinds(repoPath: string): TerminalKind[] {
-  const kinds: TerminalKind[] = ["claude", "yolo", "yolonew", "shell"];
+  const kinds: TerminalKind[] = ["claude", "claudenew", "yolo", "yolonew", "shell"];
   return kinds.filter((k) => !!getRepoTerminal(repoPath, k));
 }
 
-export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNode> {
+export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNode>, vscode.Disposable {
   private _onDidChangeTreeData = new vscode.EventEmitter<ActiveRepoNode | undefined | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+  private _disposables: vscode.Disposable[] = [];
 
   // Cache terminal kinds to avoid re-scanning on every tree rebuild
   private _terminalCache = new Map<string, TerminalKind[]>();
   private _terminalCacheDirty = true;
 
   constructor(private repoManager: RepoManager) {
-    repoManager.onDidChangeSelection(() => this._onDidChangeTreeData.fire());
-    repoManager.onDidChangeRepos(() => this._onDidChangeTreeData.fire());
+    this._disposables.push(repoManager.onDidChangeSelection(() => this._onDidChangeTreeData.fire()));
+    this._disposables.push(repoManager.onDidChangeRepos(() => this._onDidChangeTreeData.fire()));
 
     // Only invalidate terminal cache on terminal open/close, not full tree rebuild
-    vscode.window.onDidOpenTerminal(() => {
+    this._disposables.push(vscode.window.onDidOpenTerminal(() => {
       this._terminalCacheDirty = true;
       this._onDidChangeTreeData.fire();
-    });
-    vscode.window.onDidCloseTerminal(() => {
+    }));
+    this._disposables.push(vscode.window.onDidCloseTerminal(() => {
       this._terminalCacheDirty = true;
       this._onDidChangeTreeData.fire();
-    });
+    }));
 
     // Refresh when favorites or showFavorites config changes
-    vscode.workspace.onDidChangeConfiguration((e) => {
+    this._disposables.push(vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("diffchestrator.favorites") ||
           e.affectsConfiguration(CONFIG.showFavorites)) {
         this._onDidChangeTreeData.fire();
       }
-    });
+    }));
+  }
+
+  dispose(): void {
+    this._terminalCache.clear();
+    this._onDidChangeTreeData.dispose();
+    for (const d of this._disposables) d.dispose();
+    this._disposables = [];
   }
 
   private _getTerminalKinds(repoPath: string): TerminalKind[] {

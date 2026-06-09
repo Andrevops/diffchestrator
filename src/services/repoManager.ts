@@ -17,8 +17,9 @@ export class RepoManager implements vscode.Disposable {
   private _selectedRepoPaths = new Set<string>();
   private _recentRepoPaths: string[] = [];
   private _selectionPerRoot = new Map<string, { selected?: string; multi: string[]; recent: string[] }>();
-  /** Cached repo paths per root — populated during scan() and lazily for cross-root lookups */
-  private _pathsByRoot = new Map<string, string[]>();
+  /** Cached repo paths per root — populated during scan() and lazily for cross-root lookups (TTL'd) */
+  private _pathsByRoot = new Map<string, { paths: string[]; ts: number }>();
+  private static readonly PATHS_BY_ROOT_TTL_MS = 60_000;
   private _directoryPaths = new Set<string>();
   private _swapTarget: { path: string; root?: string } | undefined;
   private _swappingBack = false;
@@ -34,6 +35,10 @@ export class RepoManager implements vscode.Disposable {
   private _configDisposable: vscode.Disposable | undefined;
   private _scanEpoch = 0;
   private _startupSyncDone = false;
+  /** True while scan() is replacing _repos — suppresses auto/focus refresh */
+  private _scanning = false;
+  /** Re-entrancy guard so overlapping refreshAll runs don't stack */
+  private _refreshAllInFlight = false;
 
   private _onDidChangeRepos = new vscode.EventEmitter<void>();
   readonly onDidChangeRepos = this._onDidChangeRepos.event;
@@ -87,6 +92,14 @@ export class RepoManager implements vscode.Disposable {
         this._activeRepoPathsCache = undefined;
         this._onDidChangeRepos.fire();
       }
+      // Invalidate per-root path cache when scan settings change
+      if (
+        e.affectsConfiguration("diffchestrator.scanRoots") ||
+        e.affectsConfiguration("diffchestrator.scanMaxDepth") ||
+        e.affectsConfiguration("diffchestrator.scanExtraSkipDirs")
+      ) {
+        this._pathsByRoot.clear();
+      }
     });
   }
 
@@ -127,8 +140,23 @@ export class RepoManager implements vscode.Disposable {
     return [...this._repos.values()];
   }
 
+  /**
+   * Get cached repo paths for a root, lazily discovering via scanFast (BFS,
+   * no git calls) when missing or older than the TTL.
+   */
+  private async _getPathsForRoot(root: string, maxDepth: number, extraSkip: string[]): Promise<string[]> {
+    const cached = this._pathsByRoot.get(root);
+    if (cached && Date.now() - cached.ts < RepoManager.PATHS_BY_ROOT_TTL_MS) {
+      return cached.paths;
+    }
+    const scanner = new Scanner(this._git, maxDepth, extraSkip, this._log);
+    const paths = (await scanner.scanFast(root)).map((r) => r.path);
+    this._pathsByRoot.set(root, { paths, ts: Date.now() });
+    return paths;
+  }
+
   /** Get repo paths across ALL configured roots (current + other roots). */
-  getAllRootRepoPaths(): { root: string; repoPath: string; repoName: string }[] {
+  async getAllRootRepoPaths(): Promise<{ root: string; repoPath: string; repoName: string }[]> {
     const config = vscode.workspace.getConfiguration("diffchestrator");
     const roots = config.get<string[]>("scanRoots", []);
     const maxDepth = config.get<number>("scanMaxDepth", 6);
@@ -143,11 +171,7 @@ export class RepoManager implements vscode.Disposable {
         }
       } else {
         // Lazily discover repos for other roots
-        if (!this._pathsByRoot.has(root)) {
-          const scanner = new Scanner(this._git, maxDepth, extraSkip, this._log);
-          this._pathsByRoot.set(root, scanner.scanFast(root).map((r) => r.path));
-        }
-        for (const p of this._pathsByRoot.get(root) ?? []) {
+        for (const p of await this._getPathsForRoot(root, maxDepth, extraSkip)) {
           result.push({ root, repoPath: p, repoName: path.basename(p) });
         }
       }
@@ -251,6 +275,19 @@ export class RepoManager implements vscode.Disposable {
   async scan(rootPath: string): Promise<void> {
     const epoch = ++this._scanEpoch;
 
+    // Stop the running auto-refresh timer and suppress focus refreshes while
+    // _repos holds zero-change skeletons — otherwise a tick during Phase 2
+    // sees totalChanges 0→N and fires spurious "new changes" notifications.
+    // The timer is restarted by startAutoRefresh() at the end of scan().
+    this._scanning = true;
+    if (this._refreshTimer) {
+      clearInterval(this._refreshTimer);
+      this._refreshTimer = undefined;
+    }
+
+    // This root is being rescanned — drop its (possibly stale) path cache
+    this._pathsByRoot.delete(rootPath);
+
     // Save current root's selection state before switching
     if (this._currentRoot) {
       this._selectionPerRoot.set(this._currentRoot, {
@@ -291,7 +328,7 @@ export class RepoManager implements vscode.Disposable {
     const scanner = new Scanner(this._git, maxDepth, extraSkip, this._log);
 
     // Phase 1: Fast BFS — no git calls, repos appear instantly
-    const repos = scanner.scanFast(rootPath);
+    const repos = await scanner.scanFast(rootPath);
     for (const r of repos) {
       this._repos.set(r.path, r);
     }
@@ -307,28 +344,34 @@ export class RepoManager implements vscode.Disposable {
     // Sync only on the first scan per activation — root switches and rescans skip it
     const willSync = fetchModes.size > 0 && !this._startupSyncDone;
     if (willSync) this._startupSyncDone = true;
-    await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Window, title: `Diffchestrator: Scanning repos${willSync ? " + syncing" : ""}` },
-      async (progress) => {
-        for (let i = 0; i < repos.length; i += BATCH_LARGE) {
-          if (epoch !== this._scanEpoch) return; // superseded by newer scan
-          progress.report({ message: `${Math.min(i + BATCH_LARGE, repos.length)}/${repos.length}` });
-          await Promise.all(repos.slice(i, i + BATCH_LARGE).map(async (r) => {
+    try {
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Window, title: `Diffchestrator: Scanning repos${willSync ? " + syncing" : ""}` },
+        async (progress) => {
+          for (let i = 0; i < repos.length; i += BATCH_LARGE) {
+            if (epoch !== this._scanEpoch) return; // superseded by newer scan
+            progress.report({ message: `${Math.min(i + BATCH_LARGE, repos.length)}/${repos.length}` });
+            await Promise.all(repos.slice(i, i + BATCH_LARGE).map(async (r) => {
+              if (epoch !== this._scanEpoch) return; // superseded
+              await scanner.fetchMetadata(r);
+              if (!willSync) return;
+              try {
+                await this._syncRepoOnScan(r, fetchModes);
+              } catch { /* ignore sync failures */ }
+            }));
             if (epoch !== this._scanEpoch) return; // superseded
-            await scanner.fetchMetadata(r);
-            if (!willSync) return;
-            try {
-              await this._syncRepoOnScan(r, fetchModes);
-            } catch { /* ignore sync failures */ }
-          }));
-          if (epoch !== this._scanEpoch) return; // superseded
-          this._fireRepoChangeCoalesced();
+            this._fireRepoChangeCoalesced();
+          }
         }
-      }
-    );
+      );
+    } finally {
+      // Only the latest scan owns the _scanning flag — a superseded scan
+      // must not re-enable refresh while the newer one is still running.
+      if (epoch === this._scanEpoch) this._scanning = false;
+    }
 
     if (epoch !== this._scanEpoch) return; // superseded — don't overwrite newer scan's data
-    this._pathsByRoot.set(rootPath, repos.map((r) => r.path));
+    this._pathsByRoot.set(rootPath, { paths: repos.map((r) => r.path), ts: Date.now() });
 
     this.startAutoRefresh();
   }
@@ -381,7 +424,7 @@ export class RepoManager implements vscode.Disposable {
    * against repo basenames. Lazily discovers repos via scanFast (BFS, no
    * git calls) for roots not yet cached.
    */
-  findRepoInOtherRoots(terminalName: string): { root: string; path: string } | undefined {
+  async findRepoInOtherRoots(terminalName: string): Promise<{ root: string; path: string } | undefined> {
     const config = vscode.workspace.getConfiguration("diffchestrator");
     const roots = config.get<string[]>("scanRoots", []);
     const maxDepth = config.get<number>("scanMaxDepth", 6);
@@ -391,12 +434,7 @@ export class RepoManager implements vscode.Disposable {
       if (root === this._currentRoot) continue;
 
       // Lazily discover repo paths for this root
-      if (!this._pathsByRoot.has(root)) {
-        const scanner = new Scanner(this._git, maxDepth, extraSkip, this._log);
-        this._pathsByRoot.set(root, scanner.scanFast(root).map((r) => r.path));
-      }
-
-      const paths = this._pathsByRoot.get(root) ?? [];
+      const paths = await this._getPathsForRoot(root, maxDepth, extraSkip);
       // Longest basename first to avoid partial matches ("foo" matching "foo-bar")
       const sorted = [...paths].sort(
         (a, b) => path.basename(b).length - path.basename(a).length
@@ -478,23 +516,33 @@ export class RepoManager implements vscode.Disposable {
           }
         }, 15_000));
       }
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // git status failed (repo deleted, transient index.lock, etc.) —
+      // keep the repo's existing values and fire no change events.
+      this._log?.(`[refreshRepo] ${repoPath}: ${err instanceof Error ? err.message : err}`);
     }
   }
 
   async refreshAll(): Promise<void> {
+    // Re-entrancy guard: a slow refresh can outlive the auto-refresh interval
+    // (or overlap a focus-triggered refresh) — don't stack runs.
+    if (this._refreshAllInFlight) return;
     const repos = [...this._repos.keys()];
     if (repos.length === 0) return;
-    await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Window, title: "Diffchestrator: Refreshing" },
-      async (progress) => {
-        for (let i = 0; i < repos.length; i += BATCH_LARGE) {
-          progress.report({ message: `${Math.min(i + BATCH_LARGE, repos.length)}/${repos.length}` });
-          await Promise.all(repos.slice(i, i + BATCH_LARGE).map((p) => this.refreshRepo(p)));
+    this._refreshAllInFlight = true;
+    try {
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Window, title: "Diffchestrator: Refreshing" },
+        async (progress) => {
+          for (let i = 0; i < repos.length; i += BATCH_LARGE) {
+            progress.report({ message: `${Math.min(i + BATCH_LARGE, repos.length)}/${repos.length}` });
+            await Promise.all(repos.slice(i, i + BATCH_LARGE).map((p) => this.refreshRepo(p)));
+          }
         }
-      }
-    );
+      );
+    } finally {
+      this._refreshAllInFlight = false;
+    }
   }
 
   /**
@@ -622,7 +670,7 @@ export class RepoManager implements vscode.Disposable {
     this._focusDisposable?.dispose();
     this._focusDisposable = vscode.window.onDidChangeWindowState((state) => {
       this._windowFocused = state.focused;
-      if (state.focused) {
+      if (state.focused && !this._scanning) {
         // Reset timer first to prevent it from firing during/after our refresh
         this._resetTimer();
         this.refreshAll();
@@ -638,7 +686,7 @@ export class RepoManager implements vscode.Disposable {
     const interval = config.get<number>("autoRefreshInterval", 10);
     if (interval > 0) {
       this._refreshTimer = setInterval(() => {
-        if (this._windowFocused) {
+        if (this._windowFocused && !this._scanning) {
           this.refreshAll();
         }
       }, interval * 1000);
@@ -647,6 +695,10 @@ export class RepoManager implements vscode.Disposable {
 
   dispose(): void {
     if (this._refreshTimer) clearInterval(this._refreshTimer);
+    if (this._repoChangeCoalesceTimer) {
+      clearTimeout(this._repoChangeCoalesceTimer);
+      this._repoChangeCoalesceTimer = undefined;
+    }
     this._focusDisposable?.dispose();
     this._configDisposable?.dispose();
     for (const timer of this._changesDebounce.values()) clearTimeout(timer);

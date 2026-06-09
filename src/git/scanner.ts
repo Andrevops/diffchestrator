@@ -39,45 +39,52 @@ export class Scanner extends EventEmitter {
 
   /**
    * Phase 1: Fast BFS to find .git directories. No git calls.
-   * Returns skeleton RepoSummary objects immediately.
+   * Async (fs.promises) so the extension host event loop isn't blocked —
+   * this runs on activation and in the terminal-click hot path.
+   * Returns skeleton RepoSummary objects.
    */
-  scanFast(rootPath: string): RepoSummary[] {
+  async scanFast(rootPath: string): Promise<RepoSummary[]> {
     this.dirsScanned = 0;
     const repos: RepoSummary[] = [];
     const queue: Array<{ path: string; depth: number }> = [
       { path: rootPath, depth: 0 },
     ];
+    // Index pointer instead of queue.shift() — shift() is O(n) per call
+    let head = 0;
     this._log?.(`[scan] start BFS root=${rootPath} maxDepth=${this.maxDepth}`);
 
-    while (queue.length > 0) {
-      const { path: dirPath, depth } = queue.shift()!;
+    while (head < queue.length) {
+      const { path: dirPath, depth } = queue[head++];
       this.dirsScanned++;
 
       const gitDir = path.join(dirPath, ".git");
+      let hasGit = false;
       try {
-        if (fs.existsSync(gitDir)) {
-          // .git directory (normal repo) or .git file (worktree/submodule gitdir pointer).
-          // Don't require isDirectory() — 9p/drvfs mounts may report wrong type.
-          this._log?.(`[scan] FOUND repo depth=${depth} ${dirPath}`);
-          repos.push({
-            path: dirPath,
-            name: path.basename(dirPath),
-            branch: "",
-            stagedCount: 0,
-            unstagedCount: 0,
-            untrackedCount: 0,
-            totalChanges: 0,
-            ahead: 0,
-            behind: 0,
-            headOid: "",
-            stashCount: 0,
-          });
-          continue;
-        }
-        this._log?.(`[scan] no .git depth=${depth} ${dirPath}`);
-      } catch (err) {
-        this._log?.(`[scan] .git check error depth=${depth} ${dirPath}: ${err instanceof Error ? err.message : err}`);
+        // .git directory (normal repo) or .git file (worktree/submodule gitdir pointer).
+        // Don't require isDirectory() — 9p/drvfs mounts may report wrong type.
+        await fs.promises.access(gitDir);
+        hasGit = true;
+      } catch {
+        /* no .git entry */
       }
+      if (hasGit) {
+        this._log?.(`[scan] FOUND repo depth=${depth} ${dirPath}`);
+        repos.push({
+          path: dirPath,
+          name: path.basename(dirPath),
+          branch: "",
+          stagedCount: 0,
+          unstagedCount: 0,
+          untrackedCount: 0,
+          totalChanges: 0,
+          ahead: 0,
+          behind: 0,
+          headOid: "",
+          stashCount: 0,
+        });
+        continue;
+      }
+      this._log?.(`[scan] no .git depth=${depth} ${dirPath}`);
 
       if (depth >= this.maxDepth) {
         this._log?.(`[scan] maxDepth reached depth=${depth} ${dirPath}`);
@@ -85,13 +92,13 @@ export class Scanner extends EventEmitter {
       }
 
       try {
-        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+        const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
         for (const entry of entries) {
           let isDir = entry.isDirectory();
-          // 9p/drvfs mounts may report DT_UNKNOWN — fall back to statSync
+          // 9p/drvfs mounts may report DT_UNKNOWN — fall back to stat
           if (!isDir && !entry.isFile() && !entry.isSymbolicLink()) {
             try {
-              isDir = fs.statSync(path.join(dirPath, entry.name)).isDirectory();
+              isDir = (await fs.promises.stat(path.join(dirPath, entry.name))).isDirectory();
               if (isDir) this._log?.(`[scan] stat fallback: "${entry.name}" is dir (Dirent was unknown) in ${dirPath}`);
             } catch { /* stat failed — treat as non-dir */ }
           }
@@ -124,7 +131,7 @@ export class Scanner extends EventEmitter {
         this.git.getRemoteUrl(repo.path).catch(() => undefined),
         this.git
           .shortStatus(repo.path)
-          .catch(() => ({ staged: 0, unstaged: 0, untracked: 0, branch: "HEAD", ahead: 0, behind: 0, headOid: "" })),
+          .catch(() => ({ staged: 0, unstaged: 0, untracked: 0, branch: "HEAD", ahead: 0, behind: 0, headOid: "", mergeState: undefined })),
         this.git.stashCount(repo.path).catch(() => 0),
       ]);
       repo.branch = counts.branch;
@@ -147,7 +154,7 @@ export class Scanner extends EventEmitter {
    * Legacy: full scan (BFS + metadata). Used by rescan.
    */
   async scan(rootPath: string): Promise<RepoSummary[]> {
-    const repos = this.scanFast(rootPath);
+    const repos = await this.scanFast(rootPath);
     const CONCURRENCY = 10;
     for (let i = 0; i < repos.length; i += CONCURRENCY) {
       await Promise.all(

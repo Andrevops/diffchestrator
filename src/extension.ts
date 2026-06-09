@@ -95,7 +95,11 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
       }
 
       const uri = editor.document.uri;
-      if (uri.scheme === "file" && uri.fsPath.startsWith(repoPath)) {
+      // Trailing separator so /x/foo doesn't match /x/foo-bar
+      if (
+        uri.scheme === "file" &&
+        (uri.fsPath === repoPath || uri.fsPath.startsWith(repoPath + path.sep))
+      ) {
         lastOpenFile.delete(repoPath); // re-insert at end for LRU
         lastOpenFile.set(repoPath, uri);
         capLastOpenFile();
@@ -150,7 +154,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         }
 
         // No valid match in current root — search other configured roots
-        const match = repoManager.findRepoInOtherRoots(terminal.name);
+        const match = await repoManager.findRepoInOtherRoots(terminal.name);
         if (match) {
           suppressTerminalSwitch = true;
           try {
@@ -178,9 +182,11 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
 
   // Tree views
   const activeRepos = new ActiveReposProvider(repoManager);
+  context.subscriptions.push(activeRepos);
   const repoTree = new RepoTreeProvider(repoManager);
   context.subscriptions.push(repoTree);
   const changedFiles = new ChangedFilesProvider(repoManager);
+  context.subscriptions.push(changedFiles);
   const repoFiles = new RepoFilesProvider(repoManager);
   context.subscriptions.push(repoFiles);
 
@@ -223,29 +229,34 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   // Refresh git content provider when repos change (invalidates stale diffs)
   // Also close diff tabs for files that are no longer changed
   repoManager.onDidChangeRepos(async () => {
-    gitContentProvider.refresh();
+    try {
+      gitContentProvider.refresh();
 
-    // Close stale diff tabs for the selected repo
-    const repoPath = repoManager.selectedRepo;
-    if (!repoPath) return;
-    const repo = repoManager.getRepo(repoPath);
-    if (!repo || repo.totalChanges > 0) return; // still has changes, don't close
+      // Close stale diff tabs for the selected repo
+      const repoPath = repoManager.selectedRepo;
+      if (!repoPath) return;
+      const repo = repoManager.getRepo(repoPath);
+      if (!repo || repo.totalChanges > 0) return; // still has changes, don't close
 
-    // Repo is clean — close any open git-show tabs for it
-    const tabsToClose: vscode.Tab[] = [];
-    for (const tab of vscode.window.tabGroups.all.flatMap((g) => g.tabs)) {
-      const uri = extractTabUri(tab.input);
-      if (uri?.scheme === "git-show") {
-        try {
-          const params = JSON.parse(uri.query);
-          if (params.repoPath === repoPath) {
-            tabsToClose.push(tab);
-          }
-        } catch { /* ignore */ }
+      // Repo is clean — close any open git-show tabs for it
+      const tabsToClose: vscode.Tab[] = [];
+      for (const tab of vscode.window.tabGroups.all.flatMap((g) => g.tabs)) {
+        const uri = extractTabUri(tab.input);
+        if (uri?.scheme === "git-show") {
+          try {
+            const params = JSON.parse(uri.query);
+            if (params.repoPath === repoPath) {
+              tabsToClose.push(tab);
+            }
+          } catch { /* ignore */ }
+        }
       }
-    }
-    if (tabsToClose.length > 0) {
-      await vscode.window.tabGroups.close(tabsToClose);
+      if (tabsToClose.length > 0) {
+        await vscode.window.tabGroups.close(tabsToClose);
+      }
+    } catch (err) {
+      // Async event handler — never let a rejection float unhandled
+      outputChannel.appendLine(`[stale tab close] ${err instanceof Error ? err.message : err}`);
     }
   });
 
@@ -421,13 +432,19 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         if (!picked) return;
         rootPath = picked._path;
       }
-      await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: `Diffchestrator: Scanning ${path.basename(rootPath)}` },
-        async () => {
-          await repoManager.scan(rootPath!);
-          fileWatcher.watchAll();
-        }
-      );
+      try {
+        await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: `Diffchestrator: Scanning ${path.basename(rootPath)}` },
+          async () => {
+            await repoManager.scan(rootPath!);
+            fileWatcher.watchAll();
+          }
+        );
+      } catch (err) {
+        vscode.window.showErrorMessage(
+          `Diffchestrator: Failed to scan ${path.basename(rootPath)}: ${err instanceof Error ? err.message : err}`
+        );
+      }
     }),
     vscode.commands.registerCommand(CMD.addScanRoot, async () => {
       const folders = await vscode.window.showOpenDialog({
@@ -894,7 +911,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
       snapshots[name] = {
         root: repoManager.currentRoot,
         favorites: config.get<string[]>("favorites", []),
-        recent: repoManager.recentRepoPaths,
+        recent: [...repoManager.recentRepoPaths],
         selected: repoManager.selectedRepo,
       };
       await config.update("snapshots", snapshots, vscode.ConfigurationTarget.Global);
@@ -1109,7 +1126,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         .getConfiguration("diffchestrator")
         .get<string[]>("autoTerminals", []);
       if (autoTerminals.length > 0 || repoManager.isDirectory(repoPath)) {
-        const kinds: TerminalKind[] = ["claude", "yolo", "yolonew", "shell"];
+        const kinds: TerminalKind[] = ["claude", "claudenew", "yolo", "yolonew", "shell"];
         for (const k of kinds) {
           const t = getRepoTerminal(repoPath, k);
           if (t) t.dispose();
@@ -1247,7 +1264,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     vscode.commands.registerCommand(
       CMD.selectRepo,
       (item?: any) => {
-        const p = resolveRepoPath(item);
+        const p = resolveRepoPath(item, repoManager.selectedRepo);
         if (p) repoManager.toggleRepoSelection(p);
       }
     )
@@ -1274,20 +1291,15 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     )
   );
 
-  // Helper to extract repo path from various argument shapes
-  // Tree click: { path: "..." }, Context menu: TreeNode { fullPath: "...", repo: { path: "..." } }
-  function resolveRepoPath(item?: any): string | undefined {
-    if (!item) return repoManager.selectedRepo;
-    if (item.repo?.path) return item.repo.path;
-    if (item.fullPath) return item.fullPath;
-    if (item.path) return item.path;
-    if (item.repoPath) return item.repoPath;
-    return repoManager.selectedRepo;
-  }
-
   // Check if a URI belongs to a repo (by file path or git-show query)
   function uriBelongsToRepo(uri: vscode.Uri, repoPath: string): boolean {
-    if (uri.scheme === "file" && uri.fsPath.startsWith(repoPath)) return true;
+    // Compare with a trailing separator so /x/foo doesn't match /x/foo-bar
+    if (
+      uri.scheme === "file" &&
+      (uri.fsPath === repoPath || uri.fsPath.startsWith(repoPath + path.sep))
+    ) {
+      return true;
+    }
     if (uri.scheme === "git-show") {
       try {
         const params = JSON.parse(uri.query);
@@ -1328,7 +1340,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     vscode.commands.registerCommand(
       CMD.viewDiff,
       async (item?: any) => {
-        const repoPath = resolveRepoPath(item);
+        const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
         const preserveFocus = !!item?.preserveFocus;
         if (!repoPath) {
           vscode.window.showWarningMessage(
@@ -1477,7 +1489,9 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
             } else {
               // Try to find in other roots and switch
               const terminal = vscode.window.activeTerminal;
-              const match = terminal && repoManager.findRepoInOtherRoots(terminal.name);
+              const match = terminal
+                ? await repoManager.findRepoInOtherRoots(terminal.name)
+                : undefined;
               if (match) {
                 await vscode.commands.executeCommand(CMD.switchRoot, match.root);
                 repoManager.selectRepo(match.path);

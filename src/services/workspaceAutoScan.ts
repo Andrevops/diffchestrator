@@ -18,13 +18,17 @@ export class WorkspaceAutoScan implements vscode.Disposable {
     this._disposables.push(
       vscode.workspace.onDidChangeWorkspaceFolders((e) => {
         for (const folder of e.added) {
-          this._checkAndOfferScan(folder.uri.fsPath);
+          this._checkAndOfferScan(folder.uri.fsPath).catch((err) => {
+            console.error("[diffchestrator] workspace folder auto-scan failed:", err);
+          });
         }
       })
     );
 
     // On startup: if scanRoots is empty, check workspace folders
-    this._autoScanOnStartup();
+    this._autoScanOnStartup().catch((err) => {
+      console.error("[diffchestrator] startup auto-scan failed:", err);
+    });
   }
 
   private async _autoScanOnStartup(): Promise<void> {
@@ -55,8 +59,14 @@ export class WorkspaceAutoScan implements vscode.Disposable {
               vscode.ConfigurationTarget.Global
             );
           }
-          await this._repoManager.scan(folder.uri.fsPath);
-          this._fileWatcher.watchAll();
+          try {
+            await this._repoManager.scan(folder.uri.fsPath);
+            this._fileWatcher.watchAll();
+          } catch (err) {
+            vscode.window.showErrorMessage(
+              `Diffchestrator: Failed to scan "${folder.name}": ${err instanceof Error ? err.message : err}`
+            );
+          }
         }
       }
     }
@@ -82,8 +92,14 @@ export class WorkspaceAutoScan implements vscode.Disposable {
           vscode.ConfigurationTarget.Global
         );
       }
-      await this._repoManager.scan(folderPath);
-      this._fileWatcher.watchAll();
+      try {
+        await this._repoManager.scan(folderPath);
+        this._fileWatcher.watchAll();
+      } catch (err) {
+        vscode.window.showErrorMessage(
+          `Diffchestrator: Failed to scan "${path.basename(folderPath)}": ${err instanceof Error ? err.message : err}`
+        );
+      }
     }
   }
 

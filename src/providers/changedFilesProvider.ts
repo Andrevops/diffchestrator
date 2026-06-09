@@ -21,20 +21,28 @@ interface FileNode {
   repoPath: string;
 }
 
-export class ChangedFilesProvider implements vscode.TreeDataProvider<TreeElement> {
+export class ChangedFilesProvider implements vscode.TreeDataProvider<TreeElement>, vscode.Disposable {
   private _onDidChangeTreeData = new vscode.EventEmitter<TreeElement | undefined | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
   private _diffStatCache = new Map<string, { additions: number; deletions: number }>();
+  private _disposables: vscode.Disposable[] = [];
 
   constructor(private repoManager: RepoManager) {
-    repoManager.onDidChangeSelection(() => {
+    this._disposables.push(repoManager.onDidChangeSelection(() => {
       this._diffStatCache.clear();
       this._onDidChangeTreeData.fire();
-    });
-    repoManager.onDidChangeRepos(() => {
+    }));
+    this._disposables.push(repoManager.onDidChangeRepos(() => {
       this._diffStatCache.clear();
       this._onDidChangeTreeData.fire();
-    });
+    }));
+  }
+
+  dispose(): void {
+    this._diffStatCache.clear();
+    this._onDidChangeTreeData.dispose();
+    for (const d of this._disposables) d.dispose();
+    this._disposables = [];
   }
 
   refresh(): void {
