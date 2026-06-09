@@ -2,6 +2,24 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.81.0
+
+### Bug Fixes
+- Discard stale async results in QuickPick searches
+- Harden message protocol and settings handling
+- Move configurationDefaults into contributes
+- Async scanner, refresh races, and listener leaks
+- Robust status parsing, exit-code handling, and cache invalidation
+- Keep focus on terminal when clicking its tab
+
+### Performance
+- Debounce repo files watcher to stop per-event refresh
+
+### Other
+- Zero-error tsc --noEmit
+- Cover escapeForTerminal and detectBump
+- Release script safety and vsix hygiene
+
 ## 0.80.3
 
 ### Performance
