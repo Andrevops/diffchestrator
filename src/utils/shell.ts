@@ -3,10 +3,14 @@ import * as vscode from "vscode";
 /**
  * Escapes a string to be safely used as a command line argument
  * in the VS Code integrated terminal, regardless of the user's shell.
+ *
+ * @param shellOverride Shell binary path/name to target instead of
+ *   `vscode.env.shell` — used by unit tests to exercise each dialect.
  */
-export function escapeForTerminal(text: string): string {
+export function escapeForTerminal(text: string, shellOverride?: string): string {
   // Try to determine the shell from VS Code environment
-  const shell = (vscode.env.shell || "").toLowerCase();
+  // (optional chaining: the Node test stub has no `env` namespace)
+  const shell = (shellOverride ?? vscode.env?.shell ?? "").toLowerCase();
 
   // PowerShell
   if (shell.includes("powershell") || shell.includes("pwsh")) {
