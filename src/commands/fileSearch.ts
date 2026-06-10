@@ -216,7 +216,7 @@ export function registerFileSearchCommand(
     _repoPath?: string;
     _noAction?: boolean;
   };
-  function openGrepQuickPick(repoPaths: string[], placeholder: string): void {
+  function openGrepQuickPick(repoPaths: string[], placeholder: string, subdir?: string): void {
     const multiRepo = repoPaths.length > 1;
     const quickPick = vscode.window.createQuickPick();
     quickPick.placeholder = placeholder;
@@ -245,7 +245,7 @@ export function registerFileSearchCommand(
             const results = await Promise.all(
               batch.map(async (rp) => {
                 try {
-                  const matches = await git.grep(rp, value, 30);
+                  const matches = await git.grep(rp, value, 30, subdir);
                   const repoName = path.basename(rp);
                   return matches.map((m) => ({
                     label: `$(file) ${path.basename(m.file)}:${m.line}`,
@@ -320,6 +320,26 @@ export function registerFileSearchCommand(
       }
       openGrepQuickPick([repoPath], `Search in ${path.basename(repoPath)}...`);
     })
+  );
+
+  // Search within a folder of the selected repo (Repo Files tree context menu)
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      CMD.fileFindInFolder,
+      async (node?: { uri: vscode.Uri; isDirectory?: boolean }) => {
+        const repoPath = repoManager.selectedRepo;
+        if (!repoPath || !node?.uri) return;
+        const dir = node.isDirectory ? node.uri.fsPath : path.dirname(node.uri.fsPath);
+        const subdir = path.relative(repoPath, dir);
+        if (subdir.startsWith("..")) return;
+        // An empty subdir means the repo root — plain repo-wide grep
+        openGrepQuickPick(
+          [repoPath],
+          `Search in ${subdir || path.basename(repoPath)}/...`,
+          subdir || undefined,
+        );
+      }
+    )
   );
 
   // Search across active/recent repos

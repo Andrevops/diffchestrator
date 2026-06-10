@@ -92,6 +92,9 @@ export const CMD = {
   fileOpenTerminal: "diffchestrator.fileOpenTerminal",
   fileNewFile: "diffchestrator.fileNewFile",
   fileNewFolder: "diffchestrator.fileNewFolder",
+  fileStage: "diffchestrator.fileStage",
+  fileFindInFolder: "diffchestrator.fileFindInFolder",
+  fileToggleIgnored: "diffchestrator.fileToggleIgnored",
 } as const;
 
 export const CONFIG = {
@@ -112,6 +115,8 @@ export const CONFIG = {
   snapshots: "diffchestrator.snapshots",
   pinnedRepos: "diffchestrator.pinnedRepos",
   autoTerminals: "diffchestrator.autoTerminals",
+  filesAutoReveal: "diffchestrator.filesAutoReveal",
+  filesHideIgnored: "diffchestrator.filesHideIgnored",
 } as const;
 
 export const CTX = {

@@ -617,6 +617,24 @@
         "title": "New Folder",
         "category": "Diffchestrator",
         "icon": "$(new-folder)"
+      },
+      {
+        "command": "diffchestrator.fileStage",
+        "title": "Stage",
+        "category": "Diffchestrator",
+        "icon": "$(add)"
+      },
+      {
+        "command": "diffchestrator.fileFindInFolder",
+        "title": "Find in Folder",
+        "category": "Diffchestrator",
+        "icon": "$(search)"
+      },
+      {
+        "command": "diffchestrator.fileToggleIgnored",
+        "title": "Toggle Gitignored Files",
+        "category": "Diffchestrator",
+        "icon": "$(eye-closed)"
       }
     ],
     "menus": {
@@ -722,6 +740,11 @@
           "command": "diffchestrator.fileNewFolder",
           "when": "view == diffchestrator.repoFiles && diffchestrator.hasSelectedRepo",
           "group": "navigation@2"
+        },
+        {
+          "command": "diffchestrator.fileToggleIgnored",
+          "when": "view == diffchestrator.repoFiles && diffchestrator.hasSelectedRepo",
+          "group": "1_config@1"
         }
       ],
       "view/item/context": [
@@ -866,6 +889,21 @@
           "group": "1_file@1"
         },
         {
+          "command": "diffchestrator.fileStage",
+          "when": "viewItem == repo-file-changed",
+          "group": "0_git@1"
+        },
+        {
+          "command": "diffchestrator.unstageFile",
+          "when": "viewItem == repo-file-staged",
+          "group": "0_git@1"
+        },
+        {
+          "command": "diffchestrator.discardFile",
+          "when": "viewItem == repo-file-changed || viewItem == repo-file-staged",
+          "group": "0_git@2"
+        },
+        {
           "command": "diffchestrator.fileNewFile",
           "when": "viewItem == repo-file-dir",
           "group": "1_new@1"
@@ -877,33 +915,38 @@
         },
         {
           "command": "diffchestrator.fileRename",
-          "when": "viewItem == repo-file || viewItem == repo-file-dir",
+          "when": "viewItem =~ /^repo-file/",
           "group": "2_modify@1"
         },
         {
           "command": "diffchestrator.fileDelete",
-          "when": "viewItem == repo-file || viewItem == repo-file-dir",
+          "when": "viewItem =~ /^repo-file/",
           "group": "2_modify@2"
         },
         {
           "command": "diffchestrator.fileCopyPath",
-          "when": "viewItem == repo-file || viewItem == repo-file-dir",
+          "when": "viewItem =~ /^repo-file/",
           "group": "3_copy@1"
         },
         {
           "command": "diffchestrator.fileCopyRelativePath",
-          "when": "viewItem == repo-file || viewItem == repo-file-dir",
+          "when": "viewItem =~ /^repo-file/",
           "group": "3_copy@2"
         },
         {
           "command": "diffchestrator.fileRevealInExplorer",
-          "when": "viewItem == repo-file || viewItem == repo-file-dir",
+          "when": "viewItem =~ /^repo-file/",
           "group": "4_reveal@1"
         },
         {
           "command": "diffchestrator.fileOpenTerminal",
-          "when": "viewItem == repo-file || viewItem == repo-file-dir",
+          "when": "viewItem =~ /^repo-file/",
           "group": "4_reveal@2"
+        },
+        {
+          "command": "diffchestrator.fileFindInFolder",
+          "when": "viewItem == repo-file-dir",
+          "group": "4_reveal@3"
         }
       ]
     },
@@ -1142,6 +1185,16 @@
     "configuration": {
       "title": "Diffchestrator",
       "properties": {
+        "diffchestrator.filesAutoReveal": {
+          "type": "boolean",
+          "default": true,
+          "description": "Reveal the active editor's file in the Repo Files tree when the view is visible"
+        },
+        "diffchestrator.filesHideIgnored": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide gitignored files in the Repo Files tree (when shown, they are dimmed)"
+        },
         "diffchestrator.scanRoots": {
           "type": "array",
           "items": {

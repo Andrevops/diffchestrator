@@ -111,6 +111,28 @@ export function registerStageCommands(
     )
   );
 
+  // Stage from the Repo Files tree: same as stageFile but without the
+  // review-flow side effect of opening the next pending diff.
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      CMD.fileStage,
+      async (item?: any) => {
+        const resolved = resolveFileItem(item);
+        if (!resolved) {
+          vscode.window.showWarningMessage("Diffchestrator: No file selected.");
+          return;
+        }
+        try {
+          await git.stage(resolved.repoPath, [resolved.filePath]);
+          await repoManager.refreshRepo(resolved.repoPath);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          vscode.window.showErrorMessage(`Diffchestrator: Failed to stage file: ${msg}`);
+        }
+      }
+    )
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.unstageFile,

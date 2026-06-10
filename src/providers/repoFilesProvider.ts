@@ -4,34 +4,66 @@ import * as fs from "fs";
 import type { RepoManager } from "../services/repoManager";
 import type { FileChange } from "../types";
 import { FileStatus } from "../types";
+import { CONFIG } from "../constants";
 
-interface FileNode {
+export interface FileNode {
   uri: vscode.Uri;
   isDirectory: boolean;
   name: string;
+  /** Path relative to the repo root. */
+  relPath: string;
   change?: FileChange;
+  // Set on changed files so resolveFileItem()-shaped commands
+  // (stage/unstage/discard) accept tree nodes directly.
+  repoPath?: string;
+  filePath?: string;
+  fileChange?: FileChange;
 }
+
+/** VS Code convention: tree DnD mime type is the lowercased view id. */
+const DND_MIME = "application/vnd.code.tree.diffchestrator.repofiles";
+
+/** Above this many distinct changed directories, a full refresh is cheaper. */
+const MAX_TARGETED_DIRS = 5;
 
 /**
  * Tree view of the currently-selected repo's file hierarchy.
  *
- * Backed by fs.readdirSync with lazy per-directory expansion. Nothing touches
- * workspace folders, so switching the selected repo reroots the tree without
- * triggering a VS Code window reload.
+ * Backed by fs.promises.readdir with lazy per-directory expansion. Nothing
+ * touches workspace folders, so switching the selected repo reroots the tree
+ * without triggering a VS Code window reload.
  */
-export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vscode.Disposable {
+export class RepoFilesProvider
+  implements
+    vscode.TreeDataProvider<FileNode>,
+    vscode.TreeDragAndDropController<FileNode>,
+    vscode.Disposable
+{
   private _onDidChangeTreeData = new vscode.EventEmitter<FileNode | undefined | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+  /** Fired whenever the change/ignore maps are rebuilt — drives decorations. */
+  private _onDidUpdateChanges = new vscode.EventEmitter<void>();
+  readonly onDidUpdateChanges = this._onDidUpdateChanges.event;
+
+  readonly dropMimeTypes = [DND_MIME];
+  readonly dragMimeTypes = [DND_MIME, "text/uri-list"];
 
   private _disposables: vscode.Disposable[] = [];
   private _fsWatcher: vscode.FileSystemWatcher | undefined;
   private _changedFiles = new Map<string, FileChange>();
+  /** Absolute paths of gitignored entries, populated per expanded directory. */
+  private _ignored = new Set<string>();
+  /** Nodes returned by getChildren, keyed by fsPath — used for targeted refresh and reveal. */
+  private _nodes = new Map<string, FileNode>();
+  /** Parent directories of watcher events pending the debounced refresh. */
+  private _pendingDirs = new Set<string>();
   private _refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private _repoManager: RepoManager) {
     this._disposables.push(
       _repoManager.onDidChangeSelection(() => {
-        this._changedFiles.clear();
+        this._resetState();
         this._watchSelectedRepo();
         this._onDidChangeTreeData.fire();
       }),
@@ -47,8 +79,18 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
         const p = doc.uri.fsPath;
         if (p === root || p.startsWith(root + path.sep)) this._scheduleRefresh(doc.uri);
       }),
+      vscode.workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration(CONFIG.filesHideIgnored)) this.refresh();
+      }),
     );
     this._watchSelectedRepo();
+  }
+
+  private _resetState(): void {
+    this._changedFiles.clear();
+    this._ignored.clear();
+    this._nodes.clear();
+    this._pendingDirs.clear();
   }
 
   private _watchSelectedRepo(): void {
@@ -81,12 +123,35 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
    */
   private _scheduleRefresh(uri: vscode.Uri): void {
     if (this._isNoise(uri)) return;
+    this._pendingDirs.add(path.dirname(uri.fsPath));
     if (this._refreshTimer) return; // a refresh is already pending
-    this._refreshTimer = setTimeout(() => {
-      this._refreshTimer = undefined;
-      this._changedFiles.clear();
+    this._refreshTimer = setTimeout(() => void this._flushRefresh(), 400);
+  }
+
+  /**
+   * Refresh just the directories that saw events when possible; fall back to
+   * a full refresh when the root itself changed or events were widespread.
+   */
+  private async _flushRefresh(): Promise<void> {
+    this._refreshTimer = undefined;
+    const dirs = [...this._pendingDirs];
+    this._pendingDirs.clear();
+    this._changedFiles.clear();
+    // Reload eagerly so decorations (which read the map directly, including
+    // for collapsed dirs and editor tabs) never go stale waiting for an expand.
+    await this._ensureChangedFiles();
+
+    const root = this.rootPath;
+    if (!root || dirs.length > MAX_TARGETED_DIRS || dirs.includes(root)) {
       this._onDidChangeTreeData.fire();
-    }, 400);
+      return;
+    }
+    for (const dir of dirs) {
+      const node = this._nodes.get(dir);
+      // A dir that was never expanded has nothing rendered to refresh;
+      // decorations were already updated above.
+      if (node) this._onDidChangeTreeData.fire(node);
+    }
   }
 
   /** Paths that generate watcher noise but are irrelevant to the file tree. */
@@ -165,6 +230,57 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
     this._onDidChangeTreeData.fire();
   }
 
+  /** Change for an absolute path inside the selected repo (decorations). */
+  getChange(fsPath: string): FileChange | undefined {
+    const root = this.rootPath;
+    if (!root || !fsPath.startsWith(root + path.sep)) return undefined;
+    return this._changedFiles.get(path.relative(root, fsPath));
+  }
+
+  /** Whether an absolute path was reported gitignored (decorations). */
+  isIgnored(fsPath: string): boolean {
+    return this._ignored.has(fsPath);
+  }
+
+  /**
+   * Node for an absolute path inside the selected repo. Prefers the cached
+   * instance from getChildren; otherwise synthesizes one (reveal matches by
+   * TreeItem.id, so identity doesn't matter).
+   */
+  nodeForPath(fsPath: string, isDirectory = false): FileNode | undefined {
+    const root = this.rootPath;
+    if (!root || fsPath === root || !fsPath.startsWith(root + path.sep)) return undefined;
+    const cached = this._nodes.get(fsPath);
+    if (cached) return cached;
+    return this._buildNode(root, fsPath, isDirectory);
+  }
+
+  getParent(node: FileNode): FileNode | undefined {
+    const root = this.rootPath;
+    if (!root) return undefined;
+    const parent = path.dirname(node.uri.fsPath);
+    if (parent === node.uri.fsPath || parent === root) return undefined;
+    return this.nodeForPath(parent, true);
+  }
+
+  private _buildNode(root: string, absPath: string, isDirectory: boolean): FileNode {
+    const relPath = path.relative(root, absPath);
+    const change = isDirectory ? undefined : this._changedFiles.get(relPath);
+    const node: FileNode = {
+      uri: vscode.Uri.file(absPath),
+      isDirectory,
+      name: path.basename(absPath),
+      relPath,
+      change,
+    };
+    if (change) {
+      node.repoPath = root;
+      node.filePath = change.path;
+      node.fileChange = change;
+    }
+    return node;
+  }
+
   getTreeItem(node: FileNode): vscode.TreeItem {
     const item = new vscode.TreeItem(
       node.uri,
@@ -172,9 +288,19 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None,
     );
+    // Stable id: lets reveal() match synthesized nodes and preserves
+    // expansion state across refreshes.
+    item.id = node.uri.fsPath;
     item.label = node.name;
     item.resourceUri = node.uri;
-    item.contextValue = node.isDirectory ? "repo-file-dir" : "repo-file";
+    if (node.isDirectory) {
+      item.contextValue = "repo-file-dir";
+    } else if (node.change) {
+      item.contextValue =
+        node.change.status === FileStatus.Staged ? "repo-file-staged" : "repo-file-changed";
+    } else {
+      item.contextValue = "repo-file";
+    }
     if (!node.isDirectory) {
       const fc = node.change;
       if (fc && fc.status !== FileStatus.Untracked) {
@@ -215,6 +341,7 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
         this._changedFiles.set(fc.path, fc);
       }
     } catch { /* ignore */ }
+    this._onDidUpdateChanges.fire();
   }
 
   async getChildren(node?: FileNode): Promise<FileNode[]> {
@@ -226,7 +353,7 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
     const dir = node ? node.uri.fsPath : root;
     let entries: fs.Dirent[];
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
     } catch {
       return [];
     }
@@ -237,16 +364,103 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
       return a.name.localeCompare(b.name);
     });
 
-    return filtered.map((e) => {
+    // Batch-detect gitignored entries for dimming/hiding. Exit 1 = none
+    // ignored, so an empty result is the normal "all tracked" case.
+    let ignoredRel = new Set<string>();
+    try {
+      ignoredRel = await this._repoManager.git.checkIgnore(
+        root,
+        filtered.map((e) => path.relative(root, path.join(dir, e.name))),
+      );
+    } catch { /* ignore — entries just render undimmed */ }
+
+    const hideIgnored = vscode.workspace
+      .getConfiguration()
+      .get<boolean>(CONFIG.filesHideIgnored, false);
+
+    // Drop stale cache entries for this directory before re-adding.
+    for (const key of this._nodes.keys()) {
+      if (path.dirname(key) === dir) this._nodes.delete(key);
+    }
+    for (const key of [...this._ignored]) {
+      if (path.dirname(key) === dir) this._ignored.delete(key);
+    }
+
+    const nodes: FileNode[] = [];
+    for (const e of filtered) {
       const absPath = path.join(dir, e.name);
-      const relPath = path.relative(root, absPath);
-      return {
-        uri: vscode.Uri.file(absPath),
-        isDirectory: e.isDirectory(),
-        name: e.name,
-        change: this._changedFiles.get(relPath),
-      };
-    });
+      const ignored = ignoredRel.has(path.relative(root, absPath));
+      if (ignored) this._ignored.add(absPath);
+      if (ignored && hideIgnored) continue;
+      const n = this._buildNode(root, absPath, e.isDirectory());
+      this._nodes.set(absPath, n);
+      nodes.push(n);
+    }
+    return nodes;
+  }
+
+  // ── Drag and drop ──────────────────────────────────────────────────────
+
+  handleDrag(source: readonly FileNode[], dataTransfer: vscode.DataTransfer): void {
+    dataTransfer.set(
+      DND_MIME,
+      new vscode.DataTransferItem(source.map((n) => n.uri.fsPath)),
+    );
+    // Lets files be dropped onto the editor area to open them.
+    dataTransfer.set(
+      "text/uri-list",
+      new vscode.DataTransferItem(source.map((n) => n.uri.toString()).join("\r\n")),
+    );
+  }
+
+  async handleDrop(
+    target: FileNode | undefined,
+    dataTransfer: vscode.DataTransfer,
+  ): Promise<void> {
+    const root = this.rootPath;
+    if (!root) return;
+    const sources = (dataTransfer.get(DND_MIME)?.value as string[] | undefined) ?? [];
+    if (sources.length === 0) return;
+
+    const destDir = !target
+      ? root
+      : target.isDirectory
+        ? target.uri.fsPath
+        : path.dirname(target.uri.fsPath);
+    if (destDir !== root && !destDir.startsWith(root + path.sep)) return;
+
+    const failures: string[] = [];
+    for (const src of sources) {
+      if (src === root || !src.startsWith(root + path.sep)) continue;
+      if (destDir === src || destDir.startsWith(src + path.sep)) {
+        failures.push(`${path.basename(src)}: cannot move a folder into itself`);
+        continue;
+      }
+      const dest = path.join(destDir, path.basename(src));
+      if (dest === src) continue;
+      try {
+        let exists = true;
+        try {
+          await fs.promises.stat(dest);
+        } catch {
+          exists = false;
+        }
+        if (exists) {
+          failures.push(`${path.basename(src)}: already exists in destination`);
+          continue;
+        }
+        await fs.promises.rename(src, dest);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        failures.push(`${path.basename(src)}: ${msg}`);
+      }
+    }
+    if (failures.length > 0) {
+      vscode.window.showErrorMessage(
+        `Diffchestrator: Some items were not moved — ${failures.join("; ")}`,
+      );
+    }
+    this.refresh();
   }
 
   dispose(): void {
@@ -254,5 +468,6 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
     this._fsWatcher?.dispose();
     for (const d of this._disposables) d.dispose();
     this._onDidChangeTreeData.dispose();
+    this._onDidUpdateChanges.dispose();
   }
 }

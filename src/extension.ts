@@ -3,7 +3,7 @@ import { RepoManager } from "./services/repoManager";
 import { RepoTreeProvider } from "./providers/repoTreeProvider";
 import { ChangedFilesProvider } from "./providers/changedFilesProvider";
 import { escapeForTerminal } from "./utils/shell";
-import { CMD, VIEW_ACTIVE_REPOS, VIEW_REPOS, VIEW_CHANGED_FILES, BATCH_SMALL } from "./constants";
+import { CMD, CONFIG, VIEW_ACTIVE_REPOS, VIEW_REPOS, VIEW_CHANGED_FILES, BATCH_SMALL } from "./constants";
 import { registerScanCommands } from "./commands/scan";
 import { registerStageCommands, openNextPendingFile, openFileDiff } from "./commands/stage";
 import { registerCommitCommands } from "./commands/commit";
@@ -21,6 +21,7 @@ import { registerStashCommands } from "./commands/stash";
 import { registerResolveConflictsCommand } from "./commands/resolveConflicts";
 import { ActiveReposProvider } from "./providers/activeReposProvider";
 import { RepoFilesProvider } from "./providers/repoFilesProvider";
+import { RepoFilesDecorationProvider } from "./providers/repoFilesDecorationProvider";
 import { GitContentProvider } from "./providers/gitContentProvider";
 import { DiffWebviewPanel } from "./views/diffWebviewPanel";
 import { DashboardWebviewPanel } from "./views/dashboardWebviewPanel";
@@ -199,7 +200,10 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   const repoFilesView = vscode.window.createTreeView("diffchestrator.repoFiles", {
     treeDataProvider: repoFiles,
     showCollapseAll: true,
+    canSelectMany: true,
+    dragAndDropController: repoFiles,
   });
+  context.subscriptions.push(new RepoFilesDecorationProvider(repoFiles));
 
   // Keep the Repo Files view's title in sync with the selected repo so it's
   // always clear which tree you're looking at.
@@ -210,6 +214,27 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   };
   updateRepoFilesTitle();
   context.subscriptions.push(repoManager.onDidChangeSelection(updateRepoFilesTitle));
+
+  // Follow the active editor in the Files tree (like Explorer's autoReveal),
+  // but only while the view is already visible — reveal() would otherwise
+  // force the Diffchestrator container open on every editor switch.
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor(async (editor) => {
+      if (!editor || !repoFilesView.visible) return;
+      if (!vscode.workspace.getConfiguration().get<boolean>(CONFIG.filesAutoReveal, true)) return;
+      const root = repoManager.selectedRepo;
+      const uri = editor.document.uri;
+      if (!root || uri.scheme !== "file") return;
+      if (!uri.fsPath.startsWith(root + path.sep)) return;
+      const node = repoFiles.nodeForPath(uri.fsPath);
+      if (!node) return;
+      try {
+        await repoFilesView.reveal(node, { select: true, focus: false, expand: true });
+      } catch {
+        /* best-effort — never break editor switching */
+      }
+    }),
+  );
 
   // Track whether diffchestrator sidebar is actively visible (not just existing)
   let sidebarVisible = false;
@@ -1508,18 +1533,45 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   registerNav(CMD.prevTerminal, -1);
 
   // Repo Files tree — file operations
+  type FileOpNode = { uri: vscode.Uri; isDirectory?: boolean };
+  const fileOpTargets = (node?: FileOpNode, nodes?: FileOpNode[]): FileOpNode[] =>
+    (nodes?.length ? nodes : node ? [node] : []).filter((n) => !!n?.uri);
+  const showFileOpError = (action: string, err: unknown): void => {
+    const msg = err instanceof Error ? err.message : String(err);
+    vscode.window.showErrorMessage(`Diffchestrator: Failed to ${action}: ${msg}`);
+  };
+  /** Resolve a new-entry name against a directory, confined to the repo. */
+  const resolveNewEntryPath = (dir: string, name: string): string | undefined => {
+    const root = repoManager.selectedRepo ?? dir;
+    const target = path.resolve(dir, name);
+    if (target !== root && !target.startsWith(root + path.sep)) {
+      vscode.window.showErrorMessage("Diffchestrator: Path escapes the repository.");
+      return undefined;
+    }
+    return target;
+  };
+
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.fileDelete, async (node?: { uri: vscode.Uri }) => {
-      if (!node?.uri) return;
-      const fsPath = node.uri.fsPath;
-      const name = path.basename(fsPath);
+    vscode.commands.registerCommand(CMD.fileDelete, async (node?: FileOpNode, nodes?: FileOpNode[]) => {
+      const targets = fileOpTargets(node, nodes);
+      if (targets.length === 0) return;
+      const label =
+        targets.length === 1
+          ? `"${path.basename(targets[0].uri.fsPath)}"`
+          : `${targets.length} items`;
       const yes = await vscode.window.showWarningMessage(
-        `Delete "${name}"? This cannot be undone.`, { modal: true }, "Delete"
+        `Move ${label} to the trash?`, { modal: true }, "Move to Trash"
       );
-      if (yes !== "Delete") return;
-      await fs.promises.rm(fsPath, { recursive: true });
+      if (yes !== "Move to Trash") return;
+      for (const t of targets) {
+        try {
+          await vscode.workspace.fs.delete(t.uri, { recursive: true, useTrash: true });
+        } catch (err: unknown) {
+          showFileOpError(`delete ${path.basename(t.uri.fsPath)}`, err);
+        }
+      }
     }),
-    vscode.commands.registerCommand(CMD.fileRename, async (node?: { uri: vscode.Uri }) => {
+    vscode.commands.registerCommand(CMD.fileRename, async (node?: FileOpNode) => {
       if (!node?.uri) return;
       const oldPath = node.uri.fsPath;
       const oldName = path.basename(oldPath);
@@ -1527,48 +1579,101 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
         prompt: "New name",
         value: oldName,
         valueSelection: [0, oldName.lastIndexOf(".") > 0 ? oldName.lastIndexOf(".") : oldName.length],
+        validateInput: (v) => {
+          if (!v.trim()) return "Name is required";
+          if (v.includes("/") || v.includes("\\")) return "Name cannot contain path separators";
+          return undefined;
+        },
       });
       if (!newName || newName === oldName) return;
       const newPath = path.join(path.dirname(oldPath), newName);
-      await fs.promises.rename(oldPath, newPath);
+      try {
+        let exists = true;
+        try { await fs.promises.stat(newPath); } catch { exists = false; }
+        if (exists) {
+          vscode.window.showErrorMessage(`Diffchestrator: "${newName}" already exists.`);
+          return;
+        }
+        await fs.promises.rename(oldPath, newPath);
+      } catch (err: unknown) {
+        showFileOpError(`rename ${oldName}`, err);
+      }
     }),
-    vscode.commands.registerCommand(CMD.fileCopyPath, async (node?: { uri: vscode.Uri }) => {
-      if (!node?.uri) return;
-      await vscode.env.clipboard.writeText(node.uri.fsPath);
+    vscode.commands.registerCommand(CMD.fileCopyPath, async (node?: FileOpNode, nodes?: FileOpNode[]) => {
+      const targets = fileOpTargets(node, nodes);
+      if (targets.length === 0) return;
+      await vscode.env.clipboard.writeText(targets.map((t) => t.uri.fsPath).join("\n"));
     }),
-    vscode.commands.registerCommand(CMD.fileCopyRelativePath, async (node?: { uri: vscode.Uri }) => {
-      if (!node?.uri) return;
+    vscode.commands.registerCommand(CMD.fileCopyRelativePath, async (node?: FileOpNode, nodes?: FileOpNode[]) => {
+      const targets = fileOpTargets(node, nodes);
+      if (targets.length === 0) return;
       const root = repoManager.selectedRepo;
-      const rel = root ? path.relative(root, node.uri.fsPath) : node.uri.fsPath;
-      await vscode.env.clipboard.writeText(rel);
+      await vscode.env.clipboard.writeText(
+        targets
+          .map((t) => (root ? path.relative(root, t.uri.fsPath) : t.uri.fsPath))
+          .join("\n"),
+      );
     }),
-    vscode.commands.registerCommand(CMD.fileRevealInExplorer, async (node?: { uri: vscode.Uri }) => {
+    vscode.commands.registerCommand(CMD.fileRevealInExplorer, async (node?: FileOpNode) => {
       if (!node?.uri) return;
-      await vscode.commands.executeCommand("revealFileInOS", node.uri);
+      try {
+        await vscode.commands.executeCommand("revealFileInOS", node.uri);
+      } catch (err: unknown) {
+        showFileOpError("reveal in explorer", err);
+      }
     }),
-    vscode.commands.registerCommand(CMD.fileOpenTerminal, async (node?: { uri: vscode.Uri; isDirectory: boolean }) => {
+    vscode.commands.registerCommand(CMD.fileOpenTerminal, async (node?: FileOpNode) => {
       if (!node?.uri) return;
       const dir = node.isDirectory ? node.uri.fsPath : path.dirname(node.uri.fsPath);
       const terminal = vscode.window.createTerminal({ cwd: dir, name: path.basename(dir) });
       terminal.show();
     }),
-    vscode.commands.registerCommand(CMD.fileNewFile, async (node?: { uri: vscode.Uri; isDirectory: boolean }) => {
+    vscode.commands.registerCommand(CMD.fileNewFile, async (node?: FileOpNode) => {
       const root = repoManager.selectedRepo;
       if (!root && !node?.uri) return;
       const dir = node?.isDirectory ? node.uri.fsPath : node?.uri ? path.dirname(node.uri.fsPath) : root!;
-      const name = await vscode.window.showInputBox({ prompt: "File name" });
+      const name = await vscode.window.showInputBox({
+        prompt: "File name (use / to create inside new folders)",
+        validateInput: (v) => (v.trim() ? undefined : "Name is required"),
+      });
       if (!name) return;
-      const filePath = path.join(dir, name);
-      await fs.promises.writeFile(filePath, "");
-      await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(filePath));
+      const filePath = resolveNewEntryPath(dir, name);
+      if (!filePath) return;
+      try {
+        await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+        // wx: fail instead of truncating an existing file
+        await fs.promises.writeFile(filePath, "", { flag: "wx" });
+        await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(filePath));
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException)?.code === "EEXIST") {
+          vscode.window.showErrorMessage(`Diffchestrator: "${name}" already exists.`);
+        } else {
+          showFileOpError("create file", err);
+        }
+      }
     }),
-    vscode.commands.registerCommand(CMD.fileNewFolder, async (node?: { uri: vscode.Uri; isDirectory: boolean }) => {
+    vscode.commands.registerCommand(CMD.fileNewFolder, async (node?: FileOpNode) => {
       const root = repoManager.selectedRepo;
       if (!root && !node?.uri) return;
       const dir = node?.isDirectory ? node.uri.fsPath : node?.uri ? path.dirname(node.uri.fsPath) : root!;
-      const name = await vscode.window.showInputBox({ prompt: "Folder name" });
+      const name = await vscode.window.showInputBox({
+        prompt: "Folder name (use / for nested folders)",
+        validateInput: (v) => (v.trim() ? undefined : "Name is required"),
+      });
       if (!name) return;
-      await fs.promises.mkdir(path.join(dir, name), { recursive: true });
+      const folderPath = resolveNewEntryPath(dir, name);
+      if (!folderPath) return;
+      try {
+        await fs.promises.mkdir(folderPath, { recursive: true });
+      } catch (err: unknown) {
+        showFileOpError("create folder", err);
+      }
+    }),
+    vscode.commands.registerCommand(CMD.fileToggleIgnored, async () => {
+      const cfg = vscode.workspace.getConfiguration();
+      const current = cfg.get<boolean>(CONFIG.filesHideIgnored, false);
+      await cfg.update(CONFIG.filesHideIgnored, !current, vscode.ConfigurationTarget.Global);
+      // The provider refreshes itself via its onDidChangeConfiguration listener.
     }),
   );
 
