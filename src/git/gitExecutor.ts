@@ -84,11 +84,11 @@ export class GitExecutor {
   private async _run(
     args: string[],
     cwd: string,
-    opts?: { timeoutMs?: number }
+    opts?: { timeoutMs?: number; input?: string }
   ): Promise<RunResult> {
     await this._acquireSlot();
     try {
-      const { stdout, stderr } = await execFileAsync("git", args, {
+      const promise = execFileAsync("git", args, {
         cwd,
         maxBuffer: 10 * 1024 * 1024,
         timeout: opts?.timeoutMs ?? 30_000, // 30s default per operation
@@ -99,6 +99,11 @@ export class GitExecutor {
           GIT_OPTIONAL_LOCKS: "0", // status polling must not take index.lock
         },
       });
+      if (opts?.input !== undefined && promise.child.stdin) {
+        promise.child.stdin.write(opts.input);
+        promise.child.stdin.end();
+      }
+      const { stdout, stderr } = await promise;
       return { stdout, stderr, code: 0 };
     } catch (err: unknown) {
       const e = err as { stdout?: string; stderr?: string; code?: number };
@@ -879,9 +884,10 @@ export class GitExecutor {
     return { hash, author, date, summary };
   }
 
-  async grep(repoPath: string, query: string, maxResults = 100): Promise<{ file: string; line: number; text: string }[]> {
+  async grep(repoPath: string, query: string, maxResults = 100, subdir?: string): Promise<{ file: string; line: number; text: string }[]> {
+    if (subdir !== undefined) this._validateFilePath(repoPath, subdir);
     const result = await this._run(
-      ["grep", "-n", "-I", "--no-color", "-i", "-e", query, "--", ":!*.min.*", ":!*.lock"],
+      ["grep", "-n", "-I", "--no-color", "-i", "-e", query, "--", ...(subdir ? [subdir] : []), ":!*.min.*", ":!*.lock"],
       repoPath
     );
     // git grep exits 1 when no matches — not an error
@@ -904,6 +910,25 @@ export class GitExecutor {
       if (matches.length >= maxResults) break;
     }
     return matches;
+  }
+
+  /**
+   * Which of the given repo-relative paths are gitignored. Exit code 1 means
+   * "none ignored" (not an error), so an empty result is the common case.
+   */
+  async checkIgnore(repoPath: string, paths: string[]): Promise<Set<string>> {
+    const ignored = new Set<string>();
+    if (paths.length === 0) return ignored;
+    for (const p of paths) this._validateFilePath(repoPath, p);
+    // -z requires --stdin; with both, input and output are NUL-separated and
+    // output paths are echoed verbatim (no C-quoting).
+    const result = await this._run(["check-ignore", "--stdin", "-z"], repoPath, {
+      input: paths.join("\0") + "\0",
+    });
+    for (const p of result.stdout.split("\0")) {
+      if (p) ignored.add(p);
+    }
+    return ignored;
   }
 
   async listFiles(repoPath: string, query?: string): Promise<string[]> {
