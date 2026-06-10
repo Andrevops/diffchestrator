@@ -2,6 +2,14 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.81.1
+
+### Bug Fixes
+- Watch out-of-workspace repos with Uri-based pattern
+
+### Other
+- Pin @vscode/vsce as devDependency
+
 ## 0.81.0
 
 ### Bug Fixes
