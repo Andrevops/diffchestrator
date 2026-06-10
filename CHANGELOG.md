@@ -2,6 +2,12 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.82.0
+
+### Features
+- Decorations, auto-reveal, git actions, DnD, safer file ops
+- Check-ignore batching, folder-scoped grep, stdin support
+
 ## 0.81.1
 
 ### Bug Fixes
