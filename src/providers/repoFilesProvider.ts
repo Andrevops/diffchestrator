@@ -39,6 +39,14 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
         this._changedFiles.clear();
         this._onDidChangeTreeData.fire();
       }),
+      // Fallback for mounts where native file watching is unreliable (e.g.
+      // Windows-side writes on WSL drvfs): in-editor saves always refresh.
+      vscode.workspace.onDidSaveTextDocument((doc) => {
+        const root = this._repoManager.selectedRepo;
+        if (!root || doc.uri.scheme !== "file") return;
+        const p = doc.uri.fsPath;
+        if (p === root || p.startsWith(root + path.sep)) this._scheduleRefresh(doc.uri);
+      }),
     );
     this._watchSelectedRepo();
   }
@@ -50,7 +58,10 @@ export class RepoFilesProvider implements vscode.TreeDataProvider<FileNode>, vsc
     const root = this._repoManager.selectedRepo;
     if (!root) return;
 
-    const pattern = new vscode.RelativePattern(root, "**/*");
+    // Base must be a Uri: with a string base, createFileSystemWatcher only
+    // reports events for paths inside the opened workspace folders, and
+    // selected repos are deliberately never workspace folders.
+    const pattern = new vscode.RelativePattern(vscode.Uri.file(root), "**/*");
     this._fsWatcher = vscode.workspace.createFileSystemWatcher(pattern);
 
     this._fsWatcher.onDidCreate((uri) => this._scheduleRefresh(uri));
