@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.84.0
+
+### Features
+- Full-text search panel for the selected repo
+
 ## 0.83.0
 
 ### Features
