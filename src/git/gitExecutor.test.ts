@@ -642,3 +642,96 @@ describe("GitExecutor shortStatus dedup", () => {
     assert.strictEqual(n, 2);
   });
 });
+
+describe("GitExecutor grepSearch", () => {
+  function captureExecutor(stdout = "", code = 0, stderr = "") {
+    const executor = new GitExecutor();
+    const calls: string[][] = [];
+    (executor as any)._run = async (args: string[]) => {
+      calls.push(args);
+      return { stdout, stderr, code };
+    };
+    return { executor, calls };
+  }
+
+  test("defaults: literal, case-insensitive, untracked, with column", async () => {
+    const { executor, calls } = captureExecutor();
+    await executor.grepSearch("/tmp/repo-gs1", "needle");
+    const args = calls[0];
+    assert.ok(args.includes("--untracked"), "must search untracked files");
+    assert.ok(args.includes("--column"), "must report match columns");
+    assert.ok(args.includes("-F"), "literal search by default");
+    assert.ok(args.includes("-i"), "case-insensitive by default");
+    assert.ok(!args.includes("-E"));
+    assert.ok(!args.includes("-w"));
+    // Query passed via -e so leading-dash queries are safe
+    assert.strictEqual(args[args.indexOf("-e") + 1], "needle");
+  });
+
+  test("options map to git flags and pathspecs", async () => {
+    const { executor, calls } = captureExecutor();
+    await executor.grepSearch("/tmp/repo-gs2", "nee(dle)?", {
+      caseSensitive: true,
+      regex: true,
+      wholeWord: true,
+      include: ["src", "*.ts"],
+      exclude: ["*.test.ts"],
+    });
+    const args = calls[0];
+    assert.ok(args.includes("-E"), "regex mode uses extended regex");
+    assert.ok(!args.includes("-F"));
+    assert.ok(!args.includes("-i"), "case-sensitive drops -i");
+    assert.ok(args.includes("-w"));
+    const sep = args.indexOf("--");
+    assert.deepStrictEqual(args.slice(sep + 1), ["src", "*.ts", ":!*.test.ts"]);
+  });
+
+  test("parses file:line:column:text output", async () => {
+    const stdout = [
+      "src/a.ts:10:5:const needle = 1;",
+      "src/b.ts:2:1:needle: true,",
+      "",
+    ].join("\n");
+    const { executor } = captureExecutor(stdout);
+    const { matches, truncated } = await executor.grepSearch("/tmp/repo-gs3", "needle");
+    assert.strictEqual(truncated, false);
+    assert.deepStrictEqual(matches[0], {
+      file: "src/a.ts", line: 10, column: 5, text: "const needle = 1;",
+    });
+    assert.deepStrictEqual(matches[1], {
+      file: "src/b.ts", line: 2, column: 1, text: "needle: true,",
+    });
+  });
+
+  test("truncates at maxResults", async () => {
+    const stdout = Array.from({ length: 10 }, (_, i) => `f.ts:${i + 1}:1:x`).join("\n");
+    const { executor } = captureExecutor(stdout);
+    const { matches, truncated } = await executor.grepSearch("/tmp/repo-gs4", "x", {
+      maxResults: 5,
+    });
+    assert.strictEqual(matches.length, 5);
+    assert.strictEqual(truncated, true);
+  });
+
+  test("windows very long lines around the match", async () => {
+    const long = "a".repeat(1000) + "NEEDLE" + "b".repeat(1000);
+    const { executor } = captureExecutor(`min.js:1:1001:${long}`);
+    const { matches } = await executor.grepSearch("/tmp/repo-gs5", "NEEDLE");
+    assert.ok(matches[0].text.length < 400, "long line must be windowed");
+    assert.ok(matches[0].text.includes("NEEDLE"), "window must contain the match");
+  });
+
+  test("exit 1 with no stderr is no-matches, not an error", async () => {
+    const { executor } = captureExecutor("", 1);
+    const { matches } = await executor.grepSearch("/tmp/repo-gs6", "nothing");
+    assert.deepStrictEqual(matches, []);
+  });
+
+  test("git errors (e.g. invalid regex) are surfaced", async () => {
+    const { executor } = captureExecutor("", 128, "fatal: command line: unmatched ( or \\(");
+    await assert.rejects(
+      () => executor.grepSearch("/tmp/repo-gs7", "bad(", { regex: true }),
+      { message: /unmatched/ }
+    );
+  });
+});

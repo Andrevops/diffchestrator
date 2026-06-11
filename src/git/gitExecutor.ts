@@ -14,6 +14,25 @@ interface RunResult {
   code: number;
 }
 
+export interface GrepSearchOptions {
+  caseSensitive?: boolean;
+  /** Treat query as POSIX extended regex; literal (fixed-string) otherwise. */
+  regex?: boolean;
+  wholeWord?: boolean;
+  /** Pathspecs to include (e.g. "src", "*.ts"). */
+  include?: string[];
+  /** Pathspecs to exclude (negated automatically). */
+  exclude?: string[];
+  maxResults?: number;
+}
+
+export interface GrepSearchMatch {
+  file: string;
+  line: number;
+  column: number;
+  text: string;
+}
+
 interface ShortStatusResult {
   staged: number;
   unstaged: number;
@@ -990,7 +1009,7 @@ export class GitExecutor {
   async grep(repoPath: string, query: string, maxResults = 100, subdir?: string): Promise<{ file: string; line: number; text: string }[]> {
     if (subdir !== undefined) this._validateFilePath(repoPath, subdir);
     const result = await this._run(
-      ["grep", "-n", "-I", "--no-color", "-i", "-e", query, "--", ...(subdir ? [subdir] : []), ":!*.min.*", ":!*.lock"],
+      ["grep", "-n", "-I", "--no-color", "-i", "--untracked", "-e", query, "--", ...(subdir ? [subdir] : []), ":!*.min.*", ":!*.lock"],
       repoPath
     );
     // git grep exits 1 when no matches — not an error
@@ -1013,6 +1032,70 @@ export class GitExecutor {
       if (matches.length >= maxResults) break;
     }
     return matches;
+  }
+
+  /**
+   * Full-featured content search for the search panel. Unlike grep(), this
+   * searches untracked files, defaults to literal (fixed-string) matching,
+   * reports match columns, and surfaces git errors (e.g. invalid regex)
+   * instead of swallowing them.
+   */
+  async grepSearch(
+    repoPath: string,
+    query: string,
+    opts: GrepSearchOptions = {}
+  ): Promise<{ matches: GrepSearchMatch[]; truncated: boolean }> {
+    const max = opts.maxResults ?? 2000;
+    const args = ["grep", "-n", "--column", "-I", "--no-color", "--untracked"];
+    if (!opts.caseSensitive) args.push("-i");
+    args.push(opts.regex ? "-E" : "-F");
+    if (opts.wholeWord) args.push("-w");
+    args.push("-e", query, "--");
+    for (const inc of opts.include ?? []) args.push(inc);
+    for (const exc of opts.exclude ?? []) args.push(`:!${exc}`);
+
+    const result = await this._run(args, repoPath);
+    // Exit 1 with empty stderr = no matches; anything else is a real error
+    // (invalid regex, bad pathspec) the caller should show to the user.
+    if (result.code !== 0 && result.code !== 1) {
+      throw new Error(result.stderr.trim() || "git grep failed");
+    }
+    if (result.code === 1 && result.stderr.trim()) {
+      throw new Error(result.stderr.trim());
+    }
+
+    const matches: GrepSearchMatch[] = [];
+    let truncated = false;
+    for (const l of result.stdout.split("\n")) {
+      if (!l) continue;
+      if (matches.length >= max) {
+        truncated = true;
+        break;
+      }
+      // Format: file:line:column:text
+      const c1 = l.indexOf(":");
+      if (c1 < 0) continue;
+      const c2 = l.indexOf(":", c1 + 1);
+      if (c2 < 0) continue;
+      const c3 = l.indexOf(":", c2 + 1);
+      if (c3 < 0) continue;
+      const file = l.slice(0, c1);
+      const line = parseInt(l.slice(c1 + 1, c2), 10);
+      const column = parseInt(l.slice(c2 + 1, c3), 10);
+      if (isNaN(line) || isNaN(column)) continue;
+      let text = l.slice(c3 + 1);
+      // Window very long lines (minified files) around the match so the
+      // webview always renders the matched portion.
+      if (text.length > 400) {
+        const start = Math.max(0, column - 1 - 80);
+        text =
+          (start > 0 ? "…" : "") +
+          text.slice(start, start + 360) +
+          (start + 360 < text.length ? "…" : "");
+      }
+      matches.push({ file, line, column, text });
+    }
+    return { matches, truncated };
   }
 
   /**

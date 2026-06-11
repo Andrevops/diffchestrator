@@ -129,6 +129,21 @@ export type DashboardMessage =
   | { type: "updateSetting"; key: string; value: unknown }
   | { type: "addScanRootFromSettings" };
 
+// Search webview message types (webview → extension)
+export type SearchWebviewMessage =
+  | { type: "ready" }
+  | {
+      type: "search";
+      requestId: number;
+      query: string;
+      caseSensitive: boolean;
+      regex: boolean;
+      wholeWord: boolean;
+      include: string;
+      exclude: string;
+    }
+  | { type: "openMatch"; file: string; line: number; column: number };
+
 // Diff webview message types (webview → extension)
 export type DiffWebviewMessage =
   | { type: "ready" }

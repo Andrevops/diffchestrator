@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:dashboard": "tsc -b && vite build --config vite.dashboard.config.ts"
+    "build:dashboard": "tsc -b && vite build --config vite.dashboard.config.ts",
+    "build:search": "tsc -b && vite build --config vite.search.config.ts"
   },
   "dependencies": {
     "react": "^19.1.0",

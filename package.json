@@ -132,6 +132,12 @@
         "icon": "$(search)"
       },
       {
+        "command": "diffchestrator.searchPanel",
+        "title": "Find in Repo Files",
+        "category": "Diffchestrator",
+        "icon": "$(search-view-icon)"
+      },
+      {
         "command": "diffchestrator.grepActiveRepos",
         "title": "Search Active Repos",
         "category": "Diffchestrator",
@@ -814,6 +820,11 @@
           "group": "1_actions@10"
         },
         {
+          "command": "diffchestrator.searchPanel",
+          "when": "viewItem == repo || viewItem == repo-conflicted",
+          "group": "1_actions@11"
+        },
+        {
           "command": "diffchestrator.searchInRepo",
           "when": "viewItem == repo || viewItem == repo-conflicted",
           "group": "1_actions@9"
@@ -1045,6 +1056,11 @@
         "command": "diffchestrator.grepInRepo",
         "key": "alt+d /",
         "mac": "alt+d /"
+      },
+      {
+        "command": "diffchestrator.searchPanel",
+        "key": "alt+d shift+f",
+        "mac": "alt+d shift+f"
       },
       {
         "command": "diffchestrator.grepActiveRepos",
@@ -1397,6 +1413,7 @@
         "diffchestrator.toggleBlame",
         "diffchestrator.favoriteCurrent",
         "diffchestrator.grepInRepo",
+        "diffchestrator.searchPanel",
         "diffchestrator.grepActiveRepos",
         "diffchestrator.grepAllRepos",
         "diffchestrator.searchInRepo",
@@ -1428,7 +1445,7 @@
     }
   },
   "scripts": {
-    "build:webview": "cd webview-ui && npm run build && npm run build:dashboard",
+    "build:webview": "cd webview-ui && npm run build && npm run build:dashboard && npm run build:search",
     "compile": "node esbuild.mjs",
     "build": "npm run build:webview && node esbuild.mjs --production",
     "watch": "node esbuild.mjs --watch",

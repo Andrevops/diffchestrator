@@ -47,9 +47,11 @@ make publish-openvsx      # Open VSX only
 - `src/services/repoManager.ts` — central state, MRU, events, refresh logic
 - `src/views/dashboardWebviewPanel.ts` — dashboard webview with message protocol
 - `src/views/diffWebviewPanel.ts` — multi-repo diff webview
+- `src/views/searchWebviewPanel.ts` — full-text search panel for the selected repo
 - `src/commands/` — command handlers (one file per feature)
 - `src/providers/` — tree data providers for sidebar views
 - `webview-ui/src/dashboard/` — React dashboard (separate Vite build → `dist/webview-dashboard/`)
+- `webview-ui/src/search/` — React search panel (separate Vite build → `dist/webview-search/`)
 - `webview-ui/src/App.tsx` — React diff viewer (Vite build → `dist/webview/`)
 
 ## Conventions
@@ -83,7 +85,7 @@ Message protocol: webview sends `{ type, ...payload }`, panel handles in `_handl
 ## Important Notes
 
 - `make install` excludes `*-openvsx.vsix` files (installs Marketplace build only)
-- Dashboard and diff webview are separate Vite builds with separate configs
+- Dashboard, diff, and search webviews are separate Vite builds with separate configs
 - `RepoTreeProvider` implements `Disposable` — must be pushed to `context.subscriptions`
 - GitExecutor has metadata cache (30s TTL) for `getRemoteUrl`, `stashCount`, `lastCommitDate`
 - Health scores computed in Phase 1: `100 - changesPenalty - syncPenalty - stashPenalty`

@@ -3,6 +3,7 @@ import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD, BATCH_SMALL, BATCH_LARGE } from "../constants";
 import { resolveRepoPath } from "../utils/fileItem";
+import { SearchWebviewPanel } from "../views/searchWebviewPanel";
 
 /**
  * Pick a codicon per file type as a coarse approximation of Ctrl+P's icon
@@ -309,6 +310,18 @@ export function registerFileSearchCommand(
 
     quickPick.show();
   }
+
+  // Full search panel for the selected repo (out-of-workspace safe)
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.searchPanel, (item?: any) => {
+      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
+      if (!repoPath) {
+        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
+        return;
+      }
+      SearchWebviewPanel.createOrShow(context.extensionUri, repoManager, repoPath);
+    })
+  );
 
   // Search in selected repo
   context.subscriptions.push(

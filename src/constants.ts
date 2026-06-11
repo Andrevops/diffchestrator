@@ -39,6 +39,7 @@ export const CMD = {
   toggleBlame: "diffchestrator.toggleBlame",
   favoriteCurrent: "diffchestrator.favoriteCurrent",
   searchInRepo: "diffchestrator.searchInRepo",
+  searchPanel: "diffchestrator.searchPanel",
   grepInRepo: "diffchestrator.grepInRepo",
   grepActiveRepos: "diffchestrator.grepActiveRepos",
   grepAllRepos: "diffchestrator.grepAllRepos",
