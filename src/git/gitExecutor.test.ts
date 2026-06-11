@@ -423,3 +423,222 @@ describe("GitExecutor Meta Cache", () => {
     assert.strictEqual((executor as any)._getCachedMeta("fresh:key"), "value");
   });
 });
+
+describe("GitExecutor Negative-Result Caching", () => {
+  function countingExecutor(stdout: string, code = 0): { executor: GitExecutor; calls: () => number } {
+    const executor = new GitExecutor();
+    let n = 0;
+    (executor as any)._run = async () => {
+      n++;
+      return { stdout, stderr: "", code };
+    };
+    return { executor, calls: () => n };
+  }
+
+  test("getRemoteUrl caches a no-remote result — second call does not re-spawn", async () => {
+    const { executor, calls } = countingExecutor("", 2); // `remote get-url` fails when no origin
+    assert.strictEqual(await executor.getRemoteUrl("/tmp/no-remote"), undefined);
+    assert.strictEqual(await executor.getRemoteUrl("/tmp/no-remote"), undefined);
+    assert.strictEqual(calls(), 1, "second call should hit the cache");
+  });
+
+  test("lastCommitDate caches an empty result — second call does not re-spawn", async () => {
+    const { executor, calls } = countingExecutor("");
+    assert.strictEqual(await executor.lastCommitDate("/tmp/no-commits"), undefined);
+    assert.strictEqual(await executor.lastCommitDate("/tmp/no-commits"), undefined);
+    assert.strictEqual(calls(), 1, "second call should hit the cache");
+  });
+
+  test("stashCount caches zero — second call does not re-spawn", async () => {
+    const { executor, calls } = countingExecutor("");
+    assert.strictEqual(await executor.stashCount("/tmp/no-stash"), 0);
+    assert.strictEqual(await executor.stashCount("/tmp/no-stash"), 0);
+    assert.strictEqual(calls(), 1, "second call should hit the cache");
+  });
+
+  test("stashCount still returns and caches a real count", async () => {
+    const { executor, calls } = countingExecutor("stash@{0}: WIP\nstash@{1}: WIP\n");
+    assert.strictEqual(await executor.stashCount("/tmp/with-stash"), 2);
+    assert.strictEqual(await executor.stashCount("/tmp/with-stash"), 2);
+    assert.strictEqual(calls(), 1);
+  });
+
+  test("invalidateMetaCache clears cached negative results", async () => {
+    const { executor, calls } = countingExecutor("", 2);
+    await executor.getRemoteUrl("/tmp/no-remote2");
+    executor.invalidateMetaCache("/tmp/no-remote2");
+    await executor.getRemoteUrl("/tmp/no-remote2");
+    assert.strictEqual(calls(), 2, "invalidation should force a re-spawn");
+  });
+});
+
+describe("GitExecutor Per-Repo Mutation Mutex", () => {
+  function deferredExecutor(): {
+    executor: GitExecutor;
+    events: string[];
+    release: () => void;
+  } {
+    const executor = new GitExecutor();
+    const events: string[] = [];
+    let pending: (() => void)[] = [];
+    (executor as any)._run = async (args: string[], cwd: string) => {
+      events.push(`start:${cwd}`);
+      await new Promise<void>((resolve) => pending.push(resolve));
+      events.push(`end:${cwd}`);
+      return { stdout: "", stderr: "", code: 0 };
+    };
+    return {
+      executor,
+      events,
+      release: () => {
+        const fns = pending;
+        pending = [];
+        for (const fn of fns) fn();
+      },
+    };
+  }
+
+  test("two pulls on the same repo run sequentially", async () => {
+    const { executor, events, release } = deferredExecutor();
+    const p1 = executor.pull("/tmp/repo-a");
+    const p2 = executor.pull("/tmp/repo-a");
+    await new Promise((r) => setImmediate(r));
+    assert.deepStrictEqual(events, ["start:/tmp/repo-a"], "second pull must wait for the first");
+    release();
+    await p1;
+    await new Promise((r) => setImmediate(r));
+    release();
+    await p2;
+    assert.deepStrictEqual(events, [
+      "start:/tmp/repo-a",
+      "end:/tmp/repo-a",
+      "start:/tmp/repo-a",
+      "end:/tmp/repo-a",
+    ]);
+  });
+
+  test("pulls on different repos run in parallel", async () => {
+    const { executor, events, release } = deferredExecutor();
+    const p1 = executor.pull("/tmp/repo-a");
+    const p2 = executor.pull("/tmp/repo-b");
+    await new Promise((r) => setImmediate(r));
+    assert.deepStrictEqual(events, ["start:/tmp/repo-a", "start:/tmp/repo-b"]);
+    release();
+    await Promise.all([p1, p2]);
+  });
+
+  test("a throwing op releases the lock for the next op", async () => {
+    const executor = new GitExecutor();
+    let call = 0;
+    (executor as any)._run = async () => {
+      call++;
+      return call === 1
+        ? { stdout: "", stderr: "boom", code: 1 }
+        : { stdout: "ok", stderr: "", code: 0 };
+    };
+    await assert.rejects(() => executor.pull("/tmp/repo-c"), { message: /boom/ });
+    // Lock must not deadlock after the rejection
+    assert.strictEqual(await executor.pull("/tmp/repo-c"), "ok");
+    assert.strictEqual((executor as any)._repoLocks.size, 0, "lock map should be cleared on settle");
+  });
+
+  test("reads are not serialized behind a mutation", async () => {
+    const { executor, events, release } = deferredExecutor();
+    const p1 = executor.pull("/tmp/repo-d");
+    const p2 = executor.getBranch("/tmp/repo-d"); // read — must not queue behind pull
+    await new Promise((r) => setImmediate(r));
+    assert.strictEqual(events.filter((e) => e.startsWith("start:")).length, 2);
+    release();
+    await Promise.all([p1, p2]);
+  });
+});
+
+describe("GitExecutor ignoredPaths", () => {
+  test("parses NUL-separated output with directory trailing slashes", async () => {
+    const executor = new GitExecutor();
+    (executor as any)._run = async () => ({
+      stdout: "node_modules/\0dist/\0.env\0sub dir/secret file.txt\0",
+      stderr: "",
+      code: 0,
+    });
+    const ignored = await executor.ignoredPaths("/tmp/repo-ign1");
+    assert.deepStrictEqual(
+      [...ignored].sort(),
+      [".env", "dist/", "node_modules/", "sub dir/secret file.txt"],
+    );
+  });
+
+  test("returns empty set for clean output and on failure", async () => {
+    const ok = new GitExecutor();
+    (ok as any)._run = async () => ({ stdout: "", stderr: "", code: 0 });
+    assert.strictEqual((await ok.ignoredPaths("/tmp/repo-ign2")).size, 0);
+
+    const bad = new GitExecutor();
+    (bad as any)._run = async () => ({ stdout: "x/\0", stderr: "fatal", code: 128 });
+    assert.strictEqual((await bad.ignoredPaths("/tmp/repo-ign3")).size, 0);
+  });
+
+  test("caches per repo and invalidateMetaCache clears it", async () => {
+    const executor = new GitExecutor();
+    let n = 0;
+    (executor as any)._run = async () => {
+      n++;
+      return { stdout: "dist/\0", stderr: "", code: 0 };
+    };
+    await executor.ignoredPaths("/tmp/repo-ign4");
+    await executor.ignoredPaths("/tmp/repo-ign4");
+    assert.strictEqual(n, 1, "second call should hit the cache");
+    executor.invalidateMetaCache("/tmp/repo-ign4");
+    await executor.ignoredPaths("/tmp/repo-ign4");
+    assert.strictEqual(n, 2, "invalidation should force a re-run");
+  });
+
+  test("concurrent calls share one in-flight process", async () => {
+    const executor = new GitExecutor();
+    let n = 0;
+    (executor as any)._run = async () => {
+      n++;
+      await new Promise((r) => setImmediate(r));
+      return { stdout: "dist/\0", stderr: "", code: 0 };
+    };
+    const [a, b] = await Promise.all([
+      executor.ignoredPaths("/tmp/repo-ign5"),
+      executor.ignoredPaths("/tmp/repo-ign5"),
+    ]);
+    assert.strictEqual(n, 1);
+    assert.strictEqual(a, b, "both callers should get the same set");
+  });
+});
+
+describe("GitExecutor shortStatus dedup", () => {
+  test("concurrent shortStatus calls for one repo share one process", async () => {
+    const executor = new GitExecutor();
+    let n = 0;
+    (executor as any)._run = async () => {
+      n++;
+      await new Promise((r) => setImmediate(r));
+      return { stdout: "# branch.head main\0", stderr: "", code: 0 };
+    };
+    const [a, b, c] = await Promise.all([
+      executor.shortStatus("/tmp/repo-ss1"),
+      executor.shortStatus("/tmp/repo-ss1"),
+      executor.shortStatus("/tmp/repo-ss1"),
+    ]);
+    assert.strictEqual(n, 1, "watcher + tick + post-command bursts must share one spawn");
+    assert.strictEqual(a.branch, "main");
+    assert.strictEqual(b.branch, "main");
+    assert.strictEqual(c.branch, "main");
+  });
+
+  test("sequential shortStatus calls each run (no TTL cache)", async () => {
+    const executor = new GitExecutor();
+    let n = 0;
+    (executor as any)._run = async () => {
+      n++;
+      return { stdout: "# branch.head main\0", stderr: "", code: 0 };
+    };
+    await executor.shortStatus("/tmp/repo-ss2");
+    await executor.shortStatus("/tmp/repo-ss2");
+    assert.strictEqual(n, 2);
+  });
+});

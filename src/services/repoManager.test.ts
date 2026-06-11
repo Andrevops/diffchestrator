@@ -1,7 +1,9 @@
-import { test, describe, before, beforeEach } from "node:test";
+import { test, describe, before, beforeEach, afterEach } from "node:test";
 import * as assert from "node:assert";
 import type * as vscode from "vscode";
 import { RepoManager } from "./repoManager.ts";
+import { Scanner } from "../git/scanner.ts";
+import type { RepoSummary } from "../types.ts";
 
 /** In-memory Memento for state persistence tests. */
 function makeState(initial: Record<string, unknown> = {}): vscode.Memento {
@@ -149,6 +151,60 @@ describe("RepoManager", () => {
       assert.strictEqual(rm.activeTagFilter, "frontend");
       rm.setTagFilter(undefined);
       assert.strictEqual(rm.activeTagFilter, undefined);
+    });
+  });
+
+  describe("scan epoch guard", () => {
+    const origScanFast = Scanner.prototype.scanFast;
+    const origFetchMetadata = Scanner.prototype.fetchMetadata;
+
+    const makeRepo = (p: string): RepoSummary => ({
+      path: p,
+      name: p.split("/").pop() ?? p,
+      branch: "main",
+      stagedCount: 0,
+      unstagedCount: 0,
+      untrackedCount: 0,
+      totalChanges: 0,
+      ahead: 0,
+      behind: 0,
+      headOid: "",
+      stashCount: 0,
+    });
+
+    afterEach(() => {
+      Scanner.prototype.scanFast = origScanFast;
+      Scanner.prototype.fetchMetadata = origFetchMetadata;
+    });
+
+    test("superseded scan does not merge its Phase-1 repos into the newer scan's root", async () => {
+      // Root1's scanFast is slow; root2's resolves immediately. Without the
+      // Phase-1 epoch guard, root1's late result would insert ghost repos
+      // into _repos after root2 already owns it.
+      Scanner.prototype.scanFast = async function (rootPath: string): Promise<RepoSummary[]> {
+        if (rootPath === "/root1") {
+          await new Promise((r) => setTimeout(r, 50));
+          return [makeRepo("/root1/alpha"), makeRepo("/root1/beta")];
+        }
+        return [makeRepo("/root2/gamma")];
+      };
+      Scanner.prototype.fetchMetadata = async () => {};
+
+      const rm = new RepoManager(makeState());
+      try {
+        const scan1 = rm.scan("/root1");
+        const scan2 = rm.scan("/root2");
+        await Promise.all([scan1, scan2]);
+
+        assert.strictEqual(rm.currentRoot, "/root2");
+        assert.deepStrictEqual(
+          rm.allRepos.map((r) => r.path).sort(),
+          ["/root2/gamma"],
+          "stale root1 repos must not leak into root2's repo map"
+        );
+      } finally {
+        rm.dispose(); // clears the auto-refresh interval started by scan()
+      }
     });
   });
 

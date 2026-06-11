@@ -122,6 +122,7 @@ export class DashboardWebviewPanel {
   private _updateThrottleTimer: ReturnType<typeof setTimeout> | undefined;
   private _updateInProgress = false;
   private _updateGeneration = 0;
+  private _pendingWhileHidden = false;
   private _disposed = false;
 
   static createOrShow(
@@ -182,6 +183,26 @@ export class DashboardWebviewPanel {
 
     this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
+    // Pause refreshes while hidden (retainContextWhenHidden keeps the panel
+    // alive, so without this every repo change would spawn N-3N git processes
+    // for an invisible dashboard). Catch up once when it becomes visible.
+    this._panel.onDidChangeViewState(
+      () => {
+        if (this._disposed) return;
+        const visible = this._panel.visible;
+        this._repoManager.setDashboardVisible(visible);
+        if (visible && this._pendingWhileHidden) {
+          this._pendingWhileHidden = false;
+          void this._update();
+        }
+      },
+      null,
+      this._disposables
+    );
+
+    // Panel is created visible
+    this._repoManager.setDashboardVisible(true);
+
     // Throttled auto-refresh on repo changes
     this._repoManager.onDidChangeRepos(
       () => this._scheduleUpdate(),
@@ -192,6 +213,10 @@ export class DashboardWebviewPanel {
 
   private _scheduleUpdate(): void {
     if (this._disposed || this._updateThrottleTimer || this._updateInProgress) return;
+    if (!this._panel.visible) {
+      this._pendingWhileHidden = true;
+      return;
+    }
     this._updateThrottleTimer = setTimeout(async () => {
       this._updateThrottleTimer = undefined;
       if (this._updateInProgress) return;
@@ -243,6 +268,10 @@ export class DashboardWebviewPanel {
 
   private async _update(): Promise<void> {
     if (this._disposed) return;
+    if (!this._panel.visible) {
+      this._pendingWhileHidden = true;
+      return;
+    }
     // Generation counter: overlapping _update runs (handlers call this directly,
     // bypassing the throttle guard) must not post stale Phase-2 data after a
     // newer run's Phase-1 data.
@@ -725,6 +754,9 @@ export class DashboardWebviewPanel {
         const validate = UPDATABLE_SETTINGS[key];
         if (!validate || !validate(value)) {
           console.warn(`[Diffchestrator] Dashboard: rejected updateSetting for ${key}`);
+          // The webview optimistically updated its local state — resync it so
+          // the form doesn't show a value the config never accepted.
+          this._postSettings();
           break;
         }
         const cfg = vscode.workspace.getConfiguration("diffchestrator");
@@ -758,6 +790,7 @@ export class DashboardWebviewPanel {
   dispose(): void {
     this._disposed = true;
     DashboardWebviewPanel.currentPanel = undefined;
+    this._repoManager.setDashboardVisible(false);
     if (this._updateThrottleTimer) {
       clearTimeout(this._updateThrottleTimer);
     }

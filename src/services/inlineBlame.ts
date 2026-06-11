@@ -26,6 +26,8 @@ export class InlineBlameService implements vscode.Disposable {
   private _blameCache = new Map<string, BlameCacheEntry>();
   private static readonly BLAME_CACHE_TTL = 30_000; // 30s
   private static readonly BLAME_CACHE_MAX = 200;
+  /** Monotonic request sequence — stale async results must not overwrite newer ones */
+  private _blameSeq = 0;
 
   constructor(private _repoManager: RepoManager) {
     this._git = _repoManager.git;
@@ -114,6 +116,9 @@ export class InlineBlameService implements vscode.Disposable {
 
   private async _updateBlame(editor: vscode.TextEditor): Promise<void> {
     if (!this._enabled) return;
+    // Sequence guard: a slow `git blame` must not overwrite the decoration
+    // set by a newer (e.g. cache-hit) request, or write to a stale editor.
+    const seq = ++this._blameSeq;
 
     const doc = editor.document;
     // Only for file:// URIs
@@ -158,11 +163,17 @@ export class InlineBlameService implements vscode.Disposable {
       }
 
       const blame = await this._git.blame(repoPath, relativePath, line);
+      // Result is still valid for the cache, but a newer request (or editor
+      // switch) owns the decoration now — don't overwrite it with stale data.
+      const stale = seq !== this._blameSeq || editor !== vscode.window.activeTextEditor;
       if (!blame || blame.hash.startsWith("0000000")) {
         this._setCacheEntry(cacheKey, null);
+        if (stale) return;
         editor.setDecorations(this._decorationType, []);
         return;
       }
+      this._setCacheEntry(cacheKey, blame);
+      if (stale) return;
 
       const decoration: vscode.DecorationOptions = {
         range: new vscode.Range(line - 1, 0, line - 1, 0),
@@ -173,9 +184,9 @@ export class InlineBlameService implements vscode.Disposable {
         },
       };
 
-      this._setCacheEntry(cacheKey, blame);
       editor.setDecorations(this._decorationType, [decoration]);
     } catch {
+      if (seq !== this._blameSeq || editor !== vscode.window.activeTextEditor) return;
       editor.setDecorations(this._decorationType, []);
     }
   }

@@ -207,4 +207,42 @@ export function registerStageCommands(
       }
     })
   );
+
+  // Stage/unstage the file currently open in the editor (editor title bar buttons)
+  // Delegates to the same stageFile/unstageFile commands used by the sidebar tree,
+  // resolving the file path from the active editor first.
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.stageCurrentFile, async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+      const repoPath = repoManager.selectedRepo;
+      if (!repoPath) return;
+      const absFile = editor.document.uri.fsPath;
+      const rel = path.relative(repoPath, absFile);
+      if (rel.startsWith("..")) return;
+      try {
+        await git.stage(repoPath, [rel]);
+        await repoManager.refreshRepo(repoPath);
+        await openNextPendingFile(git, repoPath, rel);
+      } catch (err: unknown) {
+        vscode.window.showErrorMessage(`Failed to stage: ${err instanceof Error ? err.message : err}`);
+      }
+    }),
+    vscode.commands.registerCommand(CMD.unstageCurrentFile, async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+      const repoPath = repoManager.selectedRepo;
+      if (!repoPath) return;
+      const absFile = editor.document.uri.fsPath;
+      const rel = path.relative(repoPath, absFile);
+      if (rel.startsWith("..")) return;
+      try {
+        await git.unstage(repoPath, [rel]);
+        await repoManager.refreshRepo(repoPath);
+        vscode.window.showInformationMessage(`Unstaged: ${rel}`);
+      } catch (err: unknown) {
+        vscode.window.showErrorMessage(`Failed to unstage: ${err instanceof Error ? err.message : err}`);
+      }
+    })
+  );
 }

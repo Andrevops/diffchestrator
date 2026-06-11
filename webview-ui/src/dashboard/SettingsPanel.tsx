@@ -52,7 +52,17 @@ function SettingNumber({ label, description, value, onChange, min, max }: {
         min={min}
         max={max}
         style={{ width: 60 }}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={(e) => {
+          // Ignore empty/non-numeric input (clearing the field yields ""),
+          // and clamp to the declared range so we never send a value the
+          // extension-side validator would reject.
+          if (e.target.value === "") return;
+          let n = Number(e.target.value);
+          if (!Number.isFinite(n)) return;
+          if (min !== undefined) n = Math.max(min, n);
+          if (max !== undefined) n = Math.min(max, n);
+          onChange(n);
+        }}
       />
     </div>
   );

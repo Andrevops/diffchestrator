@@ -188,4 +188,32 @@ export function registerCommitCommands(
       }
     )
   );
+
+  // Undo last commit (#41)
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CMD.undoCommit, async (item?: any) => {
+      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
+      if (!repoPath) {
+        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
+        return;
+      }
+      const repoName = path.basename(repoPath);
+      try {
+        const commits = await git.log(repoPath, 1);
+        const lastMsg = commits.length > 0 ? commits[0].message : "last commit";
+        const confirm = await vscode.window.showWarningMessage(
+          `Undo "${lastMsg}" in ${repoName}? Changes will be kept as staged.`,
+          { modal: true },
+          "Undo"
+        );
+        if (confirm !== "Undo") return;
+        await git.resetSoft(repoPath);
+        await repoManager.refreshRepo(repoPath);
+        vscode.window.showInformationMessage(`Diffchestrator: Undid last commit in ${repoName}. Changes are staged.`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        vscode.window.showErrorMessage(`Diffchestrator: Undo failed: ${msg}`);
+      }
+    })
+  );
 }

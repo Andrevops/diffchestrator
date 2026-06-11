@@ -36,7 +36,9 @@ export class DiffWebviewPanel {
       column || vscode.ViewColumn.One,
       {
         enableScripts: true,
-        retainContextWhenHidden: true,
+        // No retainContextWhenHidden: the webview posts "ready" on mount and
+        // the panel refetches, so only expand state is lost — not worth
+        // holding the full diff DOM in memory while hidden.
         localResourceRoots: [
           vscode.Uri.joinPath(extensionUri, "dist", "webview"),
         ],

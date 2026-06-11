@@ -10,7 +10,7 @@ export interface FileNode {
   uri: vscode.Uri;
   isDirectory: boolean;
   name: string;
-  /** Path relative to the repo root. */
+  /** Path relative to the repo root, forward-slash separated (git relpath). */
   relPath: string;
   change?: FileChange;
   // Set on changed files so resolveFileItem()-shaped commands
@@ -51,7 +51,14 @@ export class RepoFilesProvider
 
   private _disposables: vscode.Disposable[] = [];
   private _fsWatcher: vscode.FileSystemWatcher | undefined;
+  /** Whether the recursive watcher was requested (view became visible). */
+  private _watchingEnabled = false;
+  /** Keys are git relpaths: forward-slash separated, relative to the root. */
   private _changedFiles = new Map<string, FileChange>();
+  /** True once _changedFiles reflects a completed git status for the root. */
+  private _changesLoaded = false;
+  /** In-flight status load — dedupes concurrent getChildren calls. */
+  private _changesPromise: Promise<void> | undefined;
   /** Absolute paths of gitignored entries, populated per expanded directory. */
   private _ignored = new Set<string>();
   /** Nodes returned by getChildren, keyed by fsPath — used for targeted refresh and reveal. */
@@ -64,11 +71,14 @@ export class RepoFilesProvider
     this._disposables.push(
       _repoManager.onDidChangeSelection(() => {
         this._resetState();
-        this._watchSelectedRepo();
+        // Only re-root the watcher if one was already active — the watcher
+        // itself is created lazily on first view visibility (ensureWatching).
+        if (this._watchingEnabled) this._watchSelectedRepo();
         this._onDidChangeTreeData.fire();
       }),
       _repoManager.onDidChangeRepos(() => {
-        this._changedFiles.clear();
+        this._changedFiles = new Map();
+        this._changesLoaded = false;
         this._onDidChangeTreeData.fire();
       }),
       // Fallback for mounts where native file watching is unreliable (e.g.
@@ -83,11 +93,31 @@ export class RepoFilesProvider
         if (e.affectsConfiguration(CONFIG.filesHideIgnored)) this.refresh();
       }),
     );
+    // Deliberately no _watchSelectedRepo() here: the recursive `**/*` watcher
+    // is expensive (especially on WSL) and only useful once the Files view is
+    // actually shown — extension.ts calls ensureWatching() on first visibility.
+  }
+
+  /**
+   * Start watching the selected repo for file changes. Idempotent; called on
+   * the Files view's first visibility so a never-opened view costs nothing.
+   */
+  ensureWatching(): void {
+    if (this._watchingEnabled) return;
+    this._watchingEnabled = true;
     this._watchSelectedRepo();
   }
 
   private _resetState(): void {
-    this._changedFiles.clear();
+    if (this._refreshTimer) {
+      clearTimeout(this._refreshTimer);
+      this._refreshTimer = undefined;
+    }
+    this._changedFiles = new Map();
+    this._changesLoaded = false;
+    // Drop the in-flight load handle: the old root's load will discard its
+    // own result (staleness check), and the new root must start fresh.
+    this._changesPromise = undefined;
     this._ignored.clear();
     this._nodes.clear();
     this._pendingDirs.clear();
@@ -136,12 +166,18 @@ export class RepoFilesProvider
     this._refreshTimer = undefined;
     const dirs = [...this._pendingDirs];
     this._pendingDirs.clear();
-    this._changedFiles.clear();
+    const root = this.rootPath;
+    this._changedFiles = new Map();
+    this._changesLoaded = false;
     // Reload eagerly so decorations (which read the map directly, including
     // for collapsed dirs and editor tabs) never go stale waiting for an expand.
     await this._ensureChangedFiles();
 
-    const root = this.rootPath;
+    // The selected repo changed while git status ran — the pending dirs and
+    // cached nodes belong to the old root; the selection handler already
+    // fired a full refresh for the new one.
+    if (root !== this.rootPath) return;
+
     if (!root || dirs.length > MAX_TARGETED_DIRS || dirs.includes(root)) {
       this._onDidChangeTreeData.fire();
       return;
@@ -226,7 +262,10 @@ export class RepoFilesProvider
   }
 
   refresh(): void {
-    this._changedFiles.clear();
+    this._changedFiles = new Map();
+    this._changesLoaded = false;
+    this._ignored.clear();
+    this._nodes.clear();
     this._onDidChangeTreeData.fire();
   }
 
@@ -234,7 +273,9 @@ export class RepoFilesProvider
   getChange(fsPath: string): FileChange | undefined {
     const root = this.rootPath;
     if (!root || !fsPath.startsWith(root + path.sep)) return undefined;
-    return this._changedFiles.get(path.relative(root, fsPath));
+    // Map keys are git relpaths (forward slashes); path.relative uses
+    // backslashes on Windows.
+    return this._changedFiles.get(path.relative(root, fsPath).split(path.sep).join("/"));
   }
 
   /** Whether an absolute path was reported gitignored (decorations). */
@@ -264,7 +305,9 @@ export class RepoFilesProvider
   }
 
   private _buildNode(root: string, absPath: string, isDirectory: boolean): FileNode {
-    const relPath = path.relative(root, absPath);
+    // Git relpath form (forward slashes) — matches _changedFiles keys and the
+    // paths git commands expect, on Windows included.
+    const relPath = path.relative(root, absPath).split(path.sep).join("/");
     const change = isDirectory ? undefined : this._changedFiles.get(relPath);
     const node: FileNode = {
       uri: vscode.Uri.file(absPath),
@@ -332,15 +375,36 @@ export class RepoFilesProvider
   }
 
   private async _ensureChangedFiles(): Promise<void> {
-    if (this._changedFiles.size > 0) return;
+    if (this._changesLoaded) return;
+    // Dedupe concurrent expands: one status run, one decoration refresh.
+    if (this._changesPromise) return this._changesPromise;
+    const promise = this._loadChangedFiles();
+    this._changesPromise = promise;
+    try {
+      await promise;
+    } finally {
+      // Only clear our own handle — _resetState may have already replaced it.
+      if (this._changesPromise === promise) this._changesPromise = undefined;
+    }
+  }
+
+  private async _loadChangedFiles(): Promise<void> {
     const root = this.rootPath;
     if (!root) return;
+    // Build into a fresh map and only commit it if the selection hasn't
+    // changed while git status ran — otherwise the OLD repo's results would
+    // populate the map now owned by the NEW repo (wrong decorations, and
+    // stage/discard nodes pointing at the wrong repoPath).
+    const fresh = new Map<string, FileChange>();
     try {
       const status = await this._repoManager.git.status(root);
       for (const fc of [...status.staged, ...status.unstaged, ...status.untracked]) {
-        this._changedFiles.set(fc.path, fc);
+        fresh.set(fc.path, fc);
       }
     } catch { /* ignore */ }
+    if (root !== this.rootPath) return;
+    this._changedFiles = fresh;
+    this._changesLoaded = true;
     this._onDidUpdateChanges.fire();
   }
 
@@ -364,32 +428,51 @@ export class RepoFilesProvider
       return a.name.localeCompare(b.name);
     });
 
-    // Batch-detect gitignored entries for dimming/hiding. Exit 1 = none
-    // ignored, so an empty result is the normal "all tracked" case.
-    let ignoredRel = new Set<string>();
+    // One batched (and 30s-cached) ignore listing per repo instead of a
+    // `check-ignore` spawn per expanded directory.
+    let ignoredSet = new Set<string>();
     try {
-      ignoredRel = await this._repoManager.git.checkIgnore(
-        root,
-        filtered.map((e) => path.relative(root, path.join(dir, e.name))),
-      );
+      ignoredSet = await this._repoManager.git.ignoredPaths(root);
     } catch { /* ignore — entries just render undimmed */ }
+
+    // Selection changed while we awaited — don't cache nodes for the old root.
+    if (root !== this.rootPath) return [];
 
     const hideIgnored = vscode.workspace
       .getConfiguration()
       .get<boolean>(CONFIG.filesHideIgnored, false);
 
-    // Drop stale cache entries for this directory before re-adding.
-    for (const key of this._nodes.keys()) {
-      if (path.dirname(key) === dir) this._nodes.delete(key);
+    // Drop stale cache entries for this directory before re-adding. Entries
+    // that disappeared take their cached descendants with them — otherwise
+    // deleted/moved subtrees keep serving stale isIgnored/node answers.
+    const present = new Set(filtered.map((e) => path.join(dir, e.name)));
+    const gonePrefixes: string[] = [];
+    for (const key of [...this._nodes.keys()]) {
+      if (path.dirname(key) === dir) {
+        this._nodes.delete(key);
+        if (!present.has(key)) gonePrefixes.push(key + path.sep);
+      }
     }
     for (const key of [...this._ignored]) {
-      if (path.dirname(key) === dir) this._ignored.delete(key);
+      if (path.dirname(key) === dir) {
+        this._ignored.delete(key);
+        if (!present.has(key)) gonePrefixes.push(key + path.sep);
+      }
+    }
+    if (gonePrefixes.length > 0) {
+      for (const key of [...this._nodes.keys()]) {
+        if (gonePrefixes.some((p) => key.startsWith(p))) this._nodes.delete(key);
+      }
+      for (const key of [...this._ignored]) {
+        if (gonePrefixes.some((p) => key.startsWith(p))) this._ignored.delete(key);
+      }
     }
 
     const nodes: FileNode[] = [];
     for (const e of filtered) {
       const absPath = path.join(dir, e.name);
-      const ignored = ignoredRel.has(path.relative(root, absPath));
+      const rel = path.relative(root, absPath).split(path.sep).join("/");
+      const ignored = this._isEntryIgnored(ignoredSet, rel);
       if (ignored) this._ignored.add(absPath);
       if (ignored && hideIgnored) continue;
       const n = this._buildNode(root, absPath, e.isDirectory());
@@ -397,6 +480,23 @@ export class RepoFilesProvider
       nodes.push(n);
     }
     return nodes;
+  }
+
+  /**
+   * Whether a forward-slash relpath is gitignored according to the batched
+   * `ls-files --ignored --directory` set: a file entry matches exactly, a
+   * directory entry has a trailing "/", and contents of ignored directories
+   * are not listed individually — so also match any ancestor "dir/" prefix.
+   */
+  private _isEntryIgnored(ignoredSet: Set<string>, rel: string): boolean {
+    if (ignoredSet.size === 0) return false;
+    if (ignoredSet.has(rel) || ignoredSet.has(rel + "/")) return true;
+    let slash = rel.indexOf("/");
+    while (slash > 0) {
+      if (ignoredSet.has(rel.slice(0, slash + 1))) return true;
+      slash = rel.indexOf("/", slash + 1);
+    }
+    return false;
   }
 
   // ── Drag and drop ──────────────────────────────────────────────────────

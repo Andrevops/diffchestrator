@@ -39,6 +39,14 @@ export class RepoManager implements vscode.Disposable {
   private _scanning = false;
   /** Re-entrancy guard so overlapping refreshAll runs don't stack */
   private _refreshAllInFlight = false;
+  /** True while any Diffchestrator tree view is visible */
+  private _treeViewsVisible = false;
+  /** True while the dashboard webview is visible */
+  private _dashboardVisible = false;
+  /** Counts auto-refresh ticks while no Diffchestrator UI is visible */
+  private _hiddenTickCounter = 0;
+  /** Refresh every Nth tick when no Diffchestrator UI is visible */
+  private static readonly HIDDEN_TICK_DIVISOR = 6;
 
   private _onDidChangeRepos = new vscode.EventEmitter<void>();
   readonly onDidChangeRepos = this._onDidChangeRepos.event;
@@ -329,6 +337,9 @@ export class RepoManager implements vscode.Disposable {
 
     // Phase 1: Fast BFS — no git calls, repos appear instantly
     const repos = await scanner.scanFast(rootPath);
+    // Epoch guard: a newer scan() may have started (and cleared _repos for its
+    // own root) while we awaited — inserting now would merge two roots' repos.
+    if (epoch !== this._scanEpoch) return;
     for (const r of repos) {
       this._repos.set(r.path, r);
     }
@@ -664,6 +675,18 @@ export class RepoManager implements vscode.Disposable {
     this._onDidChangeRepos.fire();
   }
 
+  /** Called from extension.ts when any Diffchestrator tree view's visibility changes. */
+  setTreeViewsVisible(v: boolean): void {
+    this._treeViewsVisible = v;
+    if (v) this._hiddenTickCounter = 0;
+  }
+
+  /** Called from the dashboard webview panel when its visibility changes. */
+  setDashboardVisible(v: boolean): void {
+    this._dashboardVisible = v;
+    if (v) this._hiddenTickCounter = 0;
+  }
+
   private startAutoRefresh(): void {
     if (this._refreshTimer) clearInterval(this._refreshTimer);
 
@@ -686,9 +709,17 @@ export class RepoManager implements vscode.Disposable {
     const interval = config.get<number>("autoRefreshInterval", 10);
     if (interval > 0) {
       this._refreshTimer = setInterval(() => {
-        if (this._windowFocused && !this._scanning) {
-          this.refreshAll();
+        if (!this._windowFocused || this._scanning) return;
+        if (!this._treeViewsVisible && !this._dashboardVisible) {
+          // No Diffchestrator UI visible — slow down to every Nth tick.
+          // Focus-triggered refresh (onDidChangeWindowState) still fires
+          // immediately when the user comes back.
+          this._hiddenTickCounter++;
+          if (this._hiddenTickCounter % RepoManager.HIDDEN_TICK_DIVISOR !== 0) return;
+        } else {
+          this._hiddenTickCounter = 0;
         }
+        this.refreshAll();
       }, interval * 1000);
     }
   }

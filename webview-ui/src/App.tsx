@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { parseDiff, Diff, Hunk } from "react-diff-view";
 import "react-diff-view/style/index.css";
 import vscode from "./vscode.ts";
@@ -137,7 +137,7 @@ function FileSection({
               {(hunks) =>
                 hunks.map((hunk) => (
                   <HunkWithActions
-                    key={hunk.content}
+                    key={`${file.path}-${hunk.oldStart}-${hunk.newStart}`}
                     hunk={hunk}
                     repoPath={repoPath}
                     filePath={file.path}
@@ -162,8 +162,10 @@ function FileSection({
 function RepoSection({ repo }: { repo: RepoDiffData }) {
   const [expanded, setExpanded] = useState(true);
 
-  const stagedDiffs = safeParseDiff(repo.stagedDiff);
-  const unstagedDiffs = safeParseDiff(repo.unstagedDiff);
+  // Parsing a multi-thousand-line diff is expensive — only re-parse when the
+  // diff text actually changes, not on every expand/collapse re-render.
+  const stagedDiffs = useMemo(() => safeParseDiff(repo.stagedDiff), [repo.stagedDiff]);
+  const unstagedDiffs = useMemo(() => safeParseDiff(repo.unstagedDiff), [repo.unstagedDiff]);
 
   const totalChanges =
     repo.stagedFiles.length + repo.unstagedFiles.length + repo.untrackedFiles.length;

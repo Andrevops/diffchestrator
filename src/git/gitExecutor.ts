@@ -14,6 +14,17 @@ interface RunResult {
   code: number;
 }
 
+interface ShortStatusResult {
+  staged: number;
+  unstaged: number;
+  untracked: number;
+  branch: string;
+  ahead: number;
+  behind: number;
+  headOid: string;
+  mergeState?: import("../types.ts").MergeState;
+}
+
 export class GitExecutor {
   // Global concurrency limiter for git processes
   private static readonly MAX_CONCURRENT = 15;
@@ -39,6 +50,9 @@ export class GitExecutor {
   // Short-TTL cache for status() to deduplicate concurrent calls
   private _statusCache = new Map<string, { result: RepoStatus; time: number }>();
   private _statusInflight = new Map<string, Promise<RepoStatus>>();
+  // Watcher debounce + periodic tick + post-command refresh can all request a
+  // shortStatus for the same repo within milliseconds — share one process.
+  private _shortStatusInflight = new Map<string, Promise<ShortStatusResult>>();
   private _statusEpoch = new Map<string, number>(); // guards against stale in-flight writes
   private static readonly STATUS_CACHE_TTL = 1000; // ms
 
@@ -81,6 +95,29 @@ export class GitExecutor {
   // Network operations (pull/push/fetch) get a longer timeout than local ones
   private static readonly NETWORK_TIMEOUT = 120_000; // ms
 
+  // Per-repo mutation mutex: dashboard pull, palette pull/push and syncAll can
+  // otherwise overlap on the same repo and surface index.lock errors to the
+  // user. Reads stay parallel — only mutating ops go through _serialized().
+  private _repoLocks = new Map<string, Promise<void>>();
+
+  private async _serialized<T>(repoPath: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this._repoLocks.get(repoPath) ?? Promise.resolve();
+    // Chain onto the existing tail; run fn regardless of how prev settled.
+    const run = prev.then(fn, fn);
+    // The stored tail must never reject, or the chain would stick rejected.
+    const tail = run.then(
+      () => undefined,
+      () => undefined
+    );
+    this._repoLocks.set(repoPath, tail);
+    try {
+      return await run;
+    } finally {
+      // Only clear if no later op replaced the tail in the meantime.
+      if (this._repoLocks.get(repoPath) === tail) this._repoLocks.delete(repoPath);
+    }
+  }
+
   private async _run(
     args: string[],
     cwd: string,
@@ -100,6 +137,10 @@ export class GitExecutor {
         },
       });
       if (opts?.input !== undefined && promise.child.stdin) {
+        // If git exits before draining stdin (e.g. the repo vanished), the
+        // write emits EPIPE on the stream — without a listener that's an
+        // uncaught 'error' event that crashes the extension host.
+        promise.child.stdin.on("error", () => {});
         promise.child.stdin.write(opts.input);
         promise.child.stdin.end();
       }
@@ -287,9 +328,19 @@ export class GitExecutor {
     return statusResult;
   }
 
-  async shortStatus(
-    repoPath: string
-  ): Promise<{ staged: number; unstaged: number; untracked: number; branch: string; ahead: number; behind: number; headOid: string; mergeState?: import("../types.ts").MergeState }> {
+  async shortStatus(repoPath: string): Promise<ShortStatusResult> {
+    const inflight = this._shortStatusInflight.get(repoPath);
+    if (inflight) return inflight;
+    const promise = this._shortStatusUncached(repoPath);
+    this._shortStatusInflight.set(repoPath, promise);
+    try {
+      return await promise;
+    } finally {
+      this._shortStatusInflight.delete(repoPath);
+    }
+  }
+
+  private async _shortStatusUncached(repoPath: string): Promise<ShortStatusResult> {
     const result = await this._run(
       ["status", "--porcelain=v2", "--branch", "-z", "-uall"],
       repoPath
@@ -373,36 +424,44 @@ export class GitExecutor {
     for (const f of files) {
       this._validateFilePath(repoPath, f);
     }
-    await this._run(["add", "--", ...files], repoPath);
-    this.invalidateStatus(repoPath);
+    await this._serialized(repoPath, async () => {
+      await this._run(["add", "--", ...files], repoPath);
+      this.invalidateStatus(repoPath);
+    });
   }
 
   async unstage(repoPath: string, files: string[]): Promise<void> {
     for (const f of files) {
       this._validateFilePath(repoPath, f);
     }
-    await this._run(["reset", "HEAD", "--", ...files], repoPath);
-    this.invalidateStatus(repoPath);
+    await this._serialized(repoPath, async () => {
+      await this._run(["reset", "HEAD", "--", ...files], repoPath);
+      this.invalidateStatus(repoPath);
+    });
   }
 
   async commit(repoPath: string, message: string): Promise<string> {
-    const result = await this._run(["commit", "-m", message], repoPath);
-    this.invalidateStatus(repoPath);
-    this.invalidateMetaCache(repoPath);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Commit failed");
-    }
-    return result.stdout;
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["commit", "-m", message], repoPath);
+      this.invalidateStatus(repoPath);
+      this.invalidateMetaCache(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Commit failed");
+      }
+      return result.stdout;
+    });
   }
 
   async commitAmend(repoPath: string, message: string): Promise<string> {
-    const result = await this._run(["commit", "--amend", "-m", message], repoPath);
-    this.invalidateStatus(repoPath);
-    this.invalidateMetaCache(repoPath);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Amend failed");
-    }
-    return result.stdout;
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["commit", "--amend", "-m", message], repoPath);
+      this.invalidateStatus(repoPath);
+      this.invalidateMetaCache(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Amend failed");
+      }
+      return result.stdout;
+    });
   }
 
   async lastCommitMessage(repoPath: string): Promise<string> {
@@ -411,15 +470,17 @@ export class GitExecutor {
   }
 
   async push(repoPath: string, force = false): Promise<string> {
-    const args = ["push"];
-    if (force) {
-      args.push("--force-with-lease");
-    }
-    const result = await this._run(args, repoPath, { timeoutMs: GitExecutor.NETWORK_TIMEOUT });
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Push failed");
-    }
-    return result.stdout || result.stderr;
+    return this._serialized(repoPath, async () => {
+      const args = ["push"];
+      if (force) {
+        args.push("--force-with-lease");
+      }
+      const result = await this._run(args, repoPath, { timeoutMs: GitExecutor.NETWORK_TIMEOUT });
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Push failed");
+      }
+      return result.stdout || result.stderr;
+    });
   }
 
   async getBranch(repoPath: string): Promise<string> {
@@ -431,33 +492,40 @@ export class GitExecutor {
   }
 
   async resetSoft(repoPath: string, ref = "HEAD~1"): Promise<void> {
-    const result = await this._run(["reset", "--soft", ref], repoPath);
-    this.invalidateStatus(repoPath);
-    this.invalidateMetaCache(repoPath);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Reset failed");
-    }
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["reset", "--soft", ref], repoPath);
+      this.invalidateStatus(repoPath);
+      this.invalidateMetaCache(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Reset failed");
+      }
+    });
   }
 
   async resetHard(repoPath: string): Promise<void> {
-    const result = await this._run(["reset", "--hard", "HEAD"], repoPath);
-    this.invalidateStatus(repoPath);
-    this.invalidateMetaCache(repoPath);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Reset failed");
-    }
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["reset", "--hard", "HEAD"], repoPath);
+      this.invalidateStatus(repoPath);
+      this.invalidateMetaCache(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Reset failed");
+      }
+    });
   }
 
   async getRemoteUrl(repoPath: string): Promise<string | undefined> {
     const cacheKey = `${repoPath}:remoteUrl`;
-    const cached = this._getCachedMeta<string>(cacheKey);
-    if (cached !== undefined) return cached;
+    // Values are wrapped so a "no remote" result (undefined) is cached too —
+    // repos without an origin are common and re-spawning git on every scan
+    // for them defeats the cache entirely.
+    const cached = this._getCachedMeta<{ value: string | undefined }>(cacheKey);
+    if (cached !== undefined) return cached.value;
     const result = await this._run(
       ["remote", "get-url", "origin"],
       repoPath
     );
     const url = result.stdout.trim() || undefined;
-    if (url) this._setCachedMeta(cacheKey, url);
+    this._setCachedMeta(cacheKey, { value: url });
     return url;
   }
 
@@ -538,14 +606,15 @@ export class GitExecutor {
 
   async lastCommitDate(repoPath: string): Promise<string | undefined> {
     const cacheKey = `${repoPath}:lastCommitDate`;
-    const cached = this._getCachedMeta<string>(cacheKey);
-    if (cached !== undefined) return cached;
+    // Wrapped value: a repo with no commits yet (undefined) is cached too.
+    const cached = this._getCachedMeta<{ value: string | undefined }>(cacheKey);
+    if (cached !== undefined) return cached.value;
     const result = await this._run(
       ["log", "-1", "--format=%ai"],
       repoPath
     );
     const date = result.stdout.trim() || undefined;
-    if (date) this._setCachedMeta(cacheKey, date);
+    this._setCachedMeta(cacheKey, { value: date });
     return date;
   }
 
@@ -559,12 +628,12 @@ export class GitExecutor {
     count = 50
   ): Promise<{ lastDate: string | undefined; commits: CommitEntry[] }> {
     const cacheKey = `${repoPath}:lastCommitDate`;
-    const cachedDate = this._getCachedMeta<string>(cacheKey);
+    const cachedDate = this._getCachedMeta<{ value: string | undefined }>(cacheKey);
 
     if (cachedDate !== undefined) {
       // Cache hit — only need session commits (1 git call)
       const commits = await this.logSince(repoPath, since, count);
-      return { lastDate: cachedDate, commits };
+      return { lastDate: cachedDate.value, commits };
     }
 
     // Cache miss — run both in parallel (2 git calls, but parallel)
@@ -585,20 +654,24 @@ export class GitExecutor {
   }
 
   async fetch(repoPath: string): Promise<string> {
-    const result = await this._run(["fetch", "--prune"], repoPath, { timeoutMs: GitExecutor.NETWORK_TIMEOUT });
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Fetch failed");
-    }
-    return result.stdout || result.stderr;
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["fetch", "--prune"], repoPath, { timeoutMs: GitExecutor.NETWORK_TIMEOUT });
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Fetch failed");
+      }
+      return result.stdout || result.stderr;
+    });
   }
 
   async fetchBranch(repoPath: string, branch: string): Promise<string> {
     if (!isValidRef(branch)) throw new Error("Invalid branch name");
-    const result = await this._run(["fetch", "origin", branch, "--prune"], repoPath, { timeoutMs: GitExecutor.NETWORK_TIMEOUT });
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Fetch failed");
-    }
-    return result.stdout || result.stderr;
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["fetch", "origin", branch, "--prune"], repoPath, { timeoutMs: GitExecutor.NETWORK_TIMEOUT });
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Fetch failed");
+      }
+      return result.stdout || result.stderr;
+    });
   }
 
   async getDefaultBranch(repoPath: string): Promise<string> {
@@ -630,27 +703,33 @@ export class GitExecutor {
    */
   async fastForwardRef(repoPath: string, branch: string): Promise<boolean> {
     if (!isValidRef(branch)) throw new Error("Invalid branch name");
-    const result = await this._run(
-      ["fetch", "origin", `${branch}:${branch}`],
-      repoPath,
-      { timeoutMs: GitExecutor.NETWORK_TIMEOUT }
-    );
-    return result.code === 0;
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(
+        ["fetch", "origin", `${branch}:${branch}`],
+        repoPath,
+        { timeoutMs: GitExecutor.NETWORK_TIMEOUT }
+      );
+      return result.code === 0;
+    });
   }
 
   async pullFastForwardOnly(repoPath: string): Promise<boolean> {
-    const result = await this._run(["pull", "--ff-only"], repoPath, { timeoutMs: GitExecutor.NETWORK_TIMEOUT });
-    return result.code === 0;
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["pull", "--ff-only"], repoPath, { timeoutMs: GitExecutor.NETWORK_TIMEOUT });
+      return result.code === 0;
+    });
   }
 
   async pull(repoPath: string): Promise<string> {
-    const result = await this._run(["pull"], repoPath, { timeoutMs: GitExecutor.NETWORK_TIMEOUT });
-    this.invalidateStatus(repoPath);
-    this.invalidateMetaCache(repoPath);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Pull failed");
-    }
-    return result.stdout || result.stderr;
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["pull"], repoPath, { timeoutMs: GitExecutor.NETWORK_TIMEOUT });
+      this.invalidateStatus(repoPath);
+      this.invalidateMetaCache(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Pull failed");
+      }
+      return result.stdout || result.stderr;
+    });
   }
 
   async diffStatSummary(repoPath: string): Promise<{ files: string[]; additions: number; deletions: number }> {
@@ -695,8 +774,12 @@ export class GitExecutor {
     const cached = this._getCachedMeta<number>(cacheKey);
     if (cached !== undefined) return cached;
     const result = await this._run(["stash", "list"], repoPath);
-    if (result.code !== 0 || !result.stdout.trim()) return 0;
-    const count = result.stdout.trim().split("\n").length;
+    // Zero stashes is the common case — cache it too, otherwise every scan
+    // re-spawns `git stash list` for every clean repo.
+    const count =
+      result.code !== 0 || !result.stdout.trim()
+        ? 0
+        : result.stdout.trim().split("\n").length;
     this._setCachedMeta(cacheKey, count);
     return count;
   }
@@ -722,54 +805,66 @@ export class GitExecutor {
   }
 
   async checkout(repoPath: string, branch: string): Promise<string> {
-    const result = await this._run(["checkout", branch], repoPath);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Checkout failed");
-    }
-    return result.stdout || result.stderr;
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["checkout", branch], repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Checkout failed");
+      }
+      return result.stdout || result.stderr;
+    });
   }
 
   async createBranch(repoPath: string, branch: string): Promise<string> {
-    const result = await this._run(["checkout", "-b", branch], repoPath);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Branch creation failed");
-    }
-    return result.stdout || result.stderr;
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["checkout", "-b", branch], repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Branch creation failed");
+      }
+      return result.stdout || result.stderr;
+    });
   }
 
   async checkoutFile(repoPath: string, file: string): Promise<void> {
     this._validateFilePath(repoPath, file);
-    const result = await this._run(["checkout", "--", file], repoPath);
-    this.invalidateStatus(repoPath);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Discard failed");
-    }
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["checkout", "--", file], repoPath);
+      this.invalidateStatus(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Discard failed");
+      }
+    });
   }
 
   async checkoutAll(repoPath: string): Promise<void> {
-    const result = await this._run(["checkout", "--", "."], repoPath);
-    this.invalidateStatus(repoPath);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Discard all failed");
-    }
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["checkout", "--", "."], repoPath);
+      this.invalidateStatus(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Discard all failed");
+      }
+    });
   }
 
   async clean(repoPath: string): Promise<string> {
-    const result = await this._run(["clean", "-fd"], repoPath);
-    this.invalidateStatus(repoPath);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Clean failed");
-    }
-    return result.stdout;
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["clean", "-fd"], repoPath);
+      this.invalidateStatus(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Clean failed");
+      }
+      return result.stdout;
+    });
   }
 
   async cleanFile(repoPath: string, file: string): Promise<void> {
     this._validateFilePath(repoPath, file);
-    const result = await this._run(["clean", "-f", "--", file], repoPath);
-    this.invalidateStatus(repoPath);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Clean file failed");
-    }
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["clean", "-f", "--", file], repoPath);
+      this.invalidateStatus(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Clean file failed");
+      }
+    });
   }
 
   async stashList(repoPath: string): Promise<{ index: number; message: string; date: string }[]> {
@@ -790,52 +885,60 @@ export class GitExecutor {
   }
 
   async stashPush(repoPath: string, message?: string): Promise<string> {
-    const args = ["stash", "push"];
-    if (message) {
-      args.push("-m", message);
-    }
-    const result = await this._run(args, repoPath);
-    this.invalidateStatus(repoPath);
-    this.invalidateMetaCache(repoPath);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Stash push failed");
-    }
-    return result.stdout || result.stderr;
+    return this._serialized(repoPath, async () => {
+      const args = ["stash", "push"];
+      if (message) {
+        args.push("-m", message);
+      }
+      const result = await this._run(args, repoPath);
+      this.invalidateStatus(repoPath);
+      this.invalidateMetaCache(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Stash push failed");
+      }
+      return result.stdout || result.stderr;
+    });
   }
 
   async stashPop(repoPath: string): Promise<string> {
-    const result = await this._run(["stash", "pop"], repoPath);
-    this.invalidateStatus(repoPath);
-    this.invalidateMetaCache(repoPath);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Stash pop failed");
-    }
-    return result.stdout || result.stderr;
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["stash", "pop"], repoPath);
+      this.invalidateStatus(repoPath);
+      this.invalidateMetaCache(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Stash pop failed");
+      }
+      return result.stdout || result.stderr;
+    });
   }
 
   async stashApply(repoPath: string, index: number): Promise<string> {
     if (!Number.isInteger(index) || index < 0) {
       throw new Error("Invalid stash index");
     }
-    const result = await this._run(["stash", "apply", `stash@{${index}}`], repoPath);
-    this.invalidateStatus(repoPath);
-    this.invalidateMetaCache(repoPath);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Stash apply failed");
-    }
-    return result.stdout || result.stderr;
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["stash", "apply", `stash@{${index}}`], repoPath);
+      this.invalidateStatus(repoPath);
+      this.invalidateMetaCache(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Stash apply failed");
+      }
+      return result.stdout || result.stderr;
+    });
   }
 
   async stashDrop(repoPath: string, index: number): Promise<string> {
     if (!Number.isInteger(index) || index < 0) {
       throw new Error("Invalid stash index");
     }
-    const result = await this._run(["stash", "drop", `stash@{${index}}`], repoPath);
-    this.invalidateMetaCache(repoPath);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || "Stash drop failed");
-    }
-    return result.stdout || result.stderr;
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["stash", "drop", `stash@{${index}}`], repoPath);
+      this.invalidateMetaCache(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Stash drop failed");
+      }
+      return result.stdout || result.stderr;
+    });
   }
 
   async stashShow(repoPath: string, index: number): Promise<string> {
@@ -931,6 +1034,48 @@ export class GitExecutor {
     return ignored;
   }
 
+  // Concurrent directory expansions all need the same ignore set — share one
+  // process while the first call is still running.
+  private _ignoredPathsInflight = new Map<string, Promise<Set<string>>>();
+
+  /**
+   * All gitignored paths in the repo in one batched call (vs. one
+   * `check-ignore` spawn per directory). Entries are repo-relative with
+   * forward slashes; ignored directories appear once with a trailing "/"
+   * (their contents are NOT listed individually — callers must do prefix
+   * matching). Cached in the meta cache (30s TTL, cleared by
+   * invalidateMetaCache).
+   */
+  async ignoredPaths(repoPath: string): Promise<Set<string>> {
+    const cacheKey = `${repoPath}:ignoredPaths`;
+    const cached = this._getCachedMeta<Set<string>>(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const inflight = this._ignoredPathsInflight.get(repoPath);
+    if (inflight) return inflight;
+
+    const promise = (async () => {
+      const result = await this._run(
+        ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"],
+        repoPath
+      );
+      const ignored = new Set<string>();
+      if (result.code === 0) {
+        for (const p of result.stdout.split("\0")) {
+          if (p) ignored.add(p);
+        }
+      }
+      this._setCachedMeta(cacheKey, ignored);
+      return ignored;
+    })();
+    this._ignoredPathsInflight.set(repoPath, promise);
+    try {
+      return await promise;
+    } finally {
+      this._ignoredPathsInflight.delete(repoPath);
+    }
+  }
+
   async listFiles(repoPath: string, query?: string): Promise<string[]> {
     const result = await this._run(
       ["ls-files", "--cached", "--others", "--exclude-standard"],
@@ -966,10 +1111,12 @@ export class GitExecutor {
 
   async deleteBranch(repoPath: string, branch: string): Promise<void> {
     if (branch.startsWith("-")) throw new Error("Invalid branch name");
-    const result = await this._run(["branch", "-d", "--", branch], repoPath);
-    if (result.code !== 0) {
-      throw new Error(result.stderr || `Failed to delete branch ${branch}`);
-    }
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["branch", "-d", "--", branch], repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || `Failed to delete branch ${branch}`);
+      }
+    });
   }
 
   private _parseChangeType(code: string): ChangeType {

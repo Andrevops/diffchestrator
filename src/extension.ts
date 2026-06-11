@@ -2,10 +2,9 @@ import * as vscode from "vscode";
 import { RepoManager } from "./services/repoManager";
 import { RepoTreeProvider } from "./providers/repoTreeProvider";
 import { ChangedFilesProvider } from "./providers/changedFilesProvider";
-import { escapeForTerminal } from "./utils/shell";
-import { CMD, CONFIG, VIEW_ACTIVE_REPOS, VIEW_REPOS, VIEW_CHANGED_FILES, BATCH_SMALL } from "./constants";
+import { CMD, CONFIG, VIEW_ACTIVE_REPOS, VIEW_REPOS, VIEW_CHANGED_FILES } from "./constants";
 import { registerScanCommands } from "./commands/scan";
-import { registerStageCommands, openNextPendingFile, openFileDiff } from "./commands/stage";
+import { registerStageCommands, openFileDiff } from "./commands/stage";
 import { registerCommitCommands } from "./commands/commit";
 import { registerPushCommands } from "./commands/push";
 import { registerPullCommands } from "./commands/pull";
@@ -19,6 +18,13 @@ import { registerDiscardCommands } from "./commands/discard";
 import { registerSwitchBranchCommands } from "./commands/switchBranch";
 import { registerStashCommands } from "./commands/stash";
 import { registerResolveConflictsCommand } from "./commands/resolveConflicts";
+import { registerScanRootCommands } from "./commands/scanRoots";
+import { registerBulkSyncCommands } from "./commands/bulkSync";
+import { registerRepoInfoCommands } from "./commands/repoInfo";
+import { registerTagCommands } from "./commands/tags";
+import { registerSnapshotCommands } from "./commands/snapshots";
+import { registerFileOpsCommands } from "./commands/fileOps";
+import { registerNotifications } from "./services/notifications";
 import { ActiveReposProvider } from "./providers/activeReposProvider";
 import { RepoFilesProvider } from "./providers/repoFilesProvider";
 import { RepoFilesDecorationProvider } from "./providers/repoFilesDecorationProvider";
@@ -29,11 +35,10 @@ import { FileWatcher } from "./services/fileWatcher";
 import { InlineBlameService } from "./services/inlineBlame";
 import { WorkspaceAutoScan } from "./services/workspaceAutoScan";
 // GitExecutor accessed via repoManager.git (shared instance)
-import { showTerminalIfExists, findRepoForTerminal, cycleTerminal, closeRepoTerminal, navigateTerminal, terminalIcon, adoptExistingTerminals, getRepoTerminal, registerRepoTerminal } from "./commands/terminal";
+import { showTerminalIfExists, findRepoForTerminal, cycleTerminal, closeRepoTerminal, navigateTerminal, adoptExistingTerminals, getRepoTerminal } from "./commands/terminal";
 import type { TerminalKind } from "./commands/terminal";
 import { extractTabUri } from "./types";
 import { resolveRepoPath } from "./utils/fileItem";
-import * as fs from "fs";
 import * as path from "path";
 
 /** Public API for sibling extensions (e.g. Epic Lens) */
@@ -242,6 +247,35 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   activeReposView.onDidChangeVisibility((e) => { if (e.visible) sidebarVisible = true; });
   repoTreeView.onDidChangeVisibility((e) => { if (e.visible) sidebarVisible = true; });
 
+  // Adaptive auto-refresh: tell repoManager whether ANY Diffchestrator tree
+  // view is visible (per-view booleans — `sidebarVisible` above is a latch
+  // for a different purpose). When nothing is visible, the auto-refresh
+  // timer slows down; the dashboard panel reports its own visibility.
+  const treeViewVis = {
+    activeRepos: activeReposView.visible,
+    repoTree: repoTreeView.visible,
+    changedFiles: changedFilesView.visible,
+    repoFiles: repoFilesView.visible,
+  };
+  const updateTreeViewsVisible = () => {
+    repoManager.setTreeViewsVisible(
+      treeViewVis.activeRepos || treeViewVis.repoTree || treeViewVis.changedFiles || treeViewVis.repoFiles
+    );
+  };
+  context.subscriptions.push(
+    activeReposView.onDidChangeVisibility((e) => { treeViewVis.activeRepos = e.visible; updateTreeViewsVisible(); }),
+    repoTreeView.onDidChangeVisibility((e) => { treeViewVis.repoTree = e.visible; updateTreeViewsVisible(); }),
+    changedFilesView.onDidChangeVisibility((e) => { treeViewVis.changedFiles = e.visible; updateTreeViewsVisible(); }),
+    repoFilesView.onDidChangeVisibility((e) => {
+      treeViewVis.repoFiles = e.visible;
+      updateTreeViewsVisible();
+      // Files-view watcher is deferred until the view is first shown
+      if (e.visible) repoFiles.ensureWatching();
+    }),
+  );
+  updateTreeViewsVisible();
+  if (repoFilesView.visible) repoFiles.ensureWatching();
+
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider("git-show", gitContentProvider),
     gitContentProvider,
@@ -326,92 +360,9 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
 
   // Notifications when Claude/external tools commit or modify files
   // Queue notifications when unfocused, show grouped summary on refocus
+  registerNotifications(context, repoManager, outputChannel);
+
   const sharedGit = repoManager.git;
-  const pendingNotifications: { type: "commit" | "changes"; repoPath: string; repoName: string; message?: string; count?: number }[] = [];
-
-  async function showNotification(n: typeof pendingNotifications[0]) {
-    const text = n.type === "commit"
-      ? `Committed in ${n.repoName} — ${n.message ?? "new commit"}`
-      : `${n.count} new change${n.count !== 1 ? "s" : ""} in ${n.repoName}`;
-    // Only show Push for commits where the repo is ahead (local commits, not pulled ones)
-    const repo = repoManager.getRepo(n.repoPath);
-    const showPush = n.type === "commit" && repo && repo.ahead > 0;
-    const actions = n.type === "commit"
-      ? (showPush ? ["Push", "Show Terminal"] : ["Show Terminal"])
-      : ["Show Terminal", "View Changes"];
-    const action = await vscode.window.showInformationMessage(
-      `Diffchestrator: ${text}`,
-      ...actions
-    );
-    if (action === "Push") {
-      try {
-        await sharedGit.push(n.repoPath);
-        await repoManager.refreshRepo(n.repoPath);
-        vscode.window.showInformationMessage(`Diffchestrator: Pushed ${n.repoName}`);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        vscode.window.showErrorMessage(`Diffchestrator: Push failed: ${msg}`);
-      }
-    } else if (action === "Show Terminal") {
-      repoManager.selectRepo(n.repoPath);
-      await showTerminalIfExists(n.repoPath);
-    } else if (action === "View Changes") {
-      await vscode.commands.executeCommand(CMD.viewDiff, { path: n.repoPath });
-    }
-  }
-
-  function flushPendingNotifications() {
-    if (pendingNotifications.length === 0) return;
-
-    if (pendingNotifications.length === 1) {
-      const n = pendingNotifications.shift()!;
-      showNotification(n);
-      return;
-    }
-
-    // Group: show summary
-    const commits = pendingNotifications.filter((n) => n.type === "commit");
-    const changes = pendingNotifications.filter((n) => n.type === "changes");
-    const parts: string[] = [];
-    if (commits.length > 0) parts.push(`${commits.length} commit${commits.length > 1 ? "s" : ""}`);
-    if (changes.length > 0) parts.push(`${changes.length} repo${changes.length > 1 ? "s" : ""} with new changes`);
-    const repoNames = [...new Set(pendingNotifications.map((n) => n.repoName))];
-    const repos = repoNames.length <= 3 ? repoNames.join(", ") : `${repoNames.slice(0, 3).join(", ")} +${repoNames.length - 3} more`;
-
-    pendingNotifications.length = 0;
-    vscode.window.showInformationMessage(
-      `Diffchestrator: While away — ${parts.join(", ")} (${repos})`
-    );
-  }
-
-  // Flush queued notifications on window focus
-  context.subscriptions.push(
-    vscode.window.onDidChangeWindowState((state) => {
-      if (state.focused) flushPendingNotifications();
-    })
-  );
-
-  repoManager.onDidDetectCommit(async ({ repoPath, repoName }) => {
-    try {
-      const commits = await sharedGit.log(repoPath, 1);
-      const msg = commits.length > 0 ? commits[0].message : "new commit";
-      if (repoManager.windowFocused) {
-        showNotification({ type: "commit", repoPath, repoName, message: msg });
-      } else {
-        pendingNotifications.push({ type: "commit", repoPath, repoName, message: msg });
-      }
-    } catch (err) {
-      outputChannel.appendLine(`[commit notification] ${repoName}: ${err instanceof Error ? err.message : err}`);
-    }
-  });
-
-  repoManager.onDidDetectChanges(async ({ repoPath, repoName, count }) => {
-    if (repoManager.windowFocused) {
-      showNotification({ type: "changes", repoPath, repoName, count });
-    } else {
-      pendingNotifications.push({ type: "changes", repoPath, repoName, count });
-    }
-  });
 
   // Register command modules
   // File watcher — created before commands so switchRoot can reference it
@@ -435,616 +386,11 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   registerResolveConflictsCommand(context, repoManager);
   registerStashCommands(context, repoManager);
 
-  // Scan Roots commands
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.switchRoot, async (rootPath?: string | object) => {
-      if (!rootPath || typeof rootPath !== "string") {
-        // Show quick pick of configured roots
-        const config = vscode.workspace.getConfiguration("diffchestrator");
-        const roots = config.get<string[]>("scanRoots", []);
-        if (roots.length === 0) {
-          vscode.window.showWarningMessage("Diffchestrator: No scan roots configured. Use the + button to add one.");
-          return;
-        }
-        const items = roots.map((r) => ({
-          label: `${r === repoManager.currentRoot ? "$(folder-opened) " : "$(folder) "}${path.basename(r)}`,
-          description: r === repoManager.currentRoot ? "active" : "",
-          _path: r,
-        }));
-        const picked = await vscode.window.showQuickPick(items, {
-          placeHolder: "Switch scan root",
-        });
-        if (!picked) return;
-        rootPath = picked._path;
-      }
-      try {
-        await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: `Diffchestrator: Scanning ${path.basename(rootPath)}` },
-          async () => {
-            await repoManager.scan(rootPath!);
-            fileWatcher.watchAll();
-          }
-        );
-      } catch (err) {
-        vscode.window.showErrorMessage(
-          `Diffchestrator: Failed to scan ${path.basename(rootPath)}: ${err instanceof Error ? err.message : err}`
-        );
-      }
-    }),
-    vscode.commands.registerCommand(CMD.addScanRoot, async () => {
-      const folders = await vscode.window.showOpenDialog({
-        canSelectFolders: true,
-        canSelectFiles: false,
-        canSelectMany: false,
-        title: "Select root directory to add",
-      });
-      if (!folders || folders.length === 0) return;
-      const newRoot = folders[0].fsPath;
-      const config = vscode.workspace.getConfiguration("diffchestrator");
-      const current = config.get<string[]>("scanRoots", []);
-      if (!current.includes(newRoot)) {
-        await config.update("scanRoots", [...current, newRoot], vscode.ConfigurationTarget.Global);
-      }
-    }),
-    vscode.commands.registerCommand(CMD.removeScanRoot, async (item?: any) => {
-      const rootPath = item?.rootPath;
-      if (!rootPath) return;
-      const config = vscode.workspace.getConfiguration("diffchestrator");
-      const current = config.get<string[]>("scanRoots", []);
-      await config.update("scanRoots", current.filter((r) => r !== rootPath), vscode.ConfigurationTarget.Global);
-    }),
-    vscode.commands.registerCommand(CMD.openRootTerminal, () => {
-      const root = repoManager.currentRoot;
-      if (!root) {
-        vscode.window.showWarningMessage("Diffchestrator: No scan root selected.");
-        return;
-      }
-      const name = path.basename(root);
-      const terminal = vscode.window.createTerminal({
-        name,
-        cwd: root,
-        iconPath: new vscode.ThemeIcon("folder-opened"),
-      });
-      registerRepoTerminal(root, "shell", terminal);
-      repoManager.addDirectoryPath(root);
-      terminal.show();
-    })
-  );
-
-  // Bulk fetch all repos
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.fetchAll, async () => {
-      const repos = repoManager.repos;
-      if (repos.length === 0) {
-        vscode.window.showWarningMessage("Diffchestrator: No repos to fetch.");
-        return;
-      }
-      let fetched = 0;
-      let skipped = 0;
-      let failed = 0;
-      await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: "Diffchestrator: Fetching all repos", cancellable: false },
-        async (progress) => {
-          for (let i = 0; i < repos.length; i += BATCH_SMALL) {
-            progress.report({ message: `${Math.min(i + BATCH_SMALL, repos.length)}/${repos.length}` });
-            await Promise.all(repos.slice(i, i + BATCH_SMALL).map(async (r) => {
-              try {
-                await sharedGit.fetch(r.path);
-                await repoManager.refreshRepo(r.path);
-                fetched++;
-              } catch (err) {
-                const msg = err instanceof Error ? err.message : String(err);
-                // No remote configured — not a real failure
-                if (msg.includes("No remote") || msg.includes("no such remote") || msg.includes("does not appear to be a git repository")) {
-                  skipped++;
-                } else {
-                  failed++;
-                  outputChannel.appendLine(`[fetch] ${r.name}: ${msg}`);
-                }
-              }
-            }));
-          }
-        }
-      );
-      const behindRepos = repoManager.repos.filter((r) => r.behind > 0);
-      const summary = behindRepos.length > 0
-        ? `${behindRepos.length} repo${behindRepos.length > 1 ? "s" : ""} behind remote`
-        : "all up to date";
-      const parts = [`Fetched ${fetched} repos`];
-      if (skipped > 0) parts.push(`${skipped} local-only`);
-      if (failed > 0) parts.push(`${failed} failed`);
-      parts.push(summary);
-      const msg = `Diffchestrator: ${parts.join(", ")}`;
-      if (failed > 0) {
-        const action = await vscode.window.showWarningMessage(msg, "Show Log");
-        if (action === "Show Log") outputChannel.show();
-      } else {
-        vscode.window.showInformationMessage(msg);
-      }
-    }),
-    // Bulk pull all repos
-    vscode.commands.registerCommand(CMD.bulkPull, async () => {
-      const repos = repoManager.repos.filter((r) => r.behind > 0);
-      if (repos.length === 0) {
-        vscode.window.showInformationMessage("Diffchestrator: All repos are up to date. Run Fetch All first.");
-        return;
-      }
-      const confirm = await vscode.window.showWarningMessage(
-        `Pull ${repos.length} repo${repos.length > 1 ? "s" : ""} that are behind remote?`,
-        { modal: true },
-        "Pull"
-      );
-      if (confirm !== "Pull") return;
-      let success = 0;
-      let failed = 0;
-      await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: "Diffchestrator: Pulling repos", cancellable: false },
-        async (progress) => {
-          for (let i = 0; i < repos.length; i += BATCH_SMALL) {
-            progress.report({ message: `${Math.min(i + BATCH_SMALL, repos.length)}/${repos.length}` });
-            await Promise.all(repos.slice(i, i + BATCH_SMALL).map(async (r) => {
-              try {
-                await sharedGit.pull(r.path);
-                await repoManager.refreshRepo(r.path);
-                success++;
-              } catch (err) {
-                failed++;
-                outputChannel.appendLine(`[pull] ${r.name}: ${err instanceof Error ? err.message : err}`);
-              }
-            }));
-          }
-        }
-      );
-      const pullMsg = `Diffchestrator: Pulled ${success} repos${failed > 0 ? `, ${failed} failed` : ""}`;
-      if (failed > 0) {
-        const action = await vscode.window.showWarningMessage(pullMsg, "Show Log");
-        if (action === "Show Log") outputChannel.show();
-      } else {
-        vscode.window.showInformationMessage(pullMsg);
-      }
-    }),
-    // Sync All: fetch → pull behind → push ahead
-    vscode.commands.registerCommand(CMD.syncAll, async () => {
-      const repos = repoManager.repos;
-      if (repos.length === 0) {
-        vscode.window.showWarningMessage("Diffchestrator: No repos to sync.");
-        return;
-      }
-      await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: "Diffchestrator: Syncing all repos", cancellable: false },
-        async (progress) => {
-          // Phase 1: fetch
-          progress.report({ message: "Fetching..." });
-          await vscode.commands.executeCommand(CMD.fetchAll);
-
-          // Phase 2: pull repos that are behind
-          const behind = repoManager.repos.filter((r) => r.behind > 0);
-          if (behind.length > 0) {
-            progress.report({ message: `Pulling ${behind.length} repos...` });
-            for (let i = 0; i < behind.length; i += BATCH_SMALL) {
-              await Promise.all(behind.slice(i, i + BATCH_SMALL).map(async (r) => {
-                try {
-                  await sharedGit.pull(r.path);
-                  await repoManager.refreshRepo(r.path);
-                } catch (err) {
-                  outputChannel.appendLine(`[sync-pull] ${r.name}: ${err instanceof Error ? err.message : err}`);
-                }
-              }));
-            }
-          }
-
-          // Phase 3: push repos that are ahead
-          const ahead = repoManager.repos.filter((r) => r.ahead > 0);
-          if (ahead.length > 0) {
-            progress.report({ message: `Pushing ${ahead.length} repos...` });
-            for (let i = 0; i < ahead.length; i += BATCH_SMALL) {
-              await Promise.all(ahead.slice(i, i + BATCH_SMALL).map(async (r) => {
-                try {
-                  await sharedGit.push(r.path);
-                  await repoManager.refreshRepo(r.path);
-                } catch (err) {
-                  outputChannel.appendLine(`[sync-push] ${r.name}: ${err instanceof Error ? err.message : err}`);
-                }
-              }));
-            }
-          }
-        }
-      );
-      vscode.window.showInformationMessage("Diffchestrator: Sync complete");
-    }),
-    // Claude multi-repo review
-    vscode.commands.registerCommand(CMD.claudeReviewAll, async () => {
-      const changedRepos = repoManager.repos.filter((r) => r.totalChanges > 0);
-      if (changedRepos.length === 0) {
-        vscode.window.showInformationMessage("Diffchestrator: No repos with changes to review.");
-        return;
-      }
-      const addDirArgs = changedRepos.map((r) => `--add-dir ${escapeForTerminal(r.path)}`).join(" ");
-      const terminal = vscode.window.createTerminal({
-        name: "Multi-repo Review",
-        cwd: repoManager.currentRoot,
-        iconPath: terminalIcon("claude"),
-      });
-      terminal.show();
-      const prompt = "Review the changes across all these repositories. Summarize what changed, flag any issues, and suggest improvements.";
-      terminal.sendText(`claude ${addDirArgs} ${escapeForTerminal(prompt)}`);
-    })
-  );
-
-  // Copy repo info to clipboard (#33)
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.copyRepoInfo, async (item?: any) => {
-      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
-      const repo = repoManager.getRepo(repoPath);
-      const items = [
-        { label: "$(file-directory) Path", description: repoPath, _value: repoPath },
-        { label: "$(git-branch) Branch", description: repo?.branch ?? "unknown", _value: repo?.branch ?? "" },
-      ];
-      if (repo?.remoteUrl) {
-        items.push({ label: "$(link) Remote URL", description: repo.remoteUrl, _value: repo.remoteUrl });
-      }
-      items.push({ label: "$(repo) Name", description: path.basename(repoPath), _value: path.basename(repoPath) });
-      const picked = await vscode.window.showQuickPick(items, { placeHolder: "Copy to clipboard" });
-      if (picked) {
-        await vscode.env.clipboard.writeText(picked._value);
-        vscode.window.showInformationMessage(`Copied: ${picked._value}`);
-      }
-    })
-  );
-
-  // Keyboard shortcut cheatsheet (#34)
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.showShortcuts, async () => {
-      const shortcuts = [
-        { label: "Alt+D, Tab", description: "Cycle through active repos" },
-        { label: "Alt+D, Shift+Tab", description: "Close all active repos" },
-        { label: "Alt+D, Q", description: "Close current active repo" },
-        { label: "Alt+D, N / Shift+N", description: "Next / Previous changed file" },
-        { label: "Alt+D, M", description: "Commit with message" },
-        { label: "Alt+D, C", description: "AI Commit (Claude)" },
-        { label: "Alt+D, L", description: "Open Claude Code" },
-        { label: "Alt+D, Y", description: "Yolo (Claude Sandbox)" },
-        { label: "Alt+D, S", description: "Scan for repositories" },
-        { label: "Alt+D, Shift+S", description: "Switch scan root" },
-        { label: "Alt+D, Shift+T", description: "Open terminal at root" },
-        { label: "Alt+D, T", description: "Open terminal at repo" },
-        { label: "Alt+D, R", description: "Switch active repo" },
-        { label: "Alt+D, F", description: "Browse files in repo" },
-        { label: "Alt+D, P", description: "Push" },
-        { label: "Alt+D, U", description: "Pull" },
-        { label: "Alt+D, D", description: "Toggle changed-only filter" },
-        { label: "Alt+D, H", description: "Commit history" },
-        { label: "Alt+D, B", description: "Switch branch" },
-        { label: "Alt+D, A", description: "Stash management" },
-        { label: "Alt+D, G", description: "Toggle inline blame" },
-        { label: "Alt+D, E", description: "Favorite current repo" },
-        { label: "Alt+D, /", description: "Search in repo (git grep)" },
-        { label: "Alt+D, .", description: "Search active repos" },
-        { label: "Alt+D, Shift+/", description: "Search all repos" },
-        { label: "Alt+D, W", description: "Open repo in new window" },
-        { label: "Alt+D, K", description: "Show this cheatsheet" },
-        { label: "Alt+D, X", description: "Clean up merged branches" },
-        { label: "Alt+D, I", description: "Filter repos by tag" },
-        { label: "Alt+D, Z", description: "Undo last commit (soft reset)" },
-        { label: "Alt+D, Shift+B", description: "Save workspace snapshot" },
-        { label: "Alt+D, Shift+L", description: "Load workspace snapshot" },
-      ];
-      await vscode.window.showQuickPick(shortcuts, {
-        placeHolder: "Diffchestrator Keyboard Shortcuts (Alt+D chord prefix)",
-        matchOnDescription: true,
-      });
-    })
-  );
-
-  // Cross-repo activity log (#35)
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.activityLog, async () => {
-      const repos = repoManager.repos;
-      if (repos.length === 0) {
-        vscode.window.showWarningMessage("Diffchestrator: No repos scanned.");
-        return;
-      }
-      type LogEntry = { label: string; description: string; detail: string };
-      const entries: LogEntry[] = [];
-      await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Window, title: "Diffchestrator: Loading activity" },
-        async () => {
-          for (let i = 0; i < repos.length; i += BATCH_SMALL) {
-            await Promise.all(repos.slice(i, i + BATCH_SMALL).map(async (r) => {
-              try {
-                const commits = await sharedGit.log(r.path, 3);
-                for (const c of commits) {
-                  entries.push({
-                    label: `$(git-commit) ${c.message}`,
-                    description: `${r.name} · ${c.author}`,
-                    detail: `${c.shortHash} · ${c.date}`,
-                  });
-                }
-              } catch { /* skip */ }
-            }));
-          }
-        }
-      );
-      entries.sort((a, b) => b.detail.localeCompare(a.detail));
-      await vscode.window.showQuickPick(entries.slice(0, 50), {
-        placeHolder: "Recent commits across all repos",
-        matchOnDescription: true,
-        matchOnDetail: true,
-      });
-    })
-  );
-
-  // Branch cleanup (#36)
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.branchCleanup, async () => {
-      const repos = repoManager.repos;
-      if (repos.length === 0) return;
-      type CleanupItem = vscode.QuickPickItem & { _repo: string; _branch: string };
-      const items: CleanupItem[] = [];
-      await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: "Diffchestrator: Finding merged branches" },
-        async () => {
-          for (let i = 0; i < repos.length; i += BATCH_SMALL) {
-            await Promise.all(repos.slice(i, i + BATCH_SMALL).map(async (r) => {
-              try {
-                const merged = await sharedGit.mergedBranches(r.path, r.branch);
-                for (const b of merged) {
-                  items.push({
-                    label: `$(git-branch) ${b}`,
-                    description: r.name,
-                    picked: true,
-                    _repo: r.path,
-                    _branch: b,
-                  });
-                }
-              } catch { /* skip */ }
-            }));
-          }
-        }
-      );
-      if (items.length === 0) {
-        vscode.window.showInformationMessage("Diffchestrator: No merged branches found.");
-        return;
-      }
-      const selected = await vscode.window.showQuickPick(items, {
-        placeHolder: `${items.length} merged branches found — select to delete`,
-        canPickMany: true,
-      });
-      if (!selected || selected.length === 0) return;
-      let deleted = 0;
-      let failed = 0;
-      for (const s of selected) {
-        try {
-          await sharedGit.deleteBranch(s._repo, s._branch);
-          deleted++;
-        } catch {
-          failed++;
-        }
-      }
-      vscode.window.showInformationMessage(
-        `Diffchestrator: Deleted ${deleted} branches${failed > 0 ? `, ${failed} failed` : ""}`
-      );
-    })
-  );
-
-  // Open remote URL (#37)
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.openRemoteUrl, async (item?: any) => {
-      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
-      const repo = repoManager.getRepo(repoPath);
-      let url = repo?.remoteUrl;
-      if (!url) {
-        vscode.window.showWarningMessage("Diffchestrator: No remote URL found for this repo.");
-        return;
-      }
-      // Convert git@ SSH URLs to HTTPS
-      if (url.startsWith("git@")) {
-        url = url.replace(/^git@([^:]+):/, "https://$1/").replace(/\.git$/, "");
-      } else if (url.endsWith(".git")) {
-        url = url.replace(/\.git$/, "");
-      }
-      await vscode.env.openExternal(vscode.Uri.parse(url));
-    })
-  );
-
-  // Reveal in system file explorer
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.revealInExplorer, async (item?: any) => {
-      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
-      await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(repoPath));
-    })
-  );
-
-  // Repo tags (#38)
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.setRepoTag, async (item?: any) => {
-      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
-      const config = vscode.workspace.getConfiguration("diffchestrator");
-      const tags: Record<string, string[]> = config.get("repoTags", {});
-      const currentTags = Object.entries(tags)
-        .filter(([, repos]) => repos.includes(repoPath))
-        .map(([tag]) => tag);
-
-      const input = await vscode.window.showInputBox({
-        prompt: `Tags for ${path.basename(repoPath)} (comma-separated)`,
-        value: currentTags.join(", "),
-        placeHolder: "frontend, shared, infra",
-      });
-      if (input === undefined) return;
-
-      // Remove repo from all existing tags
-      for (const [tag, repos] of Object.entries(tags)) {
-        tags[tag] = repos.filter((r) => r !== repoPath);
-        if (tags[tag].length === 0) delete tags[tag];
-      }
-      // Add to new tags
-      if (input.trim()) {
-        for (const tag of input.split(",").map((t) => t.trim()).filter(Boolean)) {
-          if (!tags[tag]) tags[tag] = [];
-          tags[tag].push(repoPath);
-        }
-      }
-      await config.update("repoTags", tags, vscode.ConfigurationTarget.Global);
-      vscode.window.showInformationMessage(`Diffchestrator: Tags updated for ${path.basename(repoPath)}`);
-    }),
-    vscode.commands.registerCommand(CMD.filterByTag, async () => {
-      const config = vscode.workspace.getConfiguration("diffchestrator");
-      const tags: Record<string, string[]> = config.get("repoTags", {});
-      const tagNames = Object.keys(tags);
-      if (tagNames.length === 0) {
-        vscode.window.showInformationMessage("Diffchestrator: No tags defined. Right-click a repo to add tags.");
-        return;
-      }
-      const items = [
-        { label: "$(close) Clear filter", description: "Show all repos", _tag: "" },
-        ...tagNames.map((t) => ({ label: `$(tag) ${t}`, description: `${tags[t].length} repos`, _tag: t })),
-      ];
-      const picked = await vscode.window.showQuickPick(items, { placeHolder: "Filter repos by tag" });
-      if (!picked) return;
-      // Store active tag filter in context for repoTreeProvider
-      vscode.commands.executeCommand("setContext", "diffchestrator.activeTagFilter", picked._tag);
-      repoManager.setTagFilter(picked._tag || undefined);
-    })
-  );
-
-  // Workspace snapshots (#39)
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.saveSnapshot, async () => {
-      const name = await vscode.window.showInputBox({
-        prompt: "Snapshot name",
-        placeHolder: "e.g., Frontend work, Infra day",
-      });
-      if (!name) return;
-      const config = vscode.workspace.getConfiguration("diffchestrator");
-      const snapshots: Record<string, { root?: string; favorites: string[]; recent: string[]; selected?: string }> = config.get("snapshots", {});
-      snapshots[name] = {
-        root: repoManager.currentRoot,
-        favorites: config.get<string[]>("favorites", []),
-        recent: [...repoManager.recentRepoPaths],
-        selected: repoManager.selectedRepo,
-      };
-      await config.update("snapshots", snapshots, vscode.ConfigurationTarget.Global);
-      vscode.window.showInformationMessage(`Diffchestrator: Snapshot "${name}" saved`);
-    }),
-    vscode.commands.registerCommand(CMD.loadSnapshot, async () => {
-      const config = vscode.workspace.getConfiguration("diffchestrator");
-      const snapshots = { ...config.get<Record<string, { root?: string; favorites: string[]; recent: string[]; selected?: string }>>("snapshots", {}) };
-      const names = Object.keys(snapshots);
-      if (names.length === 0) {
-        vscode.window.showInformationMessage("Diffchestrator: No snapshots saved.");
-        return;
-      }
-      const items = [
-        ...names.map((n) => ({
-          label: `$(bookmark) ${n}`,
-          description: snapshots[n].root ? path.basename(snapshots[n].root!) : "",
-          _action: "load" as const,
-          _name: n,
-        })),
-        ...names.map((n) => ({
-          label: `$(trash) Delete "${n}"`,
-          description: "",
-          _action: "delete" as const,
-          _name: n,
-        })),
-      ];
-      const picked = await vscode.window.showQuickPick(items, { placeHolder: "Load or delete a snapshot" });
-      if (!picked) return;
-
-      if (picked._action === "delete") {
-        delete snapshots[picked._name];
-        await config.update("snapshots", snapshots, vscode.ConfigurationTarget.Global);
-        vscode.window.showInformationMessage(`Diffchestrator: Snapshot "${picked._name}" deleted`);
-        return;
-      }
-
-      const snap = snapshots[picked._name];
-      if (!snap) return;
-      // Restore favorites
-      await config.update("favorites", snap.favorites, vscode.ConfigurationTarget.Global);
-      // Restore recent repos + selection
-      if (snap.recent) repoManager.restoreRecent(snap.recent, snap.selected);
-      // Scan the root
-      if (snap.root) {
-        await repoManager.scan(snap.root);
-        fileWatcher.watchAll();
-      }
-      vscode.window.showInformationMessage(`Diffchestrator: Loaded snapshot "${picked._name}"`);
-    })
-  );
-
-  // Undo last commit (#41)
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.undoCommit, async (item?: any) => {
-      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
-      const repoName = path.basename(repoPath);
-      try {
-        const commits = await sharedGit.log(repoPath, 1);
-        const lastMsg = commits.length > 0 ? commits[0].message : "last commit";
-        const confirm = await vscode.window.showWarningMessage(
-          `Undo "${lastMsg}" in ${repoName}? Changes will be kept as staged.`,
-          { modal: true },
-          "Undo"
-        );
-        if (confirm !== "Undo") return;
-        await sharedGit.resetSoft(repoPath);
-        await repoManager.refreshRepo(repoPath);
-        vscode.window.showInformationMessage(`Diffchestrator: Undid last commit in ${repoName}. Changes are staged.`);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        vscode.window.showErrorMessage(`Diffchestrator: Undo failed: ${msg}`);
-      }
-    })
-  );
-
-  // Single-repo fetch (#42)
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.fetchRepo, async (item?: any) => {
-      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
-      const repoName = path.basename(repoPath);
-      try {
-        await vscode.window.withProgress(
-          { location: vscode.ProgressLocation.Notification, title: `Diffchestrator: Fetching ${repoName}...` },
-          async () => {
-            await sharedGit.fetch(repoPath);
-            await repoManager.refreshRepo(repoPath);
-          }
-        );
-        const repo = repoManager.getRepo(repoPath);
-        const behind = repo?.behind ?? 0;
-        vscode.window.showInformationMessage(
-          `Diffchestrator: Fetched ${repoName}${behind > 0 ? ` (${behind} behind)` : " (up to date)"}`
-        );
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        vscode.window.showErrorMessage(`Diffchestrator: Fetch failed for ${repoName}: ${msg}`);
-      }
-    })
-  );
+  registerScanRootCommands(context, repoManager, fileWatcher);
+  registerBulkSyncCommands(context, repoManager, outputChannel);
+  registerRepoInfoCommands(context, repoManager);
+  registerTagCommands(context, repoManager);
+  registerSnapshotCommands(context, repoManager, fileWatcher);
 
   // Toggle changed only
   context.subscriptions.push(
@@ -1210,7 +556,12 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     vscode.commands.registerCommand(CMD.nextChangedFile, async () => {
       const repoPath = repoManager.selectedRepo;
       if (!repoPath) return;
-      const status = await sharedGit.status(repoPath);
+      let status;
+      try {
+        status = await sharedGit.status(repoPath);
+      } catch {
+        return; // git status failed (repo deleted, index.lock, …) — no-op
+      }
       const allFiles = [...status.unstaged, ...status.untracked, ...status.staged];
       if (allFiles.length === 0) return;
 
@@ -1228,7 +579,12 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     vscode.commands.registerCommand(CMD.prevChangedFile, async () => {
       const repoPath = repoManager.selectedRepo;
       if (!repoPath) return;
-      const status = await sharedGit.status(repoPath);
+      let status;
+      try {
+        status = await sharedGit.status(repoPath);
+      } catch {
+        return; // git status failed — no-op
+      }
       const allFiles = [...status.unstaged, ...status.untracked, ...status.staged];
       if (allFiles.length === 0) return;
 
@@ -1241,46 +597,6 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
 
       await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
       await openFileDiff(repoPath, prev);
-    })
-  );
-
-  // Stage/unstage the file currently open in the editor (editor title bar buttons)
-  // Delegates to the same stageFile/unstageFile commands used by the sidebar tree,
-  // resolving the file path from the active editor first.
-  // Reuse shared git instance for editor commands
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.stageCurrentFile, async () => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) return;
-      const repoPath = repoManager.selectedRepo;
-      if (!repoPath) return;
-      const absFile = editor.document.uri.fsPath;
-      const rel = path.relative(repoPath, absFile);
-      if (rel.startsWith("..")) return;
-      try {
-        await sharedGit.stage(repoPath, [rel]);
-        await repoManager.refreshRepo(repoPath);
-        await openNextPendingFile(sharedGit, repoPath, rel);
-      } catch (err: unknown) {
-        vscode.window.showErrorMessage(`Failed to stage: ${err instanceof Error ? err.message : err}`);
-      }
-    }),
-    vscode.commands.registerCommand(CMD.unstageCurrentFile, async () => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) return;
-      const repoPath = repoManager.selectedRepo;
-      if (!repoPath) return;
-      const absFile = editor.document.uri.fsPath;
-      const rel = path.relative(repoPath, absFile);
-      if (rel.startsWith("..")) return;
-      try {
-        await sharedGit.unstage(repoPath, [rel]);
-        await repoManager.refreshRepo(repoPath);
-        vscode.window.showInformationMessage(`Unstaged: ${rel}`);
-      } catch (err: unknown) {
-        vscode.window.showErrorMessage(`Failed to unstage: ${err instanceof Error ? err.message : err}`);
-      }
     })
   );
 
@@ -1334,28 +650,94 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     return false;
   }
 
-  // Close editors that belong to a specific repo path
+  // Tab sessions captured when a repo's editors are closed on switch-away,
+  // restored in full when the user returns to that repo (LRU, max 20 repos).
+  type SavedTab =
+    | { kind: "text"; uri: vscode.Uri; viewColumn?: vscode.ViewColumn; active: boolean }
+    | {
+        kind: "diff";
+        original: vscode.Uri;
+        modified: vscode.Uri;
+        label: string;
+        viewColumn?: vscode.ViewColumn;
+        active: boolean;
+      };
+  const savedTabsByRepo = new Map<string, SavedTab[]>();
+  const capSavedTabs = () => {
+    while (savedTabsByRepo.size > MAX_LAST_OPEN) {
+      const oldest = savedTabsByRepo.keys().next().value!;
+      savedTabsByRepo.delete(oldest);
+    }
+  };
+
+  // Close editors that belong to a specific repo path, remembering the full
+  // tab set so returning to the repo restores the session — not just one file.
   async function closeEditorsForRepo(repoPath: string): Promise<void> {
     const tabsToClose: vscode.Tab[] = [];
+    const saved: SavedTab[] = [];
     for (const group of vscode.window.tabGroups.all) {
       for (const tab of group.tabs) {
-        let belongsToRepo = false;
         const input = tab.input as Record<string, unknown> | undefined;
-        if (input?.uri) {
-          belongsToRepo = uriBelongsToRepo(input.uri as vscode.Uri, repoPath);
-        } else if (input?.original && input?.modified) {
-          belongsToRepo =
-            uriBelongsToRepo(input.original as vscode.Uri, repoPath) ||
-            uriBelongsToRepo(input.modified as vscode.Uri, repoPath);
-        }
-        if (belongsToRepo) {
+        if (input?.uri && uriBelongsToRepo(input.uri as vscode.Uri, repoPath)) {
           tabsToClose.push(tab);
+          saved.push({
+            kind: "text",
+            uri: input.uri as vscode.Uri,
+            viewColumn: group.viewColumn,
+            active: tab.isActive && group.isActive,
+          });
+        } else if (
+          input?.original &&
+          input?.modified &&
+          (uriBelongsToRepo(input.original as vscode.Uri, repoPath) ||
+            uriBelongsToRepo(input.modified as vscode.Uri, repoPath))
+        ) {
+          tabsToClose.push(tab);
+          saved.push({
+            kind: "diff",
+            original: input.original as vscode.Uri,
+            modified: input.modified as vscode.Uri,
+            label: tab.label,
+            viewColumn: group.viewColumn,
+            active: tab.isActive && group.isActive,
+          });
         }
       }
     }
     if (tabsToClose.length > 0) {
+      savedTabsByRepo.delete(repoPath); // re-insert at end for LRU
+      savedTabsByRepo.set(repoPath, saved);
+      capSavedTabs();
       await vscode.window.tabGroups.close(tabsToClose);
     }
+  }
+
+  /** Restore a previously captured tab session. Returns true if anything reopened. */
+  async function restoreEditorsForRepo(repoPath: string, preserveFocus: boolean): Promise<boolean> {
+    const saved = savedTabsByRepo.get(repoPath);
+    if (!saved || saved.length === 0) return false;
+    savedTabsByRepo.delete(repoPath); // the tabs are live again; re-captured on next switch
+    // Open the previously-active tab last so it ends up focused.
+    const ordered = [...saved.filter((t) => !t.active), ...saved.filter((t) => t.active)];
+    let restored = false;
+    for (const t of ordered) {
+      const focusOpts = { preview: false, preserveFocus: preserveFocus || !t.active };
+      try {
+        if (t.kind === "text") {
+          await vscode.window.showTextDocument(t.uri, { ...focusOpts, viewColumn: t.viewColumn });
+        } else {
+          await vscode.commands.executeCommand("vscode.diff", t.original, t.modified, t.label, {
+            ...focusOpts,
+            viewColumn: t.viewColumn,
+          });
+        }
+        restored = true;
+      } catch (err) {
+        // File deleted / ref gone since capture — skip it
+        outputChannel.appendLine(`[restore tabs] ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    return restored;
   }
 
   let previousRepoPath: string | undefined;
@@ -1424,6 +806,14 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
 
         // Directory entries: terminal only, no file operations
         if (repoManager.isDirectory(repoPath)) return;
+
+        // Returning to a repo whose tabs we closed on switch-away: restore the
+        // whole session instead of opening the first changed file.
+        try {
+          if (await restoreEditorsForRepo(repoPath, preserveFocus)) return;
+        } catch (err) {
+          outputChannel.appendLine(`[restore tabs] ${err instanceof Error ? err.message : err}`);
+        }
 
         // Priority: changed files first (review workflow), then remembered file
         try {
@@ -1532,150 +922,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   registerNav(CMD.nextTerminal, 1);
   registerNav(CMD.prevTerminal, -1);
 
-  // Repo Files tree — file operations
-  type FileOpNode = { uri: vscode.Uri; isDirectory?: boolean };
-  const fileOpTargets = (node?: FileOpNode, nodes?: FileOpNode[]): FileOpNode[] =>
-    (nodes?.length ? nodes : node ? [node] : []).filter((n) => !!n?.uri);
-  const showFileOpError = (action: string, err: unknown): void => {
-    const msg = err instanceof Error ? err.message : String(err);
-    vscode.window.showErrorMessage(`Diffchestrator: Failed to ${action}: ${msg}`);
-  };
-  /** Resolve a new-entry name against a directory, confined to the repo. */
-  const resolveNewEntryPath = (dir: string, name: string): string | undefined => {
-    const root = repoManager.selectedRepo ?? dir;
-    const target = path.resolve(dir, name);
-    if (target !== root && !target.startsWith(root + path.sep)) {
-      vscode.window.showErrorMessage("Diffchestrator: Path escapes the repository.");
-      return undefined;
-    }
-    return target;
-  };
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.fileDelete, async (node?: FileOpNode, nodes?: FileOpNode[]) => {
-      const targets = fileOpTargets(node, nodes);
-      if (targets.length === 0) return;
-      const label =
-        targets.length === 1
-          ? `"${path.basename(targets[0].uri.fsPath)}"`
-          : `${targets.length} items`;
-      const yes = await vscode.window.showWarningMessage(
-        `Move ${label} to the trash?`, { modal: true }, "Move to Trash"
-      );
-      if (yes !== "Move to Trash") return;
-      for (const t of targets) {
-        try {
-          await vscode.workspace.fs.delete(t.uri, { recursive: true, useTrash: true });
-        } catch (err: unknown) {
-          showFileOpError(`delete ${path.basename(t.uri.fsPath)}`, err);
-        }
-      }
-    }),
-    vscode.commands.registerCommand(CMD.fileRename, async (node?: FileOpNode) => {
-      if (!node?.uri) return;
-      const oldPath = node.uri.fsPath;
-      const oldName = path.basename(oldPath);
-      const newName = await vscode.window.showInputBox({
-        prompt: "New name",
-        value: oldName,
-        valueSelection: [0, oldName.lastIndexOf(".") > 0 ? oldName.lastIndexOf(".") : oldName.length],
-        validateInput: (v) => {
-          if (!v.trim()) return "Name is required";
-          if (v.includes("/") || v.includes("\\")) return "Name cannot contain path separators";
-          return undefined;
-        },
-      });
-      if (!newName || newName === oldName) return;
-      const newPath = path.join(path.dirname(oldPath), newName);
-      try {
-        let exists = true;
-        try { await fs.promises.stat(newPath); } catch { exists = false; }
-        if (exists) {
-          vscode.window.showErrorMessage(`Diffchestrator: "${newName}" already exists.`);
-          return;
-        }
-        await fs.promises.rename(oldPath, newPath);
-      } catch (err: unknown) {
-        showFileOpError(`rename ${oldName}`, err);
-      }
-    }),
-    vscode.commands.registerCommand(CMD.fileCopyPath, async (node?: FileOpNode, nodes?: FileOpNode[]) => {
-      const targets = fileOpTargets(node, nodes);
-      if (targets.length === 0) return;
-      await vscode.env.clipboard.writeText(targets.map((t) => t.uri.fsPath).join("\n"));
-    }),
-    vscode.commands.registerCommand(CMD.fileCopyRelativePath, async (node?: FileOpNode, nodes?: FileOpNode[]) => {
-      const targets = fileOpTargets(node, nodes);
-      if (targets.length === 0) return;
-      const root = repoManager.selectedRepo;
-      await vscode.env.clipboard.writeText(
-        targets
-          .map((t) => (root ? path.relative(root, t.uri.fsPath) : t.uri.fsPath))
-          .join("\n"),
-      );
-    }),
-    vscode.commands.registerCommand(CMD.fileRevealInExplorer, async (node?: FileOpNode) => {
-      if (!node?.uri) return;
-      try {
-        await vscode.commands.executeCommand("revealFileInOS", node.uri);
-      } catch (err: unknown) {
-        showFileOpError("reveal in explorer", err);
-      }
-    }),
-    vscode.commands.registerCommand(CMD.fileOpenTerminal, async (node?: FileOpNode) => {
-      if (!node?.uri) return;
-      const dir = node.isDirectory ? node.uri.fsPath : path.dirname(node.uri.fsPath);
-      const terminal = vscode.window.createTerminal({ cwd: dir, name: path.basename(dir) });
-      terminal.show();
-    }),
-    vscode.commands.registerCommand(CMD.fileNewFile, async (node?: FileOpNode) => {
-      const root = repoManager.selectedRepo;
-      if (!root && !node?.uri) return;
-      const dir = node?.isDirectory ? node.uri.fsPath : node?.uri ? path.dirname(node.uri.fsPath) : root!;
-      const name = await vscode.window.showInputBox({
-        prompt: "File name (use / to create inside new folders)",
-        validateInput: (v) => (v.trim() ? undefined : "Name is required"),
-      });
-      if (!name) return;
-      const filePath = resolveNewEntryPath(dir, name);
-      if (!filePath) return;
-      try {
-        await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-        // wx: fail instead of truncating an existing file
-        await fs.promises.writeFile(filePath, "", { flag: "wx" });
-        await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(filePath));
-      } catch (err: unknown) {
-        if ((err as NodeJS.ErrnoException)?.code === "EEXIST") {
-          vscode.window.showErrorMessage(`Diffchestrator: "${name}" already exists.`);
-        } else {
-          showFileOpError("create file", err);
-        }
-      }
-    }),
-    vscode.commands.registerCommand(CMD.fileNewFolder, async (node?: FileOpNode) => {
-      const root = repoManager.selectedRepo;
-      if (!root && !node?.uri) return;
-      const dir = node?.isDirectory ? node.uri.fsPath : node?.uri ? path.dirname(node.uri.fsPath) : root!;
-      const name = await vscode.window.showInputBox({
-        prompt: "Folder name (use / for nested folders)",
-        validateInput: (v) => (v.trim() ? undefined : "Name is required"),
-      });
-      if (!name) return;
-      const folderPath = resolveNewEntryPath(dir, name);
-      if (!folderPath) return;
-      try {
-        await fs.promises.mkdir(folderPath, { recursive: true });
-      } catch (err: unknown) {
-        showFileOpError("create folder", err);
-      }
-    }),
-    vscode.commands.registerCommand(CMD.fileToggleIgnored, async () => {
-      const cfg = vscode.workspace.getConfiguration();
-      const current = cfg.get<boolean>(CONFIG.filesHideIgnored, false);
-      await cfg.update(CONFIG.filesHideIgnored, !current, vscode.ConfigurationTarget.Global);
-      // The provider refreshes itself via its onDidChangeConfiguration listener.
-    }),
-  );
+  registerFileOpsCommands(context, repoManager);
 
   // Phase 5: File watcher already created above (before command registrations)
 

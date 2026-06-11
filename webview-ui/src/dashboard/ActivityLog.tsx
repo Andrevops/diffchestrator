@@ -29,13 +29,17 @@ export default function ActivityLog({ entries }: Props) {
   const repos = useMemo(() => [...new Set(entries.map((e) => e.repoName))].sort(), [entries]);
   const authors = useMemo(() => [...new Set(entries.map((e) => e.author))].sort(), [entries]);
 
-  const filtered = entries.filter((e) => {
-    if (repoFilter && e.repoName !== repoFilter) return false;
-    if (authorFilter && e.author !== authorFilter) return false;
-    return true;
-  });
+  const filtered = useMemo(
+    () =>
+      entries.filter((e) => {
+        if (repoFilter && e.repoName !== repoFilter) return false;
+        if (authorFilter && e.author !== authorFilter) return false;
+        return true;
+      }),
+    [entries, repoFilter, authorFilter]
+  );
 
-  const grouped = groupByDate(filtered);
+  const grouped = useMemo(() => groupByDate(filtered), [filtered]);
 
   return (
     <div className="activity-panel">

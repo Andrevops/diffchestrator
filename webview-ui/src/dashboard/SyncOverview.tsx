@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import vscode from "../vscode";
 import type { SyncOverviewEntry } from "./DashboardApp";
 
@@ -32,6 +32,7 @@ export default function SyncOverview({ entries, onOpenRepo, collapsed, onToggle 
   const [loadingRepo, setLoadingRepo] = useState<string | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(-1);
   const tbodyRef = useRef<HTMLTableSectionElement>(null);
+  const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -42,21 +43,29 @@ export default function SyncOverview({ entries, onOpenRepo, collapsed, onToggle 
     }
   };
 
-  const filtered = entries.filter(
-    (e) =>
-      !search ||
-      e.name.toLowerCase().includes(search.toLowerCase()) ||
-      e.branch.toLowerCase().includes(search.toLowerCase())
+  const filtered = useMemo(
+    () =>
+      entries.filter(
+        (e) =>
+          !search ||
+          e.name.toLowerCase().includes(search.toLowerCase()) ||
+          e.branch.toLowerCase().includes(search.toLowerCase())
+      ),
+    [entries, search]
   );
 
-  const sorted = [...filtered].sort((a, b) => {
-    // Pinned repos always first
-    if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-    const av = a[sortKey];
-    const bv = b[sortKey];
-    const cmp = typeof av === "string" ? av.localeCompare(bv as string) : (av as number) - (bv as number);
-    return sortDir === "asc" ? cmp : -cmp;
-  });
+  const sorted = useMemo(
+    () =>
+      [...filtered].sort((a, b) => {
+        // Pinned repos always first
+        if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+        const av = a[sortKey];
+        const bv = b[sortKey];
+        const cmp = typeof av === "string" ? av.localeCompare(bv as string) : (av as number) - (bv as number);
+        return sortDir === "asc" ? cmp : -cmp;
+      }),
+    [filtered, sortKey, sortDir]
+  );
 
   const indicator = (key: SortKey) =>
     sortKey === key ? (
@@ -83,8 +92,16 @@ export default function SyncOverview({ entries, onOpenRepo, collapsed, onToggle 
     setOpenMenu(null);
     vscode.postMessage({ type, repoPath });
     // Clear loading after a delay (dashboard update will arrive)
-    setTimeout(() => setLoadingRepo(null), 3000);
+    if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
+    loadingTimerRef.current = setTimeout(() => setLoadingRepo(null), 3000);
   };
+
+  // Clear pending loading timer on unmount
+  useEffect(() => {
+    return () => {
+      if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
+    };
+  }, []);
 
   // Close menu on outside click
   useEffect(() => {
