@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.83.0
+
+### Features
+- Undo commit, single-repo fetch, visibility-aware refresh, repo mutation locks
+
 ## 0.82.0
 
 ### Features
