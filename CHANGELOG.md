@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.84.3
+
+### Performance
+- Parallelize multi-repo diff fetch and scanner BFS, debounce editor reloads
+
 ## 0.84.2
 
 ### Bug Fixes
