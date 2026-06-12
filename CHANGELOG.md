@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.84.1
+
+### Bug Fixes
+- Revert changed docs by URI instead of focusing them
+
 ## 0.84.0
 
 ### Features
