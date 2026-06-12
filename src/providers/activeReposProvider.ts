@@ -109,24 +109,27 @@ export class ActiveReposProvider implements vscode.TreeDataProvider<ActiveRepoNo
     const termLabels = element.terminalKinds.map((k) => KIND_LABELS[k]);
     const termTag = termLabels.length > 0 ? `⌨ ${termLabels.join("+")} ` : "";
 
+    // "symbol-folder", not "folder": the bare "folder" id is a file-kind icon
+    // that VS Code swaps for the file icon theme's folder and renders with
+    // twisty alignment, shifting the row right of its codicon siblings.
     const dirIcon = element.isDirectory;
     if (element.role === "favorite") {
       const activeMarker = isActive ? "● " : "";
       item.description = `${termTag}${activeMarker}${parts.join(" · ")}`;
       item.iconPath = dirIcon
-        ? new vscode.ThemeIcon("folder", new vscode.ThemeColor(isActive ? "charts.blue" : "charts.yellow"))
+        ? new vscode.ThemeIcon("symbol-folder", new vscode.ThemeColor(isActive ? "charts.blue" : "charts.yellow"))
         : isActive
           ? new vscode.ThemeIcon("star-full", new vscode.ThemeColor("charts.blue"))
           : new vscode.ThemeIcon("star-full", new vscode.ThemeColor("charts.yellow"));
     } else if (element.role === "active") {
       item.description = `${termTag}● ${parts.join(" · ")}`;
-      item.iconPath = new vscode.ThemeIcon(dirIcon ? "folder" : "repo", new vscode.ThemeColor("charts.blue"));
+      item.iconPath = new vscode.ThemeIcon(dirIcon ? "symbol-folder" : "repo", new vscode.ThemeColor("charts.blue"));
     } else if (element.role === "selected") {
       item.description = `${termTag}${parts.join(" · ")}`;
-      item.iconPath = new vscode.ThemeIcon(dirIcon ? "folder" : "check", new vscode.ThemeColor("charts.purple"));
+      item.iconPath = new vscode.ThemeIcon(dirIcon ? "symbol-folder" : "check", new vscode.ThemeColor("charts.purple"));
     } else {
       item.description = `${termTag}${parts.join(" · ")}`;
-      item.iconPath = new vscode.ThemeIcon(dirIcon ? "folder" : "history", new vscode.ThemeColor("foreground"));
+      item.iconPath = new vscode.ThemeIcon(dirIcon ? "symbol-folder" : "history", new vscode.ThemeColor("foreground"));
     }
 
     item.id = `active:${element.repoPath}:${element.role}:${isActive ? "a" : "i"}`;
