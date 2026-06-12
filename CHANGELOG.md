@@ -2,6 +2,11 @@
 
 All notable changes to Diffchestrator are documented here. Generated from conventional commits.
 
+## 0.84.2
+
+### Bug Fixes
+- Align directory rows in Active Repos with repo rows
+
 ## 0.84.1
 
 ### Bug Fixes
