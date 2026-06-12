@@ -206,53 +206,42 @@ export class RepoFilesProvider
    * unreliable in WSL / when the editor is part of a diff input — leaving the
    * buffer stale and dirty, which causes a "save?" prompt on close that can
    * overwrite the external edit.
+   *
+   * Reverts by URI rather than focusing the editor first: showTextDocument
+   * can only show a plain text editor, so for a file that's open only as the
+   * modified side of a diff tab it would spawn a new standalone tab (and
+   * steal focus). Reverting the shared text model updates every editor
+   * showing it, diff sides included, without opening anything.
    */
   private async _reloadOpenEditorsFor(uri: vscode.Uri): Promise<void> {
     const target = uri.fsPath;
-    const matches: { tab: vscode.Tab; group: vscode.TabGroup }[] = [];
+    let openInTab = false;
     for (const group of vscode.window.tabGroups.all) {
       for (const tab of group.tabs) {
         const input = tab.input;
-        let hit = false;
         if (input instanceof vscode.TabInputText) {
-          hit = input.uri.scheme === "file" && input.uri.fsPath === target;
+          openInTab = input.uri.scheme === "file" && input.uri.fsPath === target;
         } else if (input instanceof vscode.TabInputTextDiff) {
-          hit =
+          openInTab =
             (input.modified.scheme === "file" && input.modified.fsPath === target) ||
             (input.original.scheme === "file" && input.original.fsPath === target);
         }
-        if (hit) matches.push({ tab, group });
+        if (openInTab) break;
       }
+      if (openInTab) break;
     }
-    if (matches.length === 0) return;
+    if (!openInTab) return;
 
-    const previouslyActive = vscode.window.activeTextEditor;
-    for (const { tab, group } of matches) {
-      try {
-        const doc = vscode.workspace.textDocuments.find(
-          (d) => d.uri.scheme === "file" && d.uri.fsPath === target,
-        );
-        if (!doc) continue;
-        await vscode.window.showTextDocument(doc, {
-          viewColumn: group.viewColumn,
-          preview: tab.isPreview,
-          preserveFocus: true,
-        });
-        await vscode.commands.executeCommand("workbench.action.files.revert");
-      } catch {
-        /* ignore — best-effort reload */
-      }
-    }
-    if (previouslyActive) {
-      try {
-        await vscode.window.showTextDocument(previouslyActive.document, {
-          viewColumn: previouslyActive.viewColumn,
-          preserveFocus: false,
-          preview: false,
-        });
-      } catch {
-        /* ignore */
-      }
+    // No loaded document means the tab isn't resolved yet — VS Code reads
+    // fresh from disk when it activates, so there's nothing stale to revert.
+    const doc = vscode.workspace.textDocuments.find(
+      (d) => d.uri.scheme === "file" && d.uri.fsPath === target,
+    );
+    if (!doc) return;
+    try {
+      await vscode.commands.executeCommand("workbench.action.files.revert", doc.uri);
+    } catch {
+      /* ignore — best-effort reload */
     }
   }
 
