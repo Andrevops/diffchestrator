@@ -134,47 +134,55 @@ export class DiffWebviewPanel {
 
     this._panel.webview.postMessage({ type: "refreshing" });
 
-    const repos = [];
+    // All repos and all three git calls per repo run concurrently — the
+    // GitExecutor's global process limiter bounds actual spawn count.
+    const results = await Promise.all(
+      [...selectedPaths].map(async (repoPath) => {
+        const repoSummary = this._repoManager.getRepo(repoPath);
+        const name = repoSummary?.name ?? path.basename(repoPath);
 
-    for (const repoPath of selectedPaths) {
-      if (this._disposed) return;
-      const repoSummary = this._repoManager.getRepo(repoPath);
-      const name = repoSummary?.name ?? path.basename(repoPath);
+        try {
+          const [status, stagedDiff, unstagedDiff]: [RepoStatus, string, string] =
+            await Promise.all([
+              this._git.status(repoPath),
+              this._git.diff(repoPath, true),
+              this._git.diff(repoPath, false),
+            ]);
 
-      try {
-        const status: RepoStatus = await this._git.status(repoPath);
-        const stagedDiff = await this._git.diff(repoPath, true);
-        const unstagedDiff = await this._git.diff(repoPath, false);
-
-        repos.push({
-          name,
-          path: repoPath,
-          branch: status.branch,
-          stagedDiff,
-          unstagedDiff,
-          stagedFiles: status.staged.map((f) => ({
-            path: f.path,
-            changeType: f.changeType,
-            status: "staged" as const,
-          })),
-          unstagedFiles: status.unstaged.map((f) => ({
-            path: f.path,
-            changeType: f.changeType,
-            status: "unstaged" as const,
-          })),
-          untrackedFiles: status.untracked.map((f) => ({
-            path: f.path,
-            changeType: f.changeType,
-            status: "untracked" as const,
-          })),
-        });
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        vscode.window.showErrorMessage(
-          `Diffchestrator: Error reading ${name}: ${msg}`
-        );
-      }
-    }
+          return {
+            name,
+            path: repoPath,
+            branch: status.branch,
+            stagedDiff,
+            unstagedDiff,
+            stagedFiles: status.staged.map((f) => ({
+              path: f.path,
+              changeType: f.changeType,
+              status: "staged" as const,
+            })),
+            unstagedFiles: status.unstaged.map((f) => ({
+              path: f.path,
+              changeType: f.changeType,
+              status: "unstaged" as const,
+            })),
+            untrackedFiles: status.untracked.map((f) => ({
+              path: f.path,
+              changeType: f.changeType,
+              status: "untracked" as const,
+            })),
+          };
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!this._disposed) {
+            vscode.window.showErrorMessage(
+              `Diffchestrator: Error reading ${name}: ${msg}`
+            );
+          }
+          return undefined;
+        }
+      })
+    );
+    const repos = results.filter((r) => r !== undefined);
 
     if (this._disposed) return;
     this._panel.webview.postMessage({

@@ -66,6 +66,8 @@ export class RepoFilesProvider
   /** Parent directories of watcher events pending the debounced refresh. */
   private _pendingDirs = new Set<string>();
   private _refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Pending editor force-reloads, debounced per file. */
+  private _reloadTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private _repoManager: RepoManager) {
     this._disposables.push(
@@ -113,6 +115,8 @@ export class RepoFilesProvider
       clearTimeout(this._refreshTimer);
       this._refreshTimer = undefined;
     }
+    for (const t of this._reloadTimers.values()) clearTimeout(t);
+    this._reloadTimers.clear();
     this._changedFiles = new Map();
     this._changesLoaded = false;
     // Drop the in-flight load handle: the old root's load will discard its
@@ -140,8 +144,27 @@ export class RepoFilesProvider
     this._fsWatcher.onDidDelete((uri) => this._scheduleRefresh(uri));
     this._fsWatcher.onDidChange((uri) => {
       this._scheduleRefresh(uri);
-      if (!this._isNoise(uri)) void this._reloadOpenEditorsFor(uri);
+      if (!this._isNoise(uri)) this._scheduleReload(uri);
     });
+  }
+
+  /**
+   * Per-file debounce for editor force-reloads: an external writer (Claude,
+   * a build) can emit many change events per second for one file, and each
+   * reload is a tab scan plus a revert command. One revert at the tail is
+   * enough — revert always reads the latest on-disk content.
+   */
+  private _scheduleReload(uri: vscode.Uri): void {
+    const key = uri.fsPath;
+    const existing = this._reloadTimers.get(key);
+    if (existing) clearTimeout(existing);
+    this._reloadTimers.set(
+      key,
+      setTimeout(() => {
+        this._reloadTimers.delete(key);
+        void this._reloadOpenEditorsFor(uri);
+      }, 200)
+    );
   }
 
   /**
@@ -554,6 +577,8 @@ export class RepoFilesProvider
 
   dispose(): void {
     if (this._refreshTimer) clearTimeout(this._refreshTimer);
+    for (const t of this._reloadTimers.values()) clearTimeout(t);
+    this._reloadTimers.clear();
     this._fsWatcher?.dispose();
     for (const d of this._disposables) d.dispose();
     this._onDidChangeTreeData.dispose();
