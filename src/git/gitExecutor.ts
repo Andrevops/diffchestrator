@@ -11,7 +11,10 @@ const execFileAsync = promisify(execFile);
 interface RunResult {
   stdout: string;
   stderr: string;
+  /** git's exit code; -1 when git didn't exit normally (see `failure`). */
   code: number;
+  /** Set when the process didn't exit on its own: output overflow, timeout kill, signal, or spawn error. */
+  failure?: "maxBuffer" | "timeout" | "signal" | "spawn";
 }
 
 export interface GrepSearchOptions {
@@ -137,23 +140,41 @@ export class GitExecutor {
     }
   }
 
+  /**
+   * Config overrides prepended to EVERY git invocation. Scanned repos are
+   * untrusted: a `core.fsmonitor` command in a repo's .git/config would
+   * otherwise be executed by background status polling the moment the repo
+   * is scanned. Diff-producing commands additionally pass --no-ext-diff /
+   * --no-textconv (see DIFF_SAFETY_ARGS) to neutralize diff.external and
+   * textconv drivers.
+   */
+  static readonly SAFETY_CONFIG_ARGS: readonly string[] = ["-c", "core.fsmonitor=false"];
+  /** Added to commands that can render a diff (diff, show, stash show). */
+  private static readonly DIFF_SAFETY_ARGS: readonly string[] = ["--no-ext-diff", "--no-textconv"];
+
+  private static readonly DEFAULT_MAX_BUFFER = 10 * 1024 * 1024;
+
+  private static _gitEnv(): NodeJS.ProcessEnv {
+    return {
+      ...process.env,
+      GIT_TERMINAL_PROMPT: "0",
+      LC_ALL: "C", // stable English output for error-string matching
+      GIT_OPTIONAL_LOCKS: "0", // status polling must not take index.lock
+    };
+  }
+
   private async _run(
     args: string[],
     cwd: string,
-    opts?: { timeoutMs?: number; input?: string }
+    opts?: { timeoutMs?: number; input?: string; maxBuffer?: number }
   ): Promise<RunResult> {
     await this._acquireSlot();
     try {
-      const promise = execFileAsync("git", args, {
+      const promise = execFileAsync("git", [...GitExecutor.SAFETY_CONFIG_ARGS, ...args], {
         cwd,
-        maxBuffer: 10 * 1024 * 1024,
+        maxBuffer: opts?.maxBuffer ?? GitExecutor.DEFAULT_MAX_BUFFER,
         timeout: opts?.timeoutMs ?? 30_000, // 30s default per operation
-        env: {
-          ...process.env,
-          GIT_TERMINAL_PROMPT: "0",
-          LC_ALL: "C", // stable English output for error-string matching
-          GIT_OPTIONAL_LOCKS: "0", // status polling must not take index.lock
-        },
+        env: GitExecutor._gitEnv(),
       });
       if (opts?.input !== undefined && promise.child.stdin) {
         // If git exits before draining stdin (e.g. the repo vanished), the
@@ -166,14 +187,42 @@ export class GitExecutor {
       const { stdout, stderr } = await promise;
       return { stdout, stderr, code: 0 };
     } catch (err: unknown) {
-      const e = err as { stdout?: string; stderr?: string; code?: number };
+      const e = err as {
+        stdout?: string;
+        stderr?: string;
+        code?: number | string | null;
+        killed?: boolean;
+        signal?: string | null;
+      };
+      let failure: RunResult["failure"];
+      if (e.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") failure = "maxBuffer";
+      else if (e.killed) failure = "timeout";
+      else if (e.signal) failure = "signal";
+      else if (typeof e.code !== "number") failure = "spawn";
       return {
         stdout: e.stdout ?? "",
-        stderr: e.stderr ?? String(err),
-        code: e.code ?? 1,
+        stderr: e.stderr || String(err),
+        // Never map a kill/overflow (code null or a string) onto a real git
+        // exit code — callers treat exit 1 as "no matches"/"nothing to do".
+        code: typeof e.code === "number" ? e.code : -1,
+        failure,
       };
     } finally {
       this._releaseSlot();
+    }
+  }
+
+  /** Throw a descriptive error for an abnormal termination (overflow, timeout, kill). */
+  private static _throwIfAbnormal(result: RunResult, what: string): void {
+    switch (result.failure) {
+      case "maxBuffer":
+        throw new Error(`git ${what} output too large (exceeded buffer) — result would be truncated`);
+      case "timeout":
+        throw new Error(`git ${what} timed out`);
+      case "signal":
+        throw new Error(`git ${what} was killed`);
+      case "spawn":
+        throw new Error(`git ${what} failed to run: ${result.stderr.trim()}`);
     }
   }
 
@@ -426,7 +475,7 @@ export class GitExecutor {
     staged?: boolean,
     file?: string
   ): Promise<string> {
-    const args = ["diff"];
+    const args = ["diff", ...GitExecutor.DIFF_SAFETY_ARGS];
     if (staged) {
       args.push("--cached");
     }
@@ -665,7 +714,7 @@ export class GitExecutor {
 
   async show(repoPath: string, ref: string): Promise<string> {
     if (ref.startsWith("-")) return ""; // block flag injection
-    const result = await this._run(["show", ref], repoPath);
+    const result = await this._run(["show", ...GitExecutor.DIFF_SAFETY_ARGS, ref], repoPath);
     if (result.code !== 0) {
       return "";
     }
@@ -752,7 +801,7 @@ export class GitExecutor {
   }
 
   async diffStatSummary(repoPath: string): Promise<{ files: string[]; additions: number; deletions: number }> {
-    const result = await this._run(["diff", "--numstat", "HEAD"], repoPath);
+    const result = await this._run(["diff", ...GitExecutor.DIFF_SAFETY_ARGS, "--numstat", "HEAD"], repoPath);
     if (result.code !== 0 || !result.stdout.trim()) return { files: [], additions: 0, deletions: 0 };
     let additions = 0;
     let deletions = 0;
@@ -777,8 +826,8 @@ export class GitExecutor {
   async diffStatFile(repoPath: string, file: string, staged: boolean): Promise<{ additions: number; deletions: number }> {
     this._validateFilePath(repoPath, file);
     const args = staged
-      ? ["diff", "--cached", "--numstat", "--", file]
-      : ["diff", "--numstat", "--", file];
+      ? ["diff", ...GitExecutor.DIFF_SAFETY_ARGS, "--cached", "--numstat", "--", file]
+      : ["diff", ...GitExecutor.DIFF_SAFETY_ARGS, "--numstat", "--", file];
     const result = await this._run(args, repoPath);
     if (result.code !== 0 || !result.stdout.trim()) return { additions: 0, deletions: 0 };
     const parts = result.stdout.trim().split("\t");
@@ -996,7 +1045,7 @@ export class GitExecutor {
     if (!Number.isInteger(index) || index < 0) {
       throw new Error("Invalid stash index");
     }
-    const result = await this._run(["stash", "show", "-p", `stash@{${index}}`], repoPath);
+    const result = await this._run(["stash", "show", ...GitExecutor.DIFF_SAFETY_ARGS, "-p", `stash@{${index}}`], repoPath);
     return result.stdout;
   }
 
@@ -1008,7 +1057,7 @@ export class GitExecutor {
   } | undefined> {
     this._validateFilePath(repoPath, file);
     const result = await this._run(
-      ["blame", "-L", `${line},${line}`, "--porcelain", "--", file],
+      ["blame", "--no-textconv", "-L", `${line},${line}`, "--porcelain", "--", file],
       repoPath
     );
     if (result.code !== 0 || !result.stdout.trim()) {
