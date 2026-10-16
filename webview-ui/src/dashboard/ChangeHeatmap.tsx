@@ -1,5 +1,7 @@
 import { useMemo } from "react";
 import type { HeatmapEntry } from "./DashboardApp";
+import { buttonProps } from "../keyboard";
+import SectionHeader from "./SectionHeader";
 
 interface Props {
   entries: HeatmapEntry[];
@@ -35,20 +37,17 @@ export default function ChangeHeatmap({ entries, onOpenRepo, collapsed, onToggle
 
   return (
     <div className="dashboard-section">
-      <div className="dashboard-section-header" onClick={onToggle} style={{ cursor: "pointer" }}>
-        <span>
-          {collapsed ? "▸" : "▾"} Change Heatmap{" "}
-          <span className="section-badge">
-            {activeCount > 0 && `${activeCount} active `}
-            {staleCount > 0 && `${staleCount} stale`}
-            {activeCount === 0 && staleCount === 0 && "All quiet"}
-          </span>
+      <SectionHeader title="Change Heatmap" collapsed={collapsed} onToggle={onToggle}>
+        <span className="section-badge">
+          {activeCount > 0 && `${activeCount} active `}
+          {staleCount > 0 && `${staleCount} stale`}
+          {activeCount === 0 && staleCount === 0 && "All quiet"}
         </span>
-      </div>
+      </SectionHeader>
       {!collapsed && (
         <div className="dashboard-section-body">
           {entries.length === 0 ? (
-            <div className="heatmap-grid">
+            <div className="heatmap-grid" aria-busy="true" aria-label="Loading heatmap">
               {Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="heatmap-tile heatmap-tile--skeleton">
                   <div className="skeleton-line skeleton-line--short" />
@@ -62,7 +61,12 @@ export default function ChangeHeatmap({ entries, onOpenRepo, collapsed, onToggle
                 <div
                   key={e.path}
                   className={`heatmap-tile heatmap-tile--${heatLevel(e)}`}
-                  onClick={() => onOpenRepo(e.path)}
+                  {...buttonProps(
+                    () => onOpenRepo(e.path),
+                    `Open ${e.name}: ${e.totalChanges} changes${
+                      e.daysSinceLastCommit !== undefined ? `, last commit ${e.daysSinceLastCommit} days ago` : ""
+                    }`
+                  )}
                   title={[
                     e.name,
                     `Changes: ${e.totalChanges}`,

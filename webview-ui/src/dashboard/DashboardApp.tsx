@@ -109,6 +109,13 @@ function mergePhase1(prev: DashboardPayload | null, p1: DashboardPhase1Payload):
 
 type Tab = "dashboard" | "activity" | "settings" | "shortcuts";
 
+const TABS: [Tab, string][] = [
+  ["dashboard", "Dashboard"],
+  ["activity", "Activity"],
+  ["settings", "Settings"],
+  ["shortcuts", "Shortcuts"],
+];
+
 export default function DashboardApp() {
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -170,8 +177,8 @@ export default function DashboardApp() {
   if (loading && !data) {
     return (
       <div className="dashboard-container">
-        <div className="loading-state">
-          <span className="spinner" /> Loading dashboard...
+        <div className="loading-state" role="status">
+          <span className="spinner" aria-hidden="true" /> Loading dashboard...
         </div>
       </div>
     );
@@ -182,58 +189,41 @@ export default function DashboardApp() {
   return (
     <div className="dashboard-container">
       <header className="dashboard-header">
-        <div className="dashboard-tabs">
-          <button
-            className={`dashboard-tab ${tab === "dashboard" ? "dashboard-tab--active" : ""}`}
-            onClick={() => setTab("dashboard")}
-            title="1"
-          >
-            Dashboard
-          </button>
-          <button
-            className={`dashboard-tab ${tab === "activity" ? "dashboard-tab--active" : ""}`}
-            onClick={() => setTab("activity")}
-            title="2"
-          >
-            Activity
-          </button>
-          <button
-            className={`dashboard-tab ${tab === "settings" ? "dashboard-tab--active" : ""}`}
-            onClick={() => setTab("settings")}
-            title="3"
-          >
-            Settings
-          </button>
-          <button
-            className={`dashboard-tab ${tab === "shortcuts" ? "dashboard-tab--active" : ""}`}
-            onClick={() => setTab("shortcuts")}
-            title="4"
-          >
-            Shortcuts
-          </button>
+        <div className="dashboard-tabs" role="group" aria-label="Dashboard views">
+          {TABS.map(([id, label], i) => (
+            <button
+              key={id}
+              className={`dashboard-tab ${tab === id ? "dashboard-tab--active" : ""}`}
+              onClick={() => setTab(id)}
+              aria-pressed={tab === id}
+              title={`${label} (${i + 1})`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
         <span className="header-actions">
           {tab === "dashboard" && (
             <>
-              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "switchRoot" })} title="Switch scan root">
+              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "switchRoot" })} title="Switch scan root" aria-label="Switch scan root">
                 ⌂
               </button>
-              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "filterByTag" })} title="Filter by tag">
+              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "filterByTag" })} title="Filter by tag" aria-label="Filter by tag">
                 #
               </button>
               <span className="header-divider" />
-              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "claudeReviewAll" })} title="Claude review all changed repos">
+              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "claudeReviewAll" })} title="Claude review all changed repos" aria-label="Claude review all changed repos">
                 ◇
               </button>
               <span className="header-divider" />
-              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "saveSnapshot" })} title="Save workspace snapshot">
+              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "saveSnapshot" })} title="Save workspace snapshot" aria-label="Save workspace snapshot">
                 ⬇
               </button>
-              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "loadSnapshot" })} title="Load workspace snapshot">
+              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "loadSnapshot" })} title="Load workspace snapshot" aria-label="Load workspace snapshot">
                 ⬆
               </button>
               <span className="header-divider" />
-              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "scan" })} title="Rescan repos">
+              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "scan" })} title="Rescan repos" aria-label="Rescan repos">
                 ⟳
               </button>
               <button

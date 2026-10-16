@@ -1,5 +1,6 @@
 import type { SessionSummaryEntry } from "./DashboardApp";
 import { timeAgo } from "./timeAgo";
+import SectionHeader from "./SectionHeader";
 
 interface Props {
   entries: SessionSummaryEntry[];
@@ -13,23 +14,20 @@ export default function SessionSummary({ entries, sessionStartTime, collapsed, o
 
   return (
     <div className="dashboard-section">
-      <div className="dashboard-section-header" onClick={onToggle} style={{ cursor: "pointer" }}>
-        <span>
-          {collapsed ? "▸" : "▾"} Session Summary{" "}
-          <span className="section-badge">
-            {totalCommits > 0
-              ? `${totalCommits} commit${totalCommits !== 1 ? "s" : ""}`
-              : "No commits"}
-          </span>
+      <SectionHeader title="Session Summary" collapsed={collapsed} onToggle={onToggle}>
+        <span className="section-badge">
+          {totalCommits > 0
+            ? `${totalCommits} commit${totalCommits !== 1 ? "s" : ""}`
+            : "No commits"}
         </span>
-      </div>
+      </SectionHeader>
       {!collapsed && (
         <div className="dashboard-section-body">
           {entries.length === 0 ? (
             <div className="section-empty">
               No commits since session started
               {sessionStartTime && (
-                <div style={{ marginTop: 4, fontSize: 10 }}>
+                <div className="session-start">
                   Session: {new Date(sessionStartTime).toLocaleTimeString()}
                 </div>
               )}

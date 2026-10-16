@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import vscode from "../vscode";
 import { hasModifier, isEditableTarget, isInteractiveTarget } from "../keyboard";
+import SectionHeader from "./SectionHeader";
 import type { SyncOverviewEntry } from "./DashboardApp";
 
 type SortKey = "name" | "branch" | "ahead" | "behind" | "totalChanges" | "healthScore";
@@ -68,6 +69,23 @@ export default function SyncOverview({ entries, onOpenRepo, collapsed, onToggle 
     [filtered, sortKey, sortDir]
   );
 
+  const sortHeader = (key: SortKey, label: string, fullLabel?: string) => (
+    <th
+      aria-sort={sortKey === key ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+      title={fullLabel}
+    >
+      <button
+        type="button"
+        className="sort-btn"
+        onClick={() => toggleSort(key)}
+        aria-label={`Sort by ${fullLabel ?? label}`}
+      >
+        {label}
+        {indicator(key)}
+      </button>
+    </th>
+  );
+
   const indicator = (key: SortKey) =>
     sortKey === key ? (
       <span className="sort-indicator">{sortDir === "asc" ? "▲" : "▼"}</span>
@@ -108,8 +126,15 @@ export default function SyncOverview({ entries, onOpenRepo, collapsed, onToggle 
   useEffect(() => {
     if (!openMenu) return;
     const handler = () => setOpenMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenMenu(null);
+    };
     window.addEventListener("click", handler);
-    return () => window.removeEventListener("click", handler);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", handler);
+      window.removeEventListener("keydown", onKey);
+    };
   }, [openMenu]);
 
   // Keyboard navigation
@@ -137,37 +162,40 @@ export default function SyncOverview({ entries, onOpenRepo, collapsed, onToggle 
 
   return (
     <div className="dashboard-section">
-      <div className="dashboard-section-header" onClick={onToggle} style={{ cursor: "pointer" }}>
-        <span>
-          {collapsed ? "▸" : "▾"} Sync Overview{" "}
-          <span className="section-badge">
-            {behindCount > 0 && `↓${behindCount} `}
-            {aheadCount > 0 && `↑${aheadCount} `}
-            {dirtyCount > 0 && `${dirtyCount} dirty`}
-            {behindCount === 0 && aheadCount === 0 && dirtyCount === 0 && "All clean"}
-          </span>
+      <SectionHeader
+        title="Sync Overview"
+        collapsed={collapsed}
+        onToggle={onToggle}
+        actions={
+          collapsed ? undefined : (
+            <>
+              <button className="icon-btn" onClick={() => vscode.postMessage({ type: "fetchAll" })} title="Fetch all repos" aria-label="Fetch all repos">
+                ⟳
+              </button>
+              <button className="refresh-btn" onClick={() => vscode.postMessage({ type: "syncAll" })} title="Fetch → Pull → Push">
+                Sync All
+              </button>
+              {behindCount > 0 && (
+                <button className="refresh-btn" onClick={() => vscode.postMessage({ type: "pullAll" })}>
+                  Pull {behindCount}
+                </button>
+              )}
+              {aheadCount > 0 && (
+                <button className="refresh-btn" onClick={() => vscode.postMessage({ type: "bulkPush" })}>
+                  Push {aheadCount}
+                </button>
+              )}
+            </>
+          )
+        }
+      >
+        <span className="section-badge">
+          {behindCount > 0 && `↓${behindCount} `}
+          {aheadCount > 0 && `↑${aheadCount} `}
+          {dirtyCount > 0 && `${dirtyCount} dirty`}
+          {behindCount === 0 && aheadCount === 0 && dirtyCount === 0 && "All clean"}
         </span>
-        {!collapsed && (
-          <span className="header-actions" onClick={(e) => e.stopPropagation()}>
-            <button className="icon-btn" onClick={() => vscode.postMessage({ type: "fetchAll" })} title="Fetch all repos">
-              ⟳
-            </button>
-            <button className="refresh-btn" onClick={() => vscode.postMessage({ type: "syncAll" })} title="Fetch → Pull → Push">
-              Sync All
-            </button>
-            {behindCount > 0 && (
-              <button className="refresh-btn" onClick={() => vscode.postMessage({ type: "pullAll" })}>
-                Pull {behindCount}
-              </button>
-            )}
-            {aheadCount > 0 && (
-              <button className="refresh-btn" onClick={() => vscode.postMessage({ type: "bulkPush" })}>
-                Push {aheadCount}
-              </button>
-            )}
-          </span>
-        )}
-      </div>
+      </SectionHeader>
       {!collapsed && (
         <div className="dashboard-section-body">
           {entries.length === 0 ? (
@@ -178,20 +206,21 @@ export default function SyncOverview({ entries, onOpenRepo, collapsed, onToggle 
                 className="sync-search"
                 type="text"
                 placeholder="Filter repos... ( / )"
+                aria-label="Filter repos"
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setSelectedIdx(-1); }}
               />
               <table className="sync-table">
                 <thead>
                   <tr>
-                    <th onClick={() => toggleSort("name")}>Repo{indicator("name")}</th>
-                    <th onClick={() => toggleSort("branch")}>Branch{indicator("branch")}</th>
-                    <th onClick={() => toggleSort("ahead")}>↑{indicator("ahead")}</th>
-                    <th onClick={() => toggleSort("behind")}>↓{indicator("behind")}</th>
-                    <th onClick={() => toggleSort("totalChanges")}>Chg{indicator("totalChanges")}</th>
-                    <th title="Stashes">S</th>
-                    <th onClick={() => toggleSort("healthScore")} title="Health score">H{indicator("healthScore")}</th>
-                    <th></th>
+                    {sortHeader("name", "Repo")}
+                    {sortHeader("branch", "Branch")}
+                    {sortHeader("ahead", "↑", "Ahead")}
+                    {sortHeader("behind", "↓", "Behind")}
+                    {sortHeader("totalChanges", "Chg", "Changes")}
+                    <th title="Stashes" aria-label="Stashes">S</th>
+                    {sortHeader("healthScore", "H", "Health score")}
+                    <th><span className="visually-hidden">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody ref={tbodyRef}>
@@ -199,11 +228,16 @@ export default function SyncOverview({ entries, onOpenRepo, collapsed, onToggle 
                     <tr key={e.path} className={rowClass(e, idx)}>
                       <td>
                         <span className="sync-repo-name">
-                          {e.isPinned && <span className="pin-icon" title="Pinned">📌</span>}
+                          {e.isPinned && <span className="pin-icon" title="Pinned" role="img" aria-label="Pinned">📌</span>}
                           {statusDot(e)}
-                          <span className="sync-repo-link" onClick={() => onOpenRepo(e.path)}>
+                          <button
+                            type="button"
+                            className="sync-repo-link"
+                            onClick={() => onOpenRepo(e.path)}
+                            title={`Open ${e.name}`}
+                          >
                             {e.name}
-                          </span>
+                          </button>
                           {loadingRepo === e.path && <span className="spinner spinner--inline" />}
                         </span>
                       </td>
@@ -226,13 +260,13 @@ export default function SyncOverview({ entries, onOpenRepo, collapsed, onToggle 
                       <td className="sync-actions">
                         {/* Contextual inline actions */}
                         {e.behind > 0 && (
-                          <button className="icon-btn" onClick={() => sendAction("pullRepo", e.path)} title="Pull">↓</button>
+                          <button className="icon-btn" onClick={() => sendAction("pullRepo", e.path)} title="Pull" aria-label={`Pull ${e.name}`}>↓</button>
                         )}
                         {e.ahead > 0 && (
-                          <button className="icon-btn" onClick={() => sendAction("pushRepo", e.path)} title="Push">↑</button>
+                          <button className="icon-btn" onClick={() => sendAction("pushRepo", e.path)} title="Push" aria-label={`Push ${e.name}`}>↑</button>
                         )}
                         {e.totalChanges > 0 && (
-                          <button className="icon-btn" onClick={() => sendAction("aiCommit", e.path)} title="AI Commit">✦</button>
+                          <button className="icon-btn" onClick={() => sendAction("aiCommit", e.path)} title="AI Commit" aria-label={`AI commit ${e.name}`}>✦</button>
                         )}
                         {/* Overflow menu */}
                         <span className="overflow-wrapper">
@@ -240,11 +274,13 @@ export default function SyncOverview({ entries, onOpenRepo, collapsed, onToggle 
                             className="icon-btn"
                             onClick={(ev) => { ev.stopPropagation(); setOpenMenu(openMenu === e.path ? null : e.path); }}
                             title="More actions"
+                            aria-label={`More actions for ${e.name}`}
+                            aria-expanded={openMenu === e.path}
                           >
                             ···
                           </button>
                           {openMenu === e.path && (
-                            <div className="overflow-menu" onClick={(ev) => ev.stopPropagation()}>
+                            <div className="overflow-menu" aria-label={`Actions for ${e.name}`} onClick={(ev) => ev.stopPropagation()}>
                               <button onClick={() => sendAction(e.isPinned ? "unpinRepo" : "pinRepo", e.path)}>
                                 {e.isPinned ? "⊘ Unpin" : "📌 Pin to top"}
                               </button>
