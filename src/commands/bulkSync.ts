@@ -292,7 +292,7 @@ export function registerBulkSyncCommands(
     vscode.commands.registerCommand(CMD.branchCleanup, async () => {
       const repos = repoManager.repos;
       if (repos.length === 0) return;
-      type CleanupItem = vscode.QuickPickItem & { _repo: string; _branch: string };
+      type CleanupItem = vscode.QuickPickItem & { _repo: string; _name: string; _branch: string };
       const items: CleanupItem[] = [];
       await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: "Diffchestrator: Finding merged branches" },
@@ -300,17 +300,26 @@ export function registerBulkSyncCommands(
           for (let i = 0; i < repos.length; i += BATCH_SMALL) {
             await Promise.all(repos.slice(i, i + BATCH_SMALL).map(async (r) => {
               try {
-                const merged = await sharedGit.mergedBranches(r.path, r.branch);
+                // Merged into the repo's DEFAULT branch — not whatever branch
+                // happens to be checked out (a feature branch would list
+                // branches that never reached main).
+                const defaultBranch = await sharedGit.getDefaultBranch(r.path);
+                const merged = await sharedGit.mergedBranches(r.path, defaultBranch);
                 for (const b of merged) {
+                  // Never offer the default or the checked-out branch
+                  if (b === defaultBranch || b === r.branch) continue;
                   items.push({
                     label: `$(git-branch) ${b}`,
-                    description: r.name,
-                    picked: true,
+                    description: `${r.name} · merged into ${defaultBranch}`,
+                    picked: false,
                     _repo: r.path,
+                    _name: r.name,
                     _branch: b,
                   });
                 }
-              } catch { /* skip */ }
+              } catch (err) {
+                outputChannel.appendLine(`[branch-cleanup] ${r.name}: ${errMsg(err)}`);
+              }
             }));
           }
         }
@@ -320,22 +329,28 @@ export function registerBulkSyncCommands(
         return;
       }
       const selected = await vscode.window.showQuickPick(items, {
-        placeHolder: `${items.length} merged branches found — select to delete`,
+        placeHolder: `${items.length} merged branches found — pick the ones to delete`,
         canPickMany: true,
       });
       if (!selected || selected.length === 0) return;
       let deleted = 0;
       let failed = 0;
+      const touched = new Set<string>();
       for (const s of selected) {
         try {
           await sharedGit.deleteBranch(s._repo, s._branch);
+          outputChannel.appendLine(`[branch-cleanup] ${s._name}: deleted ${s._branch}`);
           deleted++;
-        } catch {
+          touched.add(s._repo);
+        } catch (err) {
           failed++;
+          outputChannel.appendLine(`[branch-cleanup] ${s._name}: failed to delete ${s._branch}: ${errMsg(err)}`);
         }
       }
-      vscode.window.showInformationMessage(
-        `Diffchestrator: Deleted ${deleted} branches${failed > 0 ? `, ${failed} failed` : ""}`
+      for (const repo of touched) await repoManager.refreshRepo(repo);
+      await showResult(
+        `Diffchestrator: Deleted ${deleted} branch${deleted === 1 ? "" : "es"}${failed > 0 ? `, ${failed} failed` : ""}`,
+        failed > 0
       );
     })
   );
