@@ -6,11 +6,14 @@ node_modules/**
 .github/**
 tsconfig.json
 esbuild.mjs
+eslint.config.mjs
+.nvmrc
 *.vsix
 .vscode-test/**
 resources/icons/icon.svg
+# README-only asset; vsce rewrites the README <img> to the GitHub raw URL
+resources/icons/icon-animated.gif
 scripts/**
-pnpm-lock.yaml
 .jules/**
 dist/**/*.map
 test/**
@@ -19,3 +22,5 @@ CLAUDE.md
 Makefile
 public_key.pem
 CONTRIBUTING.md
+checksums.txt*
+RELEASE_NOTES.md

@@ -1,4 +1,10 @@
-.PHONY: build compile watch package release release-patch release-minor release-major install publish publish-marketplace publish-openvsx clean
+.PHONY: build compile watch typecheck lint test package release release-patch release-minor release-major install publish publish-marketplace publish-openvsx clean
+
+# .vsix files are selected by the version in package.json, never by mtime,
+# so stale packages from older releases can't be installed or published.
+VERSION       := $(shell node -p "require('./package.json').version")
+VSIX          := diffchestrator-$(VERSION).vsix
+VSIX_OPENVSX  := diffchestrator-$(VERSION)-openvsx.vsix
 
 # Build everything (webview + extension)
 build:
@@ -12,11 +18,23 @@ compile:
 watch:
 	npm run watch
 
+# Typecheck extension + webview
+typecheck:
+	npm run typecheck
+
+# Lint extension sources
+lint:
+	npm run lint
+
+# Unit tests
+test:
+	npm test
+
 # Build and package .vsix
 package:
 	npm run package
 
-# Auto-detect bump from conventional commits, build, and package
+# Auto-detect bump from conventional commits, verify, package, then commit + tag
 release:
 	npm run release
 
@@ -30,26 +48,23 @@ release-minor:
 release-major:
 	npm run release:major
 
-# Install the latest Marketplace .vsix locally (excludes openvsx builds)
+# Install the Marketplace .vsix for the current package.json version
 install:
-	@vsix=$$(ls -t diffchestrator-*.vsix 2>/dev/null | grep -v openvsx | head -1); \
-	if [ -z "$$vsix" ]; then echo "No .vsix found. Run 'make package' first."; exit 1; fi; \
-	echo "Installing $$vsix"; \
-	code --install-extension "$$vsix" --force
+	@test -f "$(VSIX)" || { echo "$(VSIX) not found. Run 'make package' first."; exit 1; }
+	@echo "Installing $(VSIX)"
+	code --install-extension "$(VSIX)" --force
 
-# Publish to VS Code Marketplace
+# Publish to VS Code Marketplace (normally done by CI on tag push)
 publish-marketplace:
-	@vsix=$$(ls -t diffchestrator-*[0-9].vsix 2>/dev/null | grep -v openvsx | head -1); \
-	if [ -z "$$vsix" ]; then echo "No marketplace .vsix found. Run 'make release' first."; exit 1; fi; \
-	echo "Publishing $$vsix to VS Code Marketplace"; \
-	npx @vscode/vsce publish --packagePath "$$vsix"
+	@test -f "$(VSIX)" || { echo "$(VSIX) not found. Run 'make release' first."; exit 1; }
+	@echo "Publishing $(VSIX) to VS Code Marketplace"
+	npx --no-install vsce publish --no-dependencies --packagePath "$(VSIX)"
 
-# Publish to Open VSX
+# Publish to Open VSX (normally done by CI on tag push; reads OVSX_PAT from env)
 publish-openvsx:
-	@vsix=$$(ls -t diffchestrator-*-openvsx.vsix 2>/dev/null | head -1); \
-	if [ -z "$$vsix" ]; then echo "No Open VSX .vsix found. Run 'make release' first."; exit 1; fi; \
-	echo "Publishing $$vsix to Open VSX"; \
-	npx ovsx publish "$$vsix"
+	@test -f "$(VSIX_OPENVSX)" || { echo "$(VSIX_OPENVSX) not found. Run 'make release' first."; exit 1; }
+	@echo "Publishing $(VSIX_OPENVSX) to Open VSX"
+	npx --no-install ovsx publish --packagePath "$(VSIX_OPENVSX)"
 
 # Publish to both registries
 publish: publish-marketplace publish-openvsx

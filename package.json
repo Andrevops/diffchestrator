@@ -22,7 +22,8 @@
     "monorepo"
   ],
   "engines": {
-    "vscode": "^1.95.0"
+    "vscode": "^1.95.0",
+    "node": ">=22.6.0"
   },
   "categories": [
     "SCM Providers",
@@ -40,9 +41,6 @@
     }
   ],
   "activationEvents": [
-    "onView:diffchestrator.repos",
-    "onView:diffchestrator.activeRepos",
-    "onView:diffchestrator.changedFiles",
     "onStartupFinished"
   ],
   "main": "./dist/extension.js",
@@ -1449,22 +1447,24 @@
     "compile": "node esbuild.mjs",
     "build": "npm run build:webview && node esbuild.mjs --production",
     "watch": "node esbuild.mjs --watch",
-    "package": "npm run build && npx @vscode/vsce package --no-dependencies",
+    "typecheck": "tsc --noEmit -p . && cd webview-ui && npx --no-install tsc -b",
+    "lint": "eslint .",
+    "package": "npm run build && vsce package --no-dependencies",
+    "package:openvsx": "node scripts/package-openvsx.mjs",
     "release": "node scripts/release.mjs",
     "release:patch": "node scripts/release.mjs patch",
     "release:minor": "node scripts/release.mjs minor",
     "release:major": "node scripts/release.mjs major",
-    "test": "node --experimental-strip-types --import ./src/test-setup/register.mjs --test"
+    "test": "node --experimental-strip-types --import ./src/test-setup/register.mjs --test \"src/**/*.test.ts\" \"scripts/**/*.test.mjs\""
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@types/vscode": "^1.95.0",
-    "@vscode/test-electron": "^2.4.0",
-    "@vscode/vsce": "^3.9.2",
+    "@types/vscode": "~1.95.0",
+    "@vscode/vsce": "3.9.2",
     "esbuild": "^0.25.12",
-    "typescript": "^5.6.0"
-  },
-  "optionalDependencies": {
-    "@rollup/rollup-darwin-arm64": "^4.60.2"
+    "eslint": "^10.12.0",
+    "ovsx": "1.2.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.71.1"
   }
 }

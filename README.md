@@ -404,43 +404,56 @@ make release          # Auto-detect bump from conventional commits
 make release-patch    # Force patch bump
 make release-minor    # Force minor bump
 make release-major    # Force major bump
-make install          # Install latest .vsix locally
-make publish          # Publish to both VS Code Marketplace and Open VSX
-make publish-marketplace  # Publish to VS Code Marketplace only
-make publish-openvsx      # Publish to Open VSX only
+make install          # Install the .vsix for the current package.json version
+make publish          # Manual fallback: publish to both registries
+make publish-marketplace  # Manual fallback: VS Code Marketplace only
+make publish-openvsx      # Manual fallback: Open VSX only
 make clean            # Remove build artifacts
 ```
 
-The release script reads commit messages since the last `v*` tag, picks the semver bump (`feat:` = minor, `fix:` = patch, `BREAKING CHANGE` = major), updates CHANGELOG.md, commits the version bump, tags, builds, and packages two `.vsix` files:
+The release script must run on a clean `main` that is in sync with `origin/main`. It reads commit messages (subjects and bodies) since the last `v*` tag, picks the semver bump (`feat:` = minor, `fix:`/`perf:` = patch, `type!:` or a `BREAKING CHANGE:` footer = major), updates CHANGELOG.md, then runs typecheck, tests, and the build and packages two `.vsix` files. It commits and tags only after all of that passes:
 - `diffchestrator-X.Y.Z.vsix` — VS Code Marketplace (publisher: `andrevops-com`)
 - `diffchestrator-X.Y.Z-openvsx.vsix` — Open VSX Registry (publisher: `andrevops`)
 
-Pushing a `v*` tag to GitHub triggers CI to create a GitHub Release with both files and auto-publish to Open VSX.
+Pushing the tag (`git push --atomic origin main vX.Y.Z`) triggers CI. CI rebuilds both files, attests them, creates a GitHub Release, and publishes those same CI-built files to Open VSX and the VS Code Marketplace. The Marketplace step only runs when `VSCE_PAT` is configured.
 
 ### Verify Release Integrity
 
-Every GitHub Release includes `checksums.txt` (SHA-256) and `checksums.txt.sig` (ED25519 signature), plus [GitHub build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds).
+Every GitHub Release includes [GitHub build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds), `checksums.txt` (SHA-256), and `checksums.txt.sig` (ED25519 signature).
+
+**Use `gh attestation verify` as the primary check.** It proves that the `.vsix` was built by this repository's release workflow from a specific commit:
 
 ```sh
-# Verify build provenance
-gh attestation verify diffchestrator-*.vsix --repo Andrevops/diffchestrator
+gh attestation verify diffchestrator-X.Y.Z.vsix --repo Andrevops/diffchestrator
+```
 
-# Verify checksum signature
+The checksum signature is a secondary check. It only adds assurance if you verify the public key against the fingerprint pinned here, rather than trusting whatever the repository currently serves:
+
+- Key: ED25519, SHA-256 fingerprint of the DER public key: `84b14fadb2e61906410cdf72c5ac342f656ff8dcd05248a6cad7ca7ed466a504`
+
+```sh
 curl -fsSL https://raw.githubusercontent.com/Andrevops/diffchestrator/main/public_key.pem -o public_key.pem
+openssl pkey -pubin -in public_key.pem -outform DER | sha256sum   # must match the fingerprint above
 xxd -r -p checksums.txt.sig | openssl pkeyutl -verify -pubin -inkey public_key.pem -rawin -in checksums.txt -sigfile /dev/stdin
+sha256sum -c checksums.txt
 ```
 
 ## Development
 
 ```bash
-# Install dependencies
-npm install
-cd webview-ui && npm install && cd ..
+# Install dependencies (Node version from .nvmrc)
+npm ci
+npm ci --prefix webview-ui
 
 # Build
 make build           # Extension + webview
 make compile         # Extension only (fast)
 make watch           # Watch mode
+
+# Verify (same checks as CI)
+npm run typecheck
+npm test
+npm run lint
 
 # Debug
 # Press F5 in VS Code to launch Extension Host
