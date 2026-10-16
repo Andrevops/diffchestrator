@@ -5,6 +5,7 @@ import { ChangeType, FileStatus } from "../types.ts";
 import * as path from "node:path";
 import * as fs from "node:fs";
 import * as os from "node:os";
+import { execFileSync } from "node:child_process";
 
 describe("GitExecutor Path Validation", () => {
   const executor = new GitExecutor();
@@ -788,3 +789,44 @@ describe("GitExecutor gitdir resolution + merge state (real fs)", () => {
   });
 });
 
+
+describe("GitExecutor stash SHA guard + rename diff (real git)", () => {
+  const mkRepo = () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dc-stash-"));
+    const g = (...args: string[]) =>
+      execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd: dir, encoding: "utf8" }).trim();
+    g("init", "-q");
+    fs.writeFileSync(path.join(dir, "a.txt"), Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n") + "\n");
+    g("add", ".");
+    g("commit", "-qm", "init");
+    return { dir, g };
+  };
+
+  test("stashPop pops the requested index and refuses a stale SHA", async () => {
+    const { dir, g } = mkRepo();
+    const ex = new GitExecutor();
+    fs.appendFileSync(path.join(dir, "a.txt"), "first\n");
+    g("stash", "push", "-m", "first");
+    fs.appendFileSync(path.join(dir, "a.txt"), "second\n");
+    g("stash", "push", "-m", "second");
+    const list = await ex.stashList(dir);
+    const first = list.find((s) => s.message.includes("first"))!;
+    await assert.rejects(() => ex.stashPop(dir, first.index, list[0].sha), /Stash list changed/);
+    await ex.stashPop(dir, first.index, first.sha);
+    assert.match(fs.readFileSync(path.join(dir, "a.txt"), "utf8"), /first\n$/);
+    assert.strictEqual((await ex.stashList(dir)).length, 1);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("diff with oldFile shows a staged rename instead of a pure add", async () => {
+    const { dir, g } = mkRepo();
+    const ex = new GitExecutor();
+    g("mv", "a.txt", "b.txt");
+    fs.appendFileSync(path.join(dir, "b.txt"), "added\n");
+    g("add", ".");
+    const out = await ex.diff(dir, true, "b.txt", "a.txt");
+    assert.match(out, /rename from a\.txt/);
+    assert.doesNotMatch(out, /new file mode/);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});

@@ -622,7 +622,9 @@ export class GitExecutor {
   async diff(
     repoPath: string,
     staged?: boolean,
-    file?: string
+    file?: string,
+    /** For a staged rename: the original path, so the diff pairs old → new instead of showing an add. */
+    oldFile?: string
   ): Promise<string> {
     const args = ["diff", ...GitExecutor.DIFF_SAFETY_ARGS];
     if (staged) {
@@ -631,7 +633,12 @@ export class GitExecutor {
     args.push("--no-color");
     if (file) {
       this._validateFilePath(repoPath, file);
-      args.push("--", file);
+      if (oldFile && oldFile !== file) {
+        this._validateFilePath(repoPath, oldFile);
+        args.push("-M", "--", oldFile, file);
+      } else {
+        args.push("--", file);
+      }
     }
     // Large diffs (lockfiles, generated code) can legitimately exceed the
     // default buffer — allow more, but never return silently truncated output.
@@ -1157,9 +1164,13 @@ export class GitExecutor {
     });
   }
 
-  async stashPop(repoPath: string): Promise<string> {
+  async stashPop(repoPath: string, index = 0, expectedSha?: string): Promise<string> {
+    if (!Number.isInteger(index) || index < 0) {
+      throw new Error("Invalid stash index");
+    }
     return this._serialized(repoPath, async () => {
-      const result = await this._run(["stash", "pop"], repoPath);
+      await this._assertStashSha(repoPath, index, expectedSha);
+      const result = await this._run(["stash", "pop", `stash@{${index}}`], repoPath);
       this.invalidateStatus(repoPath);
       this.invalidateMetaCache(repoPath);
       if (result.code !== 0) {

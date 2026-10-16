@@ -892,9 +892,7 @@ export class DashboardWebviewPanel {
       } else if (msg.type === "stashApply") {
         await this._git.stashApply(repoPath, idx, sha);
       } else {
-        // stashPop has no SHA guard in GitExecutor; the stashList check above
-        // narrows (but cannot fully close) the race window.
-        await this._git.stashPop(repoPath);
+        await this._git.stashPop(repoPath, idx, sha);
       }
       await this._repoManager.refreshRepo(repoPath);
       await this._update();

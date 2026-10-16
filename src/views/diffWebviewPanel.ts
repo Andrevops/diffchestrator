@@ -252,7 +252,12 @@ export class DiffWebviewPanel {
       return;
     }
     try {
-      let diff = await this._git.diff(repoPath, msg.staged === true, filePath);
+      const staged = msg.staged === true;
+      // Staged renames: diff against the original path so it isn't shown as a pure add.
+      const oldPath = staged
+        ? (await this._git.status(repoPath)).staged.find((f) => f.path === filePath)?.oldPath
+        : undefined;
+      let diff = await this._git.diff(repoPath, staged, filePath, oldPath);
       let lineCount = 0;
       for (let i = diff.indexOf("\n"); i !== -1; i = diff.indexOf("\n", i + 1)) lineCount++;
       if (lineCount > LARGE_DIFF_LINES && msg.force !== true) {
