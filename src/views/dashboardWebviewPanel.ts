@@ -1,6 +1,9 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { RepoManager } from "../services/repoManager";
+import { readFileSync } from "fs";
+import { buildWebviewHtml, webviewResourceRoots } from "./webviewHtml";
+import { buildShortcuts } from "./shortcuts";
 import type { CommitEntry, DashboardMessage } from "../types";
 import { CMD, BATCH_LARGE } from "../constants";
 import { showTerminalIfExists, terminalIcon } from "../commands/terminal";
@@ -14,7 +17,7 @@ interface DiffStatSummary {
 interface StashOverviewEntry {
   repoName: string;
   repoPath: string;
-  stashes: { index: number; message: string }[];
+  stashes: { index: number; sha: string; message: string; date: string }[];
 }
 
 interface SyncOverviewEntry {
@@ -76,12 +79,56 @@ interface DashboardPayload {
   sessionStartTime: string;
 }
 
+type DashboardPhase1Payload = Pick<DashboardPayload, "syncOverview" | "branchMap" | "sessionStartTime">;
+
 const MAIN_BRANCHES = new Set(["main", "master", "develop", "development"]);
 
 const MAX_PINNED_REPOS = 100;
 
+// Message types that must carry a valid repoPath (rejected when it's missing).
+const REPO_SCOPED = new Set<string>([
+  "openRepo", "pullRepo", "pushRepo", "openTerminal", "openClaude", "aiCommit",
+  "switchBranch", "discardAll", "commitHistory", "openRemoteUrl", "copyRepoInfo",
+  "stashPop", "stashApply", "stashDrop", "pinRepo", "unpinRepo",
+]);
+
 function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((x) => typeof x === "string");
+}
+
+const STASH_SHA_RE = /^[0-9a-f]{40}$/;
+
+const MAX_EXPORT_ENTRIES = 10_000;
+const MAX_EXPORT_FIELD = 1_000;
+
+function isShortString(v: unknown): v is string {
+  return typeof v === "string" && v.length <= MAX_EXPORT_FIELD;
+}
+
+function isActivityEntry(v: unknown): v is ActivityEntry {
+  if (!v || typeof v !== "object") return false;
+  const e = v as Record<string, unknown>;
+  return (
+    isShortString(e.repoName) &&
+    isShortString(e.shortHash) &&
+    isShortString(e.author) &&
+    isShortString(e.message) &&
+    isShortString(e.date) &&
+    !Number.isNaN(new Date(e.date).getTime())
+  );
+}
+
+/** Returns an error message for an invalid skip-dir name, or undefined if valid. */
+function validateSkipDirName(raw: string, existing: readonly string[]): string | undefined {
+  const name = raw.trim();
+  if (!name) return "Enter a directory name";
+  if (name.length > 255) return "Name is too long";
+  if (name === "." || name === "..") return "Not a valid directory name";
+  if (/[\\/]/.test(name)) return "Enter a directory name, not a path";
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f\x7f]/.test(name)) return "Name contains control characters";
+  if (existing.includes(name)) return `"${name}" is already skipped`;
+  return undefined;
 }
 
 function isFiniteNumberInRange(v: unknown, min: number, max: number): boolean {
@@ -121,6 +168,10 @@ export class DashboardWebviewPanel {
   private _sessionStartTime: number;
   private _updateThrottleTimer: ReturnType<typeof setTimeout> | undefined;
   private _updateInProgress = false;
+  /** A change event arrived while an update was running — rerun once after. */
+  private _updateDirty = false;
+  /** A user-requested refresh (refreshAll + update) is running. */
+  private _refreshInProgress = false;
   private _updateGeneration = 0;
   private _pendingWhileHidden = false;
   private _disposed = false;
@@ -147,9 +198,7 @@ export class DashboardWebviewPanel {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [
-          vscode.Uri.joinPath(extensionUri, "dist", "webview-dashboard"),
-        ],
+        localResourceRoots: webviewResourceRoots(extensionUri),
       }
     );
 
@@ -212,58 +261,41 @@ export class DashboardWebviewPanel {
   }
 
   private _scheduleUpdate(): void {
-    if (this._disposed || this._updateThrottleTimer || this._updateInProgress) return;
+    if (this._disposed) return;
     if (!this._panel.visible) {
       this._pendingWhileHidden = true;
       return;
     }
+    // An event arriving mid-update must not be dropped: mark dirty and rerun
+    // once when the current update finishes.
+    if (this._updateInProgress) {
+      this._updateDirty = true;
+      return;
+    }
+    if (this._updateThrottleTimer) return; // already scheduled — coalesce
     this._updateThrottleTimer = setTimeout(async () => {
       this._updateThrottleTimer = undefined;
-      if (this._updateInProgress) return;
+      if (this._disposed) return;
+      if (this._updateInProgress) {
+        this._updateDirty = true;
+        return;
+      }
       this._updateInProgress = true;
+      this._updateDirty = false;
       try {
         await this._update();
       } finally {
         this._updateInProgress = false;
+        if (this._updateDirty && !this._disposed) {
+          this._updateDirty = false;
+          this._scheduleUpdate();
+        }
       }
     }, 2000);
   }
 
   private _getWebviewContent(): string {
-    const webview = this._panel.webview;
-    const distPath = vscode.Uri.joinPath(
-      this._extensionUri,
-      "dist",
-      "webview-dashboard"
-    );
-
-    const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(distPath, "main.js")
-    );
-    const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(distPath, "main.css")
-    );
-
-    const nonce = getNonce();
-
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none';
-             style-src ${webview.cspSource} 'unsafe-inline';
-             script-src 'nonce-${nonce}';
-             font-src ${webview.cspSource};">
-  <link rel="stylesheet" href="${styleUri}">
-  <title>Dashboard</title>
-</head>
-<body>
-  <div id="root"></div>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
+    return buildWebviewHtml(this._panel.webview, this._extensionUri, "dashboard.html", "Dashboard");
   }
 
   private async _update(): Promise<void> {
@@ -302,18 +334,17 @@ export class DashboardWebviewPanel {
       isMainBranch: MAIN_BRANCHES.has(r.branch),
     }));
 
-    // Send phase 1 immediately
+    // Send phase 1 immediately. Only the Phase-1 fields are sent: the webview
+    // merges them into its previous state so the Phase-2 sections (heatmap,
+    // session, activity, stashes) keep their last data instead of flickering
+    // empty until the new Phase-2 payload arrives.
     this._panel.webview.postMessage({
       type: "dashboardData",
       data: {
         syncOverview,
         branchMap,
-        changeHeatmap: [],
-        sessionSummary: [],
-        activityLog: [],
-        stashOverview: [],
         sessionStartTime: sinceISO,
-      } satisfies DashboardPayload,
+      } satisfies DashboardPhase1Payload,
     });
 
     // Phase 2: batched git calls
@@ -346,7 +377,7 @@ export class DashboardWebviewPanel {
               diffStats.set(r.path, results[resultIdx++] as DiffStatSummary);
             }
             if (r.stashCount > 0) {
-              const stashes = results[resultIdx] as { index: number; message: string }[];
+              const stashes = results[resultIdx] as StashOverviewEntry["stashes"];
               if (stashes.length > 0) {
                 stashEntries.push({ repoName: r.name, repoPath: r.path, stashes });
               }
@@ -418,6 +449,22 @@ export class DashboardWebviewPanel {
     });
   }
 
+  /**
+   * This extension's package.json. Looked up by extensionUri rather than a
+   * hardcoded id because the publisher differs between the Marketplace
+   * (andrevops-com) and Open VSX (andrevops) builds.
+   */
+  private _ownPackageJSON(): unknown {
+    const uri = this._extensionUri.toString();
+    const ext = vscode.extensions.all.find((e) => e.extensionUri.toString() === uri);
+    if (ext) return ext.packageJSON;
+    try {
+      return JSON.parse(readFileSync(path.join(this._extensionUri.fsPath, "package.json"), "utf8"));
+    } catch {
+      return undefined;
+    }
+  }
+
   private _isKnownRepo(repoPath: string): boolean {
     return !!this._repoManager.getRepo(repoPath);
   }
@@ -446,11 +493,22 @@ export class DashboardWebviewPanel {
   }
 
   private async _handleMessage(msg: DashboardMessage): Promise<void> {
-    // Validate repoPath against known repos for any message that includes one
-    const repoPath = "repoPath" in msg ? msg.repoPath : undefined;
-    if (repoPath && !this._isKnownRepo(repoPath)) {
-      // Allow pin/unpin (path may be in config but not currently scanned)
-      if (msg.type !== "pinRepo" && msg.type !== "unpinRepo") {
+    if (this._disposed) return;
+    if (!msg || typeof msg !== "object" || typeof (msg as { type?: unknown }).type !== "string") {
+      return;
+    }
+    // Validate repoPath for any message that carries one: it must be a
+    // non-empty string naming a known repo. Pin/unpin are exempt from the
+    // known-repo check (path may be in config but not currently scanned) and
+    // apply their own absolute-path checks below.
+    if ("repoPath" in msg || REPO_SCOPED.has(msg.type)) {
+      const repoPath: unknown = (msg as { repoPath?: unknown }).repoPath;
+      if (typeof repoPath !== "string" || repoPath === "") return;
+      if (
+        !this._isKnownRepo(repoPath) &&
+        msg.type !== "pinRepo" &&
+        msg.type !== "unpinRepo"
+      ) {
         return;
       }
     }
@@ -461,9 +519,18 @@ export class DashboardWebviewPanel {
         break;
 
       case "refresh":
-        if (this._updateThrottleTimer) break; // prevent double-refresh
-        await this._repoManager.refreshAll();
-        await this._update();
+        if (this._refreshInProgress) break; // prevent double-refresh
+        this._refreshInProgress = true;
+        this._panel.webview.postMessage({ type: "refreshing" });
+        try {
+          await this._repoManager.refreshAll();
+          await this._update();
+        } finally {
+          this._refreshInProgress = false;
+          if (!this._disposed) {
+            this._panel.webview.postMessage({ type: "refreshDone" });
+          }
+        }
         break;
 
       case "scan":
@@ -631,46 +698,11 @@ export class DashboardWebviewPanel {
         await this._update();
         break;
 
-      case "stashPop": {
-        const repoPath = msg.repoPath;
-        try {
-          await this._git.stashPop(repoPath);
-          await this._repoManager.refreshRepo(repoPath);
-          await this._update();
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          vscode.window.showErrorMessage(`Diffchestrator: Stash pop failed: ${errMsg}`);
-        }
+      case "stashPop":
+      case "stashApply":
+      case "stashDrop":
+        await this._handleStashOp(msg);
         break;
-      }
-
-      case "stashApply": {
-        const repoPath = msg.repoPath;
-        const index = msg.index;
-        try {
-          await this._git.stashApply(repoPath, index);
-          await this._repoManager.refreshRepo(repoPath);
-          await this._update();
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          vscode.window.showErrorMessage(`Diffchestrator: Stash apply failed: ${errMsg}`);
-        }
-        break;
-      }
-
-      case "stashDrop": {
-        const repoPath = msg.repoPath;
-        const index = msg.index;
-        try {
-          await this._git.stashDrop(repoPath, index);
-          await this._repoManager.refreshRepo(repoPath);
-          await this._update();
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          vscode.window.showErrorMessage(`Diffchestrator: Stash drop failed: ${errMsg}`);
-        }
-        break;
-      }
 
       case "pinRepo": {
         const repoPath = msg.repoPath;
@@ -709,7 +741,10 @@ export class DashboardWebviewPanel {
 
       case "exportActivity": {
         const format = msg.format;
-        const entries = msg.entries;
+        if (format !== "clipboard" && format !== "file") break;
+        if (!Array.isArray(msg.entries) || msg.entries.length > MAX_EXPORT_ENTRIES) break;
+        const entries = msg.entries.filter(isActivityEntry);
+        if (entries.length === 0) break;
         const lines: string[] = ["# Diffchestrator Activity Log", ""];
         const grouped = new Map<string, ActivityEntry[]>();
         for (const e of entries) {
@@ -748,6 +783,14 @@ export class DashboardWebviewPanel {
         break;
       }
 
+      case "getShortcuts": {
+        this._panel.webview.postMessage({
+          type: "shortcutsData",
+          shortcuts: buildShortcuts(this._ownPackageJSON(), process.platform),
+        });
+        break;
+      }
+
       case "updateSetting": {
         const key = msg.key;
         const value = msg.value;
@@ -761,6 +804,24 @@ export class DashboardWebviewPanel {
         }
         const cfg = vscode.workspace.getConfiguration("diffchestrator");
         await cfg.update(key, value, vscode.ConfigurationTarget.Global);
+        break;
+      }
+
+      case "addSkipDirFromSettings": {
+        // window.prompt() is blocked in webviews — collect the name natively.
+        const cfg = vscode.workspace.getConfiguration("diffchestrator");
+        const current = cfg.get<string[]>("scanExtraSkipDirs", []);
+        const input = await vscode.window.showInputBox({
+          title: "Extra Skip Directory",
+          prompt: "Directory name to skip during scanning (matched by exact name, e.g. vendor)",
+          placeHolder: "vendor",
+          validateInput: (v) => validateSkipDirName(v, current),
+        });
+        if (input === undefined || this._disposed) break;
+        const name = input.trim();
+        if (validateSkipDirName(name, current) !== undefined) break;
+        await cfg.update("scanExtraSkipDirs", [...current, name], vscode.ConfigurationTarget.Global);
+        this._postSettings();
         break;
       }
 
@@ -787,6 +848,67 @@ export class DashboardWebviewPanel {
     }
   }
 
+  /**
+   * Stash apply/pop/drop. The webview identifies the stash by index *and* the
+   * SHA it rendered; the SHA is re-checked against the live stash stack so a
+   * stale index (double-click, concurrent stash from a terminal) can never
+   * hit a different stash. Always posts `stashOpDone` so the webview can
+   * re-enable the row's buttons.
+   */
+  private async _handleStashOp(
+    msg: Extract<DashboardMessage, { type: "stashPop" | "stashApply" | "stashDrop" }>
+  ): Promise<void> {
+    const repoPath = msg.repoPath;
+    const sha: unknown = msg.sha;
+    const index: unknown = msg.type === "stashPop" ? 0 : msg.index;
+    const verb = msg.type === "stashPop" ? "pop" : msg.type === "stashApply" ? "apply" : "drop";
+    try {
+      if (!Number.isInteger(index) || (index as number) < 0 || typeof sha !== "string" || !STASH_SHA_RE.test(sha)) {
+        console.warn(`[Diffchestrator] Dashboard: rejected ${msg.type} with invalid index/sha`);
+        return;
+      }
+      const idx = index as number;
+      const stashes = await this._git.stashList(repoPath);
+      const entry = stashes.find((s) => s.index === idx);
+      if (!entry || entry.sha !== sha) {
+        vscode.window.showWarningMessage(
+          "Diffchestrator: Stash list changed — refresh and try again"
+        );
+        await this._update();
+        return;
+      }
+
+      if (msg.type === "stashDrop") {
+        const choice = await vscode.window.showWarningMessage(
+          `Drop stash@{${idx}} in ${path.basename(repoPath)}?`,
+          { modal: true, detail: `${entry.message}\n\nThis cannot be undone.` },
+          "Drop"
+        );
+        if (choice !== "Drop" || this._disposed) return;
+      }
+
+      if (msg.type === "stashDrop") {
+        await this._git.stashDrop(repoPath, idx, sha);
+      } else if (msg.type === "stashApply") {
+        await this._git.stashApply(repoPath, idx, sha);
+      } else {
+        // stashPop has no SHA guard in GitExecutor; the stashList check above
+        // narrows (but cannot fully close) the race window.
+        await this._git.stashPop(repoPath);
+      }
+      await this._repoManager.refreshRepo(repoPath);
+      await this._update();
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(`Diffchestrator: Stash ${verb} failed: ${errMsg}`);
+      await this._update();
+    } finally {
+      if (!this._disposed) {
+        this._panel.webview.postMessage({ type: "stashOpDone", repoPath });
+      }
+    }
+  }
+
   dispose(): void {
     this._disposed = true;
     DashboardWebviewPanel.currentPanel = undefined;
@@ -800,14 +922,4 @@ export class DashboardWebviewPanel {
       d?.dispose();
     }
   }
-}
-
-function getNonce(): string {
-  let text = "";
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  for (let i = 0; i < 32; i++) {
-    text += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return text;
 }

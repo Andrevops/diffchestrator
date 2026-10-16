@@ -119,15 +119,17 @@ export type DashboardMessage =
   | { type: "loadSnapshot" }
   | { type: "claudeReviewAll" }
   | { type: "filterByTag" }
-  | { type: "stashPop"; repoPath: string }
-  | { type: "stashApply"; repoPath: string; index: number }
-  | { type: "stashDrop"; repoPath: string; index: number }
+  | { type: "stashPop"; repoPath: string; sha: string }
+  | { type: "stashApply"; repoPath: string; index: number; sha: string }
+  | { type: "stashDrop"; repoPath: string; index: number; sha: string }
   | { type: "pinRepo"; repoPath: string }
   | { type: "unpinRepo"; repoPath: string }
   | { type: "exportActivity"; format: "clipboard" | "file"; entries: { repoName: string; shortHash: string; author: string; date: string; message: string }[] }
   | { type: "getSettings" }
+  | { type: "getShortcuts" }
   | { type: "updateSetting"; key: string; value: unknown }
-  | { type: "addScanRootFromSettings" };
+  | { type: "addScanRootFromSettings" }
+  | { type: "addSkipDirFromSettings" };
 
 // Search webview message types (webview → extension)
 export type SearchWebviewMessage =
@@ -153,7 +155,16 @@ export type DiffWebviewMessage =
   | { type: "stageAll"; repoPath: string }
   | { type: "unstageAll"; repoPath: string }
   | { type: "openTerminal"; repoPath: string }
-  | { type: "askClaude"; repoPath: string; filePath: string; hunkContent: string };
+  | { type: "askClaude"; repoPath: string; filePath: string; hunkContent: string }
+  | {
+      type: "getFileDiff";
+      requestId: number;
+      repoPath: string;
+      filePath: string;
+      staged: boolean;
+      /** Send even when the diff exceeds the large-diff threshold. */
+      force?: boolean;
+    };
 
 // Helper to extract repoPath from a message if present
 export function getMessageRepoPath(msg: DashboardMessage | DiffWebviewMessage): string | undefined {

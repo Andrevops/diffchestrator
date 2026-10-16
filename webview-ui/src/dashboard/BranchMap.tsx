@@ -1,4 +1,6 @@
 import vscode from "../vscode";
+import { buttonProps } from "../keyboard";
+import SectionHeader from "./SectionHeader";
 import type { BranchMapEntry } from "./DashboardApp";
 
 interface Props {
@@ -24,15 +26,12 @@ export default function BranchMap({ entries, onOpenRepo, collapsed, onToggle }: 
 
   return (
     <div className="dashboard-section">
-      <div className="dashboard-section-header" onClick={onToggle} style={{ cursor: "pointer" }}>
-        <span>
-          {collapsed ? "▸" : "▾"} Branch Map{" "}
-          <span className="section-badge">
-            {mainRepos.length} main · {featureRepos.length} feature · {sortedBranches.length} branches
-          </span>
-        </span>
-        {!collapsed && featureRepos.length > 0 && (
-          <span className="header-actions" onClick={(e) => e.stopPropagation()}>
+      <SectionHeader
+        title="Branch Map"
+        collapsed={collapsed}
+        onToggle={onToggle}
+        actions={
+          !collapsed && featureRepos.length > 0 ? (
             <button
               className="refresh-btn"
               onClick={() => vscode.postMessage({ type: "branchCleanup" })}
@@ -40,9 +39,13 @@ export default function BranchMap({ entries, onOpenRepo, collapsed, onToggle }: 
             >
               Cleanup
             </button>
-          </span>
-        )}
-      </div>
+          ) : undefined
+        }
+      >
+        <span className="section-badge">
+          {mainRepos.length} main · {featureRepos.length} feature · {sortedBranches.length} branches
+        </span>
+      </SectionHeader>
       {!collapsed && (
         <div className="dashboard-section-body">
           {entries.length === 0 ? (
@@ -59,14 +62,14 @@ export default function BranchMap({ entries, onOpenRepo, collapsed, onToggle }: 
                     <span
                       key={r.path}
                       className="branch-pill branch-pill--main"
-                      onClick={() => onOpenRepo(r.path)}
+                      {...buttonProps(() => onOpenRepo(r.path), `Open ${r.name} (${r.branch})`)}
                       title={`${r.name} → ${r.branch}`}
                     >
                       {r.name}
                     </span>
                   ))}
                   {mainRepos.length === 0 && (
-                    <span className="section-empty" style={{ padding: 4 }}>None</span>
+                    <span className="section-empty section-empty--compact">None</span>
                   )}
                 </div>
               </div>
@@ -80,7 +83,7 @@ export default function BranchMap({ entries, onOpenRepo, collapsed, onToggle }: 
                       <span
                         key={r.path}
                         className="branch-pill branch-pill--feature"
-                        onClick={() => onOpenRepo(r.path)}
+                        {...buttonProps(() => onOpenRepo(r.path), `Open ${r.name} (${branch})`)}
                         title={r.name}
                       >
                         {r.name}

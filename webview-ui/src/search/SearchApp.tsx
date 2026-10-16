@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import vscode from "../vscode";
+import { buttonProps } from "../keyboard";
 
 interface Match {
   file: string;
@@ -266,6 +267,7 @@ export default function SearchApp() {
           type="text"
           autoFocus
           placeholder="Search"
+          aria-label="Search query"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
@@ -278,6 +280,7 @@ export default function SearchApp() {
           <button
             className={`toggle ${caseSensitive ? "active" : ""}`}
             title="Match Case"
+            aria-label="Match case"
             aria-pressed={caseSensitive}
             onClick={() => setCaseSensitive((v) => !v)}
           >
@@ -286,6 +289,7 @@ export default function SearchApp() {
           <button
             className={`toggle ${wholeWord ? "active" : ""}`}
             title="Match Whole Word"
+            aria-label="Match whole word"
             aria-pressed={wholeWord}
             onClick={() => setWholeWord((v) => !v)}
           >
@@ -294,6 +298,7 @@ export default function SearchApp() {
           <button
             className={`toggle ${regex ? "active" : ""}`}
             title="Use Regular Expression (POSIX extended)"
+            aria-label="Use regular expression"
             aria-pressed={regex}
             onClick={() => setRegex((v) => !v)}
           >
@@ -307,6 +312,7 @@ export default function SearchApp() {
           className="glob-input"
           type="text"
           placeholder="files to include (e.g. src, *.ts)"
+          aria-label="Files to include"
           value={include}
           onChange={(e) => setInclude(e.target.value)}
         />
@@ -314,13 +320,14 @@ export default function SearchApp() {
           className="glob-input"
           type="text"
           placeholder="files to exclude (e.g. *.test.ts, dist)"
+          aria-label="Files to exclude"
           value={exclude}
           onChange={(e) => setExclude(e.target.value)}
         />
       </div>
 
-      {error && <div className="error-banner">{error}</div>}
-      {status && <div className="status-line">{status}</div>}
+      {error && <div className="error-banner" role="alert">{error}</div>}
+      {status && <div className="status-line" role="status">{status}</div>}
       {truncated && !searching && (
         <div className="truncated-note">
           Result limit reached — narrow the query or use include/exclude filters.
@@ -334,10 +341,11 @@ export default function SearchApp() {
             <div className="file-group" key={g.file}>
               <div
                 className="file-header"
-                onClick={() => toggleFile(g.file)}
+                {...buttonProps(() => toggleFile(g.file))}
+                aria-expanded={!isCollapsed}
                 title={g.file}
               >
-                <span className="chevron">{isCollapsed ? "▸" : "▾"}</span>
+                <span className="chevron" aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
                 <span className="file-name">{basename(g.file)}</span>
                 {dirname(g.file) && <span className="file-dir">{dirname(g.file)}</span>}
                 <span className="count">{g.matches.length}</span>
@@ -347,7 +355,7 @@ export default function SearchApp() {
                   <div
                     className="match-line"
                     key={`${m.line}:${m.column}:${idx}`}
-                    onClick={() => openMatch(m)}
+                    {...buttonProps(() => openMatch(m), `${g.file} line ${m.line}: ${m.text.trim().slice(0, 200)}`)}
                   >
                     <span className="line-no">{m.line}</span>
                     <span className="line-text">{highlightLine(m.text, highlightRe)}</span>

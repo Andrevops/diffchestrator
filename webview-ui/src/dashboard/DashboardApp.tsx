@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import vscode from "../vscode";
+import { hasModifier, isEditableTarget } from "../keyboard";
 import SyncOverview from "./SyncOverview";
 import BranchMap from "./BranchMap";
 import ChangeHeatmap from "./ChangeHeatmap";
@@ -26,7 +27,7 @@ export interface DiffStatSummary {
 export interface StashOverviewEntry {
   repoName: string;
   repoPath: string;
-  stashes: { index: number; message: string; date?: string }[];
+  stashes: { index: number; sha: string; message: string; date?: string }[];
 }
 
 export interface DashboardPayload {
@@ -79,22 +80,64 @@ export interface SessionSummaryEntry {
   }[];
 }
 
+export type DashboardPhase1Payload = Pick<DashboardPayload, "syncOverview" | "branchMap" | "sessionStartTime">;
+
+/**
+ * Merge a Phase-1 payload into the previous dashboard state. Phase-2 arrays
+ * are preserved, and each repo keeps its previous diffStat while it still has
+ * changes (Phase 1 can't compute diff stats without git calls).
+ */
+function mergePhase1(prev: DashboardPayload | null, p1: DashboardPhase1Payload): DashboardPayload {
+  if (!prev) {
+    return {
+      ...p1,
+      changeHeatmap: [],
+      sessionSummary: [],
+      activityLog: [],
+      stashOverview: [],
+    };
+  }
+  const prevStats = new Map(prev.syncOverview.map((e) => [e.path, e.diffStat]));
+  return {
+    ...prev,
+    ...p1,
+    syncOverview: p1.syncOverview.map((e) =>
+      e.diffStat || e.totalChanges === 0 ? e : { ...e, diffStat: prevStats.get(e.path) }
+    ),
+  };
+}
+
 type Tab = "dashboard" | "activity" | "settings" | "shortcuts";
+
+const TABS: [Tab, string][] = [
+  ["dashboard", "Dashboard"],
+  ["activity", "Activity"],
+  ["settings", "Settings"],
+  ["shortcuts", "Shortcuts"],
+];
 
 export default function DashboardApp() {
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<Tab>("dashboard");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       const msg = event.data;
-      if (msg.type === "dashboardData" || msg.type === "dashboardUpdate") {
-        setData(msg.data);
+      if (msg.type === "dashboardData") {
+        // Phase 1 (no git calls): merge into the previous state so Phase-2
+        // sections keep their last data until the new Phase-2 payload lands.
+        setData((prev) => mergePhase1(prev, msg.data as DashboardPhase1Payload));
+        setLoading(false);
+      } else if (msg.type === "dashboardUpdate") {
+        setData(msg.data as DashboardPayload);
         setLoading(false);
       } else if (msg.type === "refreshing") {
-        setLoading(true);
+        setRefreshing(true);
+      } else if (msg.type === "refreshDone") {
+        setRefreshing(false);
       }
     };
     window.addEventListener("message", handler);
@@ -103,6 +146,8 @@ export default function DashboardApp() {
   }, []);
 
   const handleRefresh = () => {
+    if (refreshing) return;
+    setRefreshing(true); // optimistic; cleared by refreshDone
     vscode.postMessage({ type: "refresh" });
   };
 
@@ -117,6 +162,9 @@ export default function DashboardApp() {
   // Keyboard navigation
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Never hijack digits typed into form fields (e.g. Auto-Refresh "15",
+      // Max Depth) or chorded with modifiers.
+      if (isEditableTarget(e.target) || hasModifier(e) || e.repeat) return;
       if (e.key === "1") setTab("dashboard");
       else if (e.key === "2") setTab("activity");
       else if (e.key === "3") setTab("settings");
@@ -129,8 +177,8 @@ export default function DashboardApp() {
   if (loading && !data) {
     return (
       <div className="dashboard-container">
-        <div className="loading-state">
-          <span className="spinner" /> Loading dashboard...
+        <div className="loading-state" role="status">
+          <span className="spinner" aria-hidden="true" /> Loading dashboard...
         </div>
       </div>
     );
@@ -141,67 +189,52 @@ export default function DashboardApp() {
   return (
     <div className="dashboard-container">
       <header className="dashboard-header">
-        <div className="dashboard-tabs">
-          <button
-            className={`dashboard-tab ${tab === "dashboard" ? "dashboard-tab--active" : ""}`}
-            onClick={() => setTab("dashboard")}
-            title="1"
-          >
-            Dashboard
-          </button>
-          <button
-            className={`dashboard-tab ${tab === "activity" ? "dashboard-tab--active" : ""}`}
-            onClick={() => setTab("activity")}
-            title="2"
-          >
-            Activity
-          </button>
-          <button
-            className={`dashboard-tab ${tab === "settings" ? "dashboard-tab--active" : ""}`}
-            onClick={() => setTab("settings")}
-            title="3"
-          >
-            Settings
-          </button>
-          <button
-            className={`dashboard-tab ${tab === "shortcuts" ? "dashboard-tab--active" : ""}`}
-            onClick={() => setTab("shortcuts")}
-            title="4"
-          >
-            Shortcuts
-          </button>
+        <div className="dashboard-tabs" role="group" aria-label="Dashboard views">
+          {TABS.map(([id, label], i) => (
+            <button
+              key={id}
+              className={`dashboard-tab ${tab === id ? "dashboard-tab--active" : ""}`}
+              onClick={() => setTab(id)}
+              aria-pressed={tab === id}
+              title={`${label} (${i + 1})`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
         <span className="header-actions">
           {tab === "dashboard" && (
             <>
-              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "switchRoot" })} title="Switch scan root">
+              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "switchRoot" })} title="Switch scan root" aria-label="Switch scan root">
                 ⌂
               </button>
-              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "filterByTag" })} title="Filter by tag">
+              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "filterByTag" })} title="Filter by tag" aria-label="Filter by tag">
                 #
               </button>
               <span className="header-divider" />
-              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "claudeReviewAll" })} title="Claude review all changed repos">
+              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "claudeReviewAll" })} title="Claude review all changed repos" aria-label="Claude review all changed repos">
                 ◇
               </button>
               <span className="header-divider" />
-              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "saveSnapshot" })} title="Save workspace snapshot">
+              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "saveSnapshot" })} title="Save workspace snapshot" aria-label="Save workspace snapshot">
                 ⬇
               </button>
-              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "loadSnapshot" })} title="Load workspace snapshot">
+              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "loadSnapshot" })} title="Load workspace snapshot" aria-label="Load workspace snapshot">
                 ⬆
               </button>
               <span className="header-divider" />
-              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "scan" })} title="Rescan repos">
+              <button className="header-icon-btn" onClick={() => vscode.postMessage({ type: "scan" })} title="Rescan repos" aria-label="Rescan repos">
                 ⟳
               </button>
               <button
                 className="header-icon-btn"
                 onClick={handleRefresh}
-                disabled={loading}
+                disabled={refreshing}
                 title="Refresh data"
+                aria-label="Refresh data"
+                aria-busy={refreshing}
               >
-                {loading ? <span className="spinner" /> : "↻"}
+                {refreshing ? <span className="spinner" /> : "↻"}
               </button>
             </>
           )}

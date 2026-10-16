@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { RepoManager } from "../services/repoManager";
+import { buildWebviewHtml, webviewResourceRoots } from "./webviewHtml";
 import type { SearchWebviewMessage } from "../types";
 
 const MAX_QUERY_LENGTH = 1000;
@@ -38,9 +39,7 @@ export class SearchWebviewPanel {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [
-          vscode.Uri.joinPath(extensionUri, "dist", "webview-search"),
-        ],
+        localResourceRoots: webviewResourceRoots(extensionUri),
       }
     );
 
@@ -164,30 +163,7 @@ export class SearchWebviewPanel {
   }
 
   private _getWebviewContent(): string {
-    const webview = this._panel.webview;
-    const distPath = vscode.Uri.joinPath(this._extensionUri, "dist", "webview-search");
-    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(distPath, "main.js"));
-    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(distPath, "main.css"));
-    const nonce = getNonce();
-
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none';
-             style-src ${webview.cspSource} 'unsafe-inline';
-             script-src 'nonce-${nonce}';
-             font-src ${webview.cspSource};">
-  <link rel="stylesheet" href="${styleUri}">
-  <title>Search</title>
-</head>
-<body>
-  <div id="root"></div>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
+    return buildWebviewHtml(this._panel.webview, this._extensionUri, "search.html", "Search");
   }
 
   dispose(): void {
@@ -199,13 +175,4 @@ export class SearchWebviewPanel {
       d?.dispose();
     }
   }
-}
-
-function getNonce(): string {
-  let text = "";
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  for (let i = 0; i < 32; i++) {
-    text += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return text;
 }

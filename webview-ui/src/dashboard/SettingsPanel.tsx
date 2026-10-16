@@ -29,6 +29,7 @@ function SettingToggle({ label, description, value, onChange }: {
       <input
         type="checkbox"
         className="setting-toggle"
+        aria-label={label}
         checked={value}
         onChange={(e) => onChange(e.target.checked)}
       />
@@ -47,11 +48,11 @@ function SettingNumber({ label, description, value, onChange, min, max }: {
       </div>
       <input
         type="number"
-        className="setting-input"
+        className="setting-input setting-input--number"
+        aria-label={label}
         value={value}
         min={min}
         max={max}
-        style={{ width: 60 }}
         onChange={(e) => {
           // Ignore empty/non-numeric input (clearing the field yields ""),
           // and clamp to the declared range so we never send a value the
@@ -77,7 +78,7 @@ function SettingSelect({ label, description, value, options, onChange }: {
         <div className="setting-label">{label}</div>
         {description && <div className="setting-description">{description}</div>}
       </div>
-      <select className="setting-input" value={value} onChange={(e) => onChange(e.target.value)}>
+      <select className="setting-input" aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
     </div>
@@ -97,10 +98,10 @@ function SettingArrayEditor({ label, description, values, onRemove, onAdd }: {
         {values.map((v) => (
           <div key={v} className="setting-array-item">
             <span className="setting-array-value">{v}</span>
-            <button className="icon-btn" onClick={() => onRemove(v)} title="Remove">✕</button>
+            <button className="icon-btn" onClick={() => onRemove(v)} title="Remove" aria-label={`Remove ${v}`}>✕</button>
           </div>
         ))}
-        <button className="refresh-btn" onClick={onAdd} style={{ marginTop: 4 }}>
+        <button className="refresh-btn setting-array-add" onClick={onAdd} aria-label={`Add to ${label}`}>
           + Add
         </button>
       </div>
@@ -155,10 +156,7 @@ export default function SettingsPanel() {
           description="Additional directory names to skip during scanning"
           values={settings.scanExtraSkipDirs}
           onRemove={(v) => update("scanExtraSkipDirs", settings.scanExtraSkipDirs.filter((d) => d !== v))}
-          onAdd={() => {
-            const name = prompt("Directory name to skip:");
-            if (name) update("scanExtraSkipDirs", [...settings.scanExtraSkipDirs, name]);
-          }}
+          onAdd={() => vscode.postMessage({ type: "addSkipDirFromSettings" })}
         />
         <SettingToggle
           label="Scan on Startup"
@@ -291,6 +289,7 @@ export default function SettingsPanel() {
                 className="icon-btn"
                 onClick={() => update("pinnedRepos", settings.pinnedRepos.filter((r) => r !== p))}
                 title="Unpin"
+                aria-label={`Unpin ${p}`}
               >
                 ✕
               </button>

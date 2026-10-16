@@ -247,3 +247,11 @@ body {
   color: inherit;
   border-radius: 2px;
 }
+
+.file-header:focus-visible,
+.match-line:focus-visible,
+.toggle:focus-visible,
+.link-btn:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}

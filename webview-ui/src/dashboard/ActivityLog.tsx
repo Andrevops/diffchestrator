@@ -46,6 +46,7 @@ export default function ActivityLog({ entries }: Props) {
       <div className="activity-filters">
         <select
           className="activity-filter-select"
+          aria-label="Filter by repo"
           value={repoFilter}
           onChange={(e) => setRepoFilter(e.target.value)}
         >
@@ -56,6 +57,7 @@ export default function ActivityLog({ entries }: Props) {
         </select>
         <select
           className="activity-filter-select"
+          aria-label="Filter by author"
           value={authorFilter}
           onChange={(e) => setAuthorFilter(e.target.value)}
         >
@@ -80,6 +82,7 @@ export default function ActivityLog({ entries }: Props) {
               className="icon-btn"
               onClick={() => vscode.postMessage({ type: "exportActivity", format: "clipboard", entries: filtered })}
               title="Copy as Markdown"
+              aria-label="Copy activity as Markdown"
             >
               ⎘
             </button>
@@ -87,6 +90,7 @@ export default function ActivityLog({ entries }: Props) {
               className="icon-btn"
               onClick={() => vscode.postMessage({ type: "exportActivity", format: "file", entries: filtered })}
               title="Save as Markdown file"
+              aria-label="Save activity as Markdown file"
             >
               ⬇
             </button>
