@@ -16,21 +16,65 @@ interface BlameCacheEntry {
   time: number;
 }
 
+/**
+ * Per-line blame results keyed by (absolute file path, line). Line numbers
+ * are only meaningful for one version of a file, so callers must drop a
+ * file's entries whenever its text changes (edit, save) and everything when
+ * HEAD moves (commit, checkout, pull). Bounded FIFO + TTL as a backstop.
+ */
+export class BlameCache {
+  static readonly TTL = 30_000; // 30s
+  static readonly MAX = 200;
+  private _entries = new Map<string, BlameCacheEntry>();
+
+  private static _key(filePath: string, line: number): string {
+    return `${filePath}\0${line}`;
+  }
+
+  get(filePath: string, line: number, now = Date.now()): BlameCacheEntry | undefined {
+    const e = this._entries.get(BlameCache._key(filePath, line));
+    return e && now - e.time < BlameCache.TTL ? e : undefined;
+  }
+
+  set(filePath: string, line: number, blame: BlameResult | null, now = Date.now()): void {
+    // Evict oldest entries when cache is full
+    if (this._entries.size >= BlameCache.MAX) {
+      const first = this._entries.keys().next().value;
+      if (first !== undefined) this._entries.delete(first);
+    }
+    this._entries.set(BlameCache._key(filePath, line), { blame, time: now });
+  }
+
+  invalidateFile(filePath: string): void {
+    const prefix = filePath + "\0";
+    for (const k of [...this._entries.keys()]) {
+      if (k.startsWith(prefix)) this._entries.delete(k);
+    }
+  }
+
+  clear(): void {
+    this._entries.clear();
+  }
+
+  get size(): number {
+    return this._entries.size;
+  }
+}
+
 export class InlineBlameService implements vscode.Disposable {
   private _git;
+  private _repoManager: RepoManager;
   private _disposables: vscode.Disposable[] = [];
   private _decorationType: vscode.TextEditorDecorationType;
   private _debounceTimer: ReturnType<typeof setTimeout> | undefined;
   private _enabled: boolean;
-  /** LRU blame cache: "repoPath:relativePath:line" → result */
-  private _blameCache = new Map<string, BlameCacheEntry>();
-  private static readonly BLAME_CACHE_TTL = 30_000; // 30s
-  private static readonly BLAME_CACHE_MAX = 200;
+  private _blameCache = new BlameCache();
   /** Monotonic request sequence — stale async results must not overwrite newer ones */
   private _blameSeq = 0;
 
-  constructor(private _repoManager: RepoManager) {
-    this._git = _repoManager.git;
+  constructor(repoManager: RepoManager) {
+    this._repoManager = repoManager;
+    this._git = repoManager.git;
     const config = vscode.workspace.getConfiguration("diffchestrator");
     this._enabled = config.get<boolean>("showInlineBlame", true);
 
@@ -57,6 +101,21 @@ export class InlineBlameService implements vscode.Disposable {
         if (!this._enabled || !editor) return;
         this._debouncedUpdate(editor);
       })
+    );
+
+    // Cached line numbers are only valid for the text they were computed
+    // from: drop a file's entries on edit/save, everything when HEAD moves.
+    this._disposables.push(
+      vscode.workspace.onDidChangeTextDocument((e) => {
+        if (e.document.uri.scheme === "file" && e.contentChanges.length > 0) {
+          this._blameCache.invalidateFile(e.document.uri.fsPath);
+        }
+      }),
+      vscode.workspace.onDidSaveTextDocument((doc) => {
+        if (doc.uri.scheme === "file") this._blameCache.invalidateFile(doc.uri.fsPath);
+      }),
+      // Fires on commit, checkout, pull, reset (any HEAD/status change)
+      repoManager.onDidChangeRepos(() => this._blameCache.clear())
     );
 
     // Listen for config changes
@@ -143,9 +202,8 @@ export class InlineBlameService implements vscode.Disposable {
     const relativePath = path.relative(repoPath, filePath);
 
     try {
-      const cacheKey = `${repoPath}:${relativePath}:${line}`;
-      const cached = this._blameCache.get(cacheKey);
-      if (cached && Date.now() - cached.time < InlineBlameService.BLAME_CACHE_TTL) {
+      const cached = this._blameCache.get(filePath, line);
+      if (cached) {
         if (!cached.blame) {
           editor.setDecorations(this._decorationType, []);
           return;
@@ -162,17 +220,28 @@ export class InlineBlameService implements vscode.Disposable {
         return;
       }
 
-      const blame = await this._git.blame(repoPath, relativePath, line);
+      // Unsaved edits shift lines relative to the file on disk — blame the
+      // buffer itself so the annotation matches the line the cursor is on.
+      const version = doc.version;
+      const blame = await this._git.blame(
+        repoPath,
+        relativePath,
+        line,
+        doc.isDirty ? doc.getText() : undefined
+      );
+      // The text changed while git ran: the result describes an older
+      // version, so neither cache nor show it.
+      if (doc.version !== version) return;
       // Result is still valid for the cache, but a newer request (or editor
       // switch) owns the decoration now — don't overwrite it with stale data.
       const stale = seq !== this._blameSeq || editor !== vscode.window.activeTextEditor;
       if (!blame || blame.hash.startsWith("0000000")) {
-        this._setCacheEntry(cacheKey, null);
+        this._blameCache.set(filePath, line, null);
         if (stale) return;
         editor.setDecorations(this._decorationType, []);
         return;
       }
-      this._setCacheEntry(cacheKey, blame);
+      this._blameCache.set(filePath, line, blame);
       if (stale) return;
 
       const decoration: vscode.DecorationOptions = {
@@ -189,15 +258,6 @@ export class InlineBlameService implements vscode.Disposable {
       if (seq !== this._blameSeq || editor !== vscode.window.activeTextEditor) return;
       editor.setDecorations(this._decorationType, []);
     }
-  }
-
-  private _setCacheEntry(key: string, blame: BlameResult | null): void {
-    // Evict oldest entries when cache is full
-    if (this._blameCache.size >= InlineBlameService.BLAME_CACHE_MAX) {
-      const first = this._blameCache.keys().next().value;
-      if (first !== undefined) this._blameCache.delete(first);
-    }
-    this._blameCache.set(key, { blame, time: Date.now() });
   }
 
   dispose(): void {

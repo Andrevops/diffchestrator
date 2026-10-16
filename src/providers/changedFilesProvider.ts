@@ -4,6 +4,7 @@ import type { RepoManager } from "../services/repoManager";
 // Uses repoManager.git (shared GitExecutor with TTL cache)
 import type { FileChange } from "../types";
 import { ChangeType, FileStatus } from "../types";
+import { diffLeftPath } from "./diffSides";
 
 type TreeElement = SectionNode | FileNode;
 
@@ -105,7 +106,8 @@ export class ChangedFilesProvider implements vscode.TreeDataProvider<TreeElement
       };
     } else {
       const staged = fc.status === FileStatus.Staged;
-      const leftUri = this._gitUri(element.repoPath, fc.path, staged);
+      // Renames: the HEAD side must use the original path (see diffLeftPath)
+      const leftUri = this._gitUri(element.repoPath, diffLeftPath(fc), staged);
       const rightUri = staged
         ? this._indexUri(element.repoPath, fc.path)
         : vscode.Uri.file(path.join(element.repoPath, fc.path));

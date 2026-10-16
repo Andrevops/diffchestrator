@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import type { RepoSummary } from "../types";
-import { CMD, BATCH_SMALL } from "../constants";
+import { CMD } from "../constants";
 import { timeAgo } from "../utils/time";
 
 interface TreeNode {
@@ -20,13 +20,16 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode>, vsco
 
   private _root: TreeNode | undefined;
   private _git;
-  private _lastCommitCache = new Map<string, { message: string; date: string }>();
-  private _lastCommitRefreshTime = 0;
-  private static readonly COMMIT_CACHE_COOLDOWN = 60_000; // 60s
+  /** Last-commit line for tooltips, fetched lazily per hovered repo. */
+  private _lastCommitCache = new Map<string, { message: string; date: string; time: number }>();
+  private static readonly COMMIT_CACHE_TTL = 60_000; // 60s
 
   private _repoTagsCache: Record<string, string[]> | undefined;
 
-  constructor(private repoManager: RepoManager) {
+  private repoManager: RepoManager;
+
+  constructor(repoManager: RepoManager) {
+    this.repoManager = repoManager;
     this._git = repoManager.git;
     this._disposables.push(repoManager.onDidChangeRepos(() => {
       this._root = undefined;
@@ -39,7 +42,6 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode>, vsco
       this._onDidChangeTreeData.fire();
     }));
     this._disposables.push(repoManager.onDidChangeSelection(() => {
-      this._refreshLastCommits();
       this._onDidChangeTreeData.fire();
     }));
     this._disposables.push(vscode.workspace.onDidChangeConfiguration((e) => {
@@ -65,31 +67,31 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode>, vsco
     return this._repoTagsCache;
   }
 
-  private async _refreshLastCommits(): Promise<void> {
-    // Cooldown: skip if refreshed recently (tooltips don't need real-time data)
-    const now = Date.now();
-    if (now - this._lastCommitRefreshTime < RepoTreeProvider.COMMIT_CACHE_COOLDOWN) return;
-    this._lastCommitRefreshTime = now;
-
-    // Parallel with concurrency limit
-    const repos = this.repoManager.repos;
-    for (let i = 0; i < repos.length; i += BATCH_SMALL) {
-      await Promise.all(
-        repos.slice(i, i + BATCH_SMALL).map(async (repo) => {
-          try {
-            const commits = await this._git.log(repo.path, 1);
-            if (commits.length > 0) {
-              this._lastCommitCache.set(repo.path, {
-                message: commits[0].message,
-                date: commits[0].date,
-              });
-            }
-          } catch {
-            // ignore
-          }
-        })
-      );
+  /**
+   * Fill in the tooltip's "Last commit" line only for the item being
+   * hovered — previously every selection change spawned `git log -1` for
+   * every repo up front.
+   */
+  async resolveTreeItem(item: vscode.TreeItem, element: TreeNode): Promise<vscode.TreeItem> {
+    const r = element.repo;
+    if (!element.isRepo || !r) return item;
+    const cached = this._lastCommitCache.get(r.path);
+    if (!cached || Date.now() - cached.time > RepoTreeProvider.COMMIT_CACHE_TTL) {
+      try {
+        const commits = await this._git.log(r.path, 1);
+        if (commits.length > 0) {
+          this._lastCommitCache.set(r.path, {
+            message: commits[0].message,
+            date: commits[0].date,
+            time: Date.now(),
+          });
+        }
+      } catch {
+        // ignore — tooltip just omits the last commit
+      }
     }
+    item.tooltip = this._buildTooltip(r);
+    return item;
   }
 
   getTreeItem(element: TreeNode): vscode.TreeItem {
@@ -128,7 +130,9 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode>, vsco
       item.id = `repo:${r.path}:${state}`;
       item.contextValue = r.mergeState ? "repo-conflicted" : "repo";
       (item as vscode.TreeItem & { path: string }).path = r.path;
-      item.tooltip = this._buildTooltip(r);
+      // tooltip deliberately left undefined: VS Code only calls
+      // resolveTreeItem (which builds it, incl. the last commit) for
+      // properties that are still undefined.
 
       // Icon: active → blue, multi-selected → purple, behind → orange, changes → yellow, clean → green
       if (isActive) {

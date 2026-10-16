@@ -5,6 +5,7 @@ import type { RepoManager } from "../services/repoManager";
 import type { FileChange } from "../types";
 import { FileStatus } from "../types";
 import { CONFIG } from "../constants";
+import { diffLeftPath } from "./diffSides";
 
 export interface FileNode {
   uri: vscode.Uri;
@@ -59,6 +60,13 @@ export class RepoFilesProvider
   private _changesLoaded = false;
   /** In-flight status load — dedupes concurrent getChildren calls. */
   private _changesPromise: Promise<void> | undefined;
+  /**
+   * Bumped whenever the change map is invalidated. A load only commits its
+   * result if the generation it started in is still current, so a status
+   * run that began before a file event can't overwrite the reset with
+   * pre-event data.
+   */
+  private _changesGen = 0;
   /** Absolute paths of gitignored entries, populated per expanded directory. */
   private _ignored = new Set<string>();
   /** Nodes returned by getChildren, keyed by fsPath — used for targeted refresh and reveal. */
@@ -69,18 +77,20 @@ export class RepoFilesProvider
   /** Pending editor force-reloads, debounced per file. */
   private _reloadTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  constructor(private _repoManager: RepoManager) {
+  private _repoManager: RepoManager;
+
+  constructor(repoManager: RepoManager) {
+    this._repoManager = repoManager;
     this._disposables.push(
-      _repoManager.onDidChangeSelection(() => {
+      repoManager.onDidChangeSelection(() => {
         this._resetState();
         // Only re-root the watcher if one was already active — the watcher
         // itself is created lazily on first view visibility (ensureWatching).
         if (this._watchingEnabled) this._watchSelectedRepo();
         this._onDidChangeTreeData.fire();
       }),
-      _repoManager.onDidChangeRepos(() => {
-        this._changedFiles = new Map();
-        this._changesLoaded = false;
+      repoManager.onDidChangeRepos(() => {
+        this._invalidateChanges();
         this._onDidChangeTreeData.fire();
       }),
       // Fallback for mounts where native file watching is unreliable (e.g.
@@ -117,14 +127,22 @@ export class RepoFilesProvider
     }
     for (const t of this._reloadTimers.values()) clearTimeout(t);
     this._reloadTimers.clear();
-    this._changedFiles = new Map();
-    this._changesLoaded = false;
-    // Drop the in-flight load handle: the old root's load will discard its
-    // own result (staleness check), and the new root must start fresh.
-    this._changesPromise = undefined;
+    this._invalidateChanges();
     this._ignored.clear();
     this._nodes.clear();
     this._pendingDirs.clear();
+  }
+
+  /**
+   * Mark the change map stale: clear it, bump the generation (so any
+   * in-flight load discards its result) and drop the in-flight handle (so
+   * the next _ensureChangedFiles starts a fresh load instead of joining it).
+   */
+  private _invalidateChanges(): void {
+    this._changesGen++;
+    this._changedFiles = new Map();
+    this._changesLoaded = false;
+    this._changesPromise = undefined;
   }
 
   private _watchSelectedRepo(): void {
@@ -190,8 +208,10 @@ export class RepoFilesProvider
     const dirs = [...this._pendingDirs];
     this._pendingDirs.clear();
     const root = this.rootPath;
-    this._changedFiles = new Map();
-    this._changesLoaded = false;
+    // The event means the working tree changed: drop GitExecutor's 1s status
+    // cache too, or the reload below could be served pre-event data.
+    if (root) this._repoManager.git.invalidateStatus(root);
+    this._invalidateChanges();
     // Reload eagerly so decorations (which read the map directly, including
     // for collapsed dirs and editor tabs) never go stale waiting for an expand.
     await this._ensureChangedFiles();
@@ -274,8 +294,7 @@ export class RepoFilesProvider
   }
 
   refresh(): void {
-    this._changedFiles = new Map();
-    this._changesLoaded = false;
+    this._invalidateChanges();
     this._ignored.clear();
     this._nodes.clear();
     this._onDidChangeTreeData.fire();
@@ -362,9 +381,11 @@ export class RepoFilesProvider
         const repoPath = this.rootPath!;
         const staged = fc.status === FileStatus.Staged;
         const ref = staged ? "HEAD" : ":0";
+        // Renames: the HEAD side must use the original path
+        const leftPath = diffLeftPath(fc);
         const leftUri = vscode.Uri.parse(
-          `git-show:${path.join(repoPath, fc.path)}`,
-        ).with({ query: JSON.stringify({ path: fc.path, ref, repoPath }) });
+          `git-show:${path.join(repoPath, leftPath)}`,
+        ).with({ query: JSON.stringify({ path: leftPath, ref, repoPath }) });
         const rightUri = staged
           ? vscode.Uri.parse(
               `git-show:${path.join(repoPath, fc.path)}`,
@@ -403,10 +424,12 @@ export class RepoFilesProvider
   private async _loadChangedFiles(): Promise<void> {
     const root = this.rootPath;
     if (!root) return;
-    // Build into a fresh map and only commit it if the selection hasn't
-    // changed while git status ran — otherwise the OLD repo's results would
-    // populate the map now owned by the NEW repo (wrong decorations, and
-    // stage/discard nodes pointing at the wrong repoPath).
+    const gen = this._changesGen;
+    // Build into a fresh map and only commit it if nothing invalidated it
+    // while git status ran: a selection change (the OLD repo's results would
+    // populate the map now owned by the NEW repo — wrong decorations, and
+    // stage/discard nodes pointing at the wrong repoPath) or a file event
+    // (results would predate it).
     const fresh = new Map<string, FileChange>();
     try {
       const status = await this._repoManager.git.status(root);
@@ -414,7 +437,7 @@ export class RepoFilesProvider
         fresh.set(fc.path, fc);
       }
     } catch { /* ignore */ }
-    if (root !== this.rootPath) return;
+    if (root !== this.rootPath || gen !== this._changesGen) return;
     this._changedFiles = fresh;
     this._changesLoaded = true;
     this._onDidUpdateChanges.fire();

@@ -21,6 +21,11 @@ const SKIP_DIRS = new Set([
   "target",
 ]);
 
+export interface ScanProgress {
+  dirsScanned: number;
+  reposFound: number;
+}
+
 export class Scanner extends EventEmitter {
   private maxDepth: number;
   private extraSkipDirs: Set<string>;
@@ -40,6 +45,8 @@ export class Scanner extends EventEmitter {
   /** Directory-walk concurrency. Serial BFS pays one full fs round-trip per
    *  directory, which dominates scan time on WSL/network mounts. */
   private static readonly SCAN_CONCURRENCY = 24;
+  /** Progress callback throttle (directories between reports). */
+  private static readonly PROGRESS_EVERY = 50;
 
   /**
    * Phase 1: Fast BFS to find .git directories. No git calls.
@@ -47,9 +54,17 @@ export class Scanner extends EventEmitter {
    * extension host event loop isn't blocked) — this runs on activation and
    * in the terminal-click hot path. Returns skeleton RepoSummary objects.
    */
-  async scanFast(rootPath: string): Promise<RepoSummary[]> {
+  async scanFast(rootPath: string, onProgress?: (p: ScanProgress) => void): Promise<RepoSummary[]> {
     this.dirsScanned = 0;
     const repos: RepoSummary[] = [];
+    // Report roughly every PROGRESS_EVERY directories, plus once at the end
+    let lastReported = 0;
+    const report = (force: boolean): void => {
+      if (!onProgress) return;
+      if (!force && this.dirsScanned - lastReported < Scanner.PROGRESS_EVERY) return;
+      lastReported = this.dirsScanned;
+      onProgress({ dirsScanned: this.dirsScanned, reposFound: repos.length });
+    };
     const queue: Array<{ path: string; depth: number }> = [
       { path: rootPath, depth: 0 },
     ];
@@ -69,6 +84,7 @@ export class Scanner extends EventEmitter {
           active++;
           void this._scanDir(dirPath, depth, queue, repos).then(() => {
             active--;
+            report(false);
             pump();
           });
         }
@@ -76,6 +92,7 @@ export class Scanner extends EventEmitter {
       pump();
     });
 
+    report(true);
     // Concurrent completion order is nondeterministic — sort for stable output
     repos.sort((a, b) => a.path.localeCompare(b.path));
     this._log?.(`[scan] done: ${repos.length} repos found, ${this.dirsScanned} dirs scanned`);
@@ -167,17 +184,4 @@ export class Scanner extends EventEmitter {
     }
   }
 
-  /**
-   * Legacy: full scan (BFS + metadata). Used by rescan.
-   */
-  async scan(rootPath: string): Promise<RepoSummary[]> {
-    const repos = await this.scanFast(rootPath);
-    const CONCURRENCY = 10;
-    for (let i = 0; i < repos.length; i += CONCURRENCY) {
-      await Promise.all(
-        repos.slice(i, i + CONCURRENCY).map((r) => this.fetchMetadata(r))
-      );
-    }
-    return repos;
-  }
 }

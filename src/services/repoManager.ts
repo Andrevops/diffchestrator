@@ -335,8 +335,11 @@ export class RepoManager implements vscode.Disposable {
 
     const scanner = new Scanner(this._git, maxDepth, extraSkip, this._log);
 
-    // Phase 1: Fast BFS — no git calls, repos appear instantly
-    const repos = await scanner.scanFast(rootPath);
+    // Phase 1: Fast BFS — no git calls, repos appear instantly.
+    // Progress drives the scan/rescan commands' notification text.
+    const repos = await scanner.scanFast(rootPath, (p) => {
+      if (epoch === this._scanEpoch) this._onDidScanProgress.fire(p);
+    });
     // Epoch guard: a newer scan() may have started (and cleared _repos for its
     // own root) while we awaited — inserting now would merge two roots' repos.
     if (epoch !== this._scanEpoch) return;
@@ -460,18 +463,28 @@ export class RepoManager implements vscode.Disposable {
     return undefined;
   }
 
-  async refreshRepo(repoPath: string): Promise<void> {
-    // Suppress file watcher to avoid double refresh
-    this._fileWatcher?.suppressRefresh(repoPath);
+  /**
+   * Re-read one repo's status and update its summary, firing change events
+   * only when something differs. `fromWatcher` is set by the .git file
+   * watcher: such refreshes must not suppress the watcher themselves.
+   */
+  async refreshRepo(repoPath: string, opts?: { fromWatcher?: boolean }): Promise<void> {
+    // Explicit refresh: defer (not drop) watcher refreshes to avoid doubling up
+    if (!opts?.fromWatcher) this._fileWatcher?.suppressRefresh(repoPath);
     // Invalidate status cache so Changed Files view gets fresh data
     this._git.invalidateStatus(repoPath);
     try {
-      // shortStatus now returns branch too — single git process instead of two
-      const s = await this._git.shortStatus(repoPath);
+      // Both are cheap when unchanged: one shared `git status`, and
+      // stashCount only respawns when the stash reflog changed.
+      const [s, stashCount] = await Promise.all([
+        this._git.shortStatus(repoPath),
+        this._git.stashCount(repoPath).catch(() => undefined),
+      ]);
       const existing = this._repos.get(repoPath);
       if (!existing) return;
 
       const totalChanges = s.staged + s.unstaged + s.untracked;
+      const newStashCount = stashCount ?? existing.stashCount;
 
       // Only fire event if something actually changed
       if (
@@ -481,13 +494,24 @@ export class RepoManager implements vscode.Disposable {
         existing.branch === s.branch &&
         existing.ahead === s.ahead &&
         existing.behind === s.behind &&
-        existing.headOid === s.headOid
+        existing.headOid === s.headOid &&
+        existing.mergeState === s.mergeState &&
+        existing.stashCount === newStashCount
       ) {
         return; // nothing changed, skip cascade
       }
 
-      // Detect new commit (HEAD changed)
-      const newCommit = existing.headOid && s.headOid && existing.headOid !== s.headOid;
+      // HEAD moved on the same branch — candidate for a "new commit"
+      // notification. Checkout (branch change), pull (new HEAD already on
+      // the upstream, so ahead doesn't grow) and reset are filtered here;
+      // the first-parent check below confirms it.
+      const oldHead = existing.headOid;
+      const commitCandidate =
+        !!oldHead &&
+        !!s.headOid &&
+        oldHead !== s.headOid &&
+        existing.branch === s.branch &&
+        (!s.upstream || s.ahead > existing.ahead);
       // Detect new changes on a previously clean repo
       const newChanges = existing.totalChanges === 0 && totalChanges > 0;
 
@@ -499,11 +523,13 @@ export class RepoManager implements vscode.Disposable {
       existing.ahead = s.ahead;
       existing.behind = s.behind;
       existing.headOid = s.headOid;
+      existing.mergeState = s.mergeState;
+      existing.stashCount = newStashCount;
       this._fireRepoChangeCoalesced();
 
       // Fire specific notifications (after state update)
       const repoName = existing.name;
-      if (newCommit) {
+      if (commitCandidate && (await this._isNewCommitOn(repoPath, oldHead, s.headOid))) {
         // Commit notification fires immediately — work is done
         this._onDidDetectCommit.fire({ repoPath, repoName });
         // Clear any pending changes debounce since the commit supersedes it
@@ -531,6 +557,17 @@ export class RepoManager implements vscode.Disposable {
       // git status failed (repo deleted, transient index.lock, etc.) —
       // keep the repo's existing values and fire no change events.
       this._log?.(`[refreshRepo] ${repoPath}: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  /** A commit was made on top of `oldHead` (not a checkout/reset/amend to an unrelated commit). */
+  private async _isNewCommitOn(repoPath: string, oldHead: string, newHead: string): Promise<boolean> {
+    // First commit on an unborn branch: nothing to compare against
+    if (oldHead === "(initial)") return true;
+    try {
+      return (await this._git.firstParent(repoPath, newHead)) === oldHead;
+    } catch {
+      return false;
     }
   }
 

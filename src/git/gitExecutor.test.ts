@@ -3,6 +3,8 @@ import * as assert from "node:assert";
 import { GitExecutor } from "./gitExecutor.ts";
 import { ChangeType, FileStatus } from "../types.ts";
 import * as path from "node:path";
+import * as fs from "node:fs";
+import * as os from "node:os";
 
 describe("GitExecutor Path Validation", () => {
   const executor = new GitExecutor();
@@ -545,7 +547,7 @@ describe("GitExecutor Per-Repo Mutation Mutex", () => {
   test("reads are not serialized behind a mutation", async () => {
     const { executor, events, release } = deferredExecutor();
     const p1 = executor.pull("/tmp/repo-d");
-    const p2 = executor.getBranch("/tmp/repo-d"); // read — must not queue behind pull
+    const p2 = executor.lastCommitMessage("/tmp/repo-d"); // read — must not queue behind pull
     await new Promise((r) => setImmediate(r));
     assert.strictEqual(events.filter((e) => e.startsWith("start:")).length, 2);
     release();
@@ -630,7 +632,7 @@ describe("GitExecutor shortStatus dedup", () => {
     assert.strictEqual(c.branch, "main");
   });
 
-  test("sequential shortStatus calls each run (no TTL cache)", async () => {
+  test("shortStatus shares status()'s TTL cache; invalidateStatus forces a re-run", async () => {
     const executor = new GitExecutor();
     let n = 0;
     (executor as any)._run = async () => {
@@ -638,100 +640,151 @@ describe("GitExecutor shortStatus dedup", () => {
       return { stdout: "# branch.head main\0", stderr: "", code: 0 };
     };
     await executor.shortStatus("/tmp/repo-ss2");
+    await executor.status("/tmp/repo-ss2");
+    await executor.shortStatus("/tmp/repo-ss2");
+    assert.strictEqual(n, 1, "status() and shortStatus() share one git status run");
+    executor.invalidateStatus("/tmp/repo-ss2");
     await executor.shortStatus("/tmp/repo-ss2");
     assert.strictEqual(n, 2);
   });
+
+  test("status and shortStatus in flight together spawn one process", async () => {
+    const executor = new GitExecutor();
+    let n = 0;
+    (executor as any)._run = async () => {
+      n++;
+      await new Promise((r) => setImmediate(r));
+      return { stdout: "# branch.head main\0? a.txt\0", stderr: "", code: 0 };
+    };
+    const [full, short] = await Promise.all([
+      executor.status("/tmp/repo-ss3"),
+      executor.shortStatus("/tmp/repo-ss3"),
+    ]);
+    assert.strictEqual(n, 1);
+    assert.strictEqual(full.untracked.length, 1);
+    assert.strictEqual(short.untracked, 1);
+  });
 });
 
-describe("GitExecutor grepSearch", () => {
-  function captureExecutor(stdout = "", code = 0, stderr = "") {
+describe("GitExecutor status epoch (stale in-flight)", () => {
+  /** _run that blocks until released; each call returns the output current at release time. */
+  function gatedExecutor() {
     const executor = new GitExecutor();
-    const calls: string[][] = [];
-    (executor as any)._run = async (args: string[]) => {
-      calls.push(args);
-      return { stdout, stderr, code };
+    let output = "# branch.oid aaaa\0# branch.head main\0";
+    const gates: (() => void)[] = [];
+    let spawned = 0;
+    (executor as any)._run = async () => {
+      spawned++;
+      const snapshot = output; // what git saw when it started
+      await new Promise<void>((r) => gates.push(r));
+      return { stdout: snapshot, stderr: "", code: 0 };
     };
-    return { executor, calls };
+    return {
+      executor,
+      setOutput: (o: string) => { output = o; },
+      releaseAll: () => { for (const g of gates.splice(0)) g(); },
+      spawned: () => spawned,
+    };
   }
 
-  test("defaults: literal, case-insensitive, untracked, with column", async () => {
-    const { executor, calls } = captureExecutor();
-    await executor.grepSearch("/tmp/repo-gs1", "needle");
-    const args = calls[0];
-    assert.ok(args.includes("--untracked"), "must search untracked files");
-    assert.ok(args.includes("--column"), "must report match columns");
-    assert.ok(args.includes("-F"), "literal search by default");
-    assert.ok(args.includes("-i"), "case-insensitive by default");
-    assert.ok(!args.includes("-E"));
-    assert.ok(!args.includes("-w"));
-    // Query passed via -e so leading-dash queries are safe
-    assert.strictEqual(args[args.indexOf("-e") + 1], "needle");
+  test("a caller after invalidateStatus() does not join a pre-invalidation run", async () => {
+    const { executor, setOutput, releaseAll, spawned } = gatedExecutor();
+    const stale = executor.shortStatus("/tmp/repo-ep1"); // starts with old HEAD
+    await new Promise((r) => setImmediate(r));
+    // A commit lands; the caller invalidates and asks again
+    setOutput("# branch.oid bbbb\0# branch.head main\0");
+    executor.invalidateStatus("/tmp/repo-ep1");
+    const fresh = executor.shortStatus("/tmp/repo-ep1");
+    await new Promise((r) => setImmediate(r));
+    assert.strictEqual(spawned(), 2, "post-invalidation request must start its own run");
+    releaseAll();
+    assert.strictEqual((await stale).headOid, "aaaa");
+    assert.strictEqual((await fresh).headOid, "bbbb");
   });
 
-  test("options map to git flags and pathspecs", async () => {
-    const { executor, calls } = captureExecutor();
-    await executor.grepSearch("/tmp/repo-gs2", "nee(dle)?", {
-      caseSensitive: true,
-      regex: true,
-      wholeWord: true,
-      include: ["src", "*.ts"],
-      exclude: ["*.test.ts"],
-    });
-    const args = calls[0];
-    assert.ok(args.includes("-E"), "regex mode uses extended regex");
-    assert.ok(!args.includes("-F"));
-    assert.ok(!args.includes("-i"), "case-sensitive drops -i");
-    assert.ok(args.includes("-w"));
-    const sep = args.indexOf("--");
-    assert.deepStrictEqual(args.slice(sep + 1), ["src", "*.ts", ":!*.test.ts"]);
-  });
-
-  test("parses file:line:column:text output", async () => {
-    const stdout = [
-      "src/a.ts:10:5:const needle = 1;",
-      "src/b.ts:2:1:needle: true,",
-      "",
-    ].join("\n");
-    const { executor } = captureExecutor(stdout);
-    const { matches, truncated } = await executor.grepSearch("/tmp/repo-gs3", "needle");
-    assert.strictEqual(truncated, false);
-    assert.deepStrictEqual(matches[0], {
-      file: "src/a.ts", line: 10, column: 5, text: "const needle = 1;",
-    });
-    assert.deepStrictEqual(matches[1], {
-      file: "src/b.ts", line: 2, column: 1, text: "needle: true,",
-    });
-  });
-
-  test("truncates at maxResults", async () => {
-    const stdout = Array.from({ length: 10 }, (_, i) => `f.ts:${i + 1}:1:x`).join("\n");
-    const { executor } = captureExecutor(stdout);
-    const { matches, truncated } = await executor.grepSearch("/tmp/repo-gs4", "x", {
-      maxResults: 5,
-    });
-    assert.strictEqual(matches.length, 5);
-    assert.strictEqual(truncated, true);
-  });
-
-  test("windows very long lines around the match", async () => {
-    const long = "a".repeat(1000) + "NEEDLE" + "b".repeat(1000);
-    const { executor } = captureExecutor(`min.js:1:1001:${long}`);
-    const { matches } = await executor.grepSearch("/tmp/repo-gs5", "NEEDLE");
-    assert.ok(matches[0].text.length < 400, "long line must be windowed");
-    assert.ok(matches[0].text.includes("NEEDLE"), "window must contain the match");
-  });
-
-  test("exit 1 with no stderr is no-matches, not an error", async () => {
-    const { executor } = captureExecutor("", 1);
-    const { matches } = await executor.grepSearch("/tmp/repo-gs6", "nothing");
-    assert.deepStrictEqual(matches, []);
-  });
-
-  test("git errors (e.g. invalid regex) are surfaced", async () => {
-    const { executor } = captureExecutor("", 128, "fatal: command line: unmatched ( or \\(");
-    await assert.rejects(
-      () => executor.grepSearch("/tmp/repo-gs7", "bad(", { regex: true }),
-      { message: /unmatched/ }
-    );
+  test("the stale run's result is not cached and does not clobber the fresh in-flight entry", async () => {
+    const { executor, setOutput, releaseAll, spawned } = gatedExecutor();
+    const stale = executor.status("/tmp/repo-ep2");
+    await new Promise((r) => setImmediate(r));
+    setOutput("# branch.oid bbbb\0# branch.head feature\0");
+    executor.invalidateStatus("/tmp/repo-ep2");
+    const fresh = executor.status("/tmp/repo-ep2");
+    await new Promise((r) => setImmediate(r));
+    releaseAll();
+    await stale;
+    // A third caller while `fresh` may still be settling must not see stale data
+    const third = await executor.status("/tmp/repo-ep2");
+    assert.strictEqual(third.branch, "feature");
+    assert.strictEqual((await fresh).branch, "feature");
+    assert.strictEqual(spawned(), 2);
   });
 });
+
+describe("GitExecutor gitdir resolution + merge state (real fs)", () => {
+  test("resolves a .git directory and detects MERGE_HEAD", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "dc-gitdir-"));
+    try {
+      fs.mkdirSync(path.join(root, ".git"));
+      const executor = new GitExecutor();
+      assert.deepStrictEqual(await executor.resolveGitDirs(root), {
+        gitDir: path.join(root, ".git"),
+        commonDir: path.join(root, ".git"),
+      });
+      fs.writeFileSync(path.join(root, ".git", "MERGE_HEAD"), "x");
+      (executor as any)._run = async () => ({ stdout: "# branch.head main\0", stderr: "", code: 0 });
+      assert.strictEqual((await executor.shortStatus(root)).mergeState, "merging");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("follows a gitdir: pointer file (worktree) incl. commondir", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "dc-gitdir-"));
+    try {
+      const main = path.join(root, "main");
+      const wt = path.join(root, "wt");
+      const wtGitDir = path.join(main, ".git", "worktrees", "wt");
+      fs.mkdirSync(wtGitDir, { recursive: true });
+      fs.mkdirSync(wt);
+      fs.writeFileSync(path.join(wt, ".git"), `gitdir: ${wtGitDir}\n`);
+      fs.writeFileSync(path.join(wtGitDir, "commondir"), "../..\n");
+      fs.mkdirSync(path.join(wtGitDir, "rebase-merge"));
+      const executor = new GitExecutor();
+      assert.deepStrictEqual(await executor.resolveGitDirs(wt), {
+        gitDir: wtGitDir,
+        commonDir: path.join(main, ".git"),
+      });
+      (executor as any)._run = async () => ({ stdout: "# branch.head main\0", stderr: "", code: 0 });
+      assert.strictEqual((await executor.status(wt)).mergeState, "rebasing");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("relative gitdir: pointer (submodule) resolves against the repo", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "dc-gitdir-"));
+    try {
+      const sub = path.join(root, "sub");
+      fs.mkdirSync(path.join(root, ".git", "modules", "sub"), { recursive: true });
+      fs.mkdirSync(sub);
+      fs.writeFileSync(path.join(sub, ".git"), "gitdir: ../.git/modules/sub\n");
+      const dirs = await new GitExecutor().resolveGitDirs(sub);
+      assert.strictEqual(dirs?.gitDir, path.join(root, ".git", "modules", "sub"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("missing .git resolves to undefined and is retried later", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "dc-gitdir-"));
+    try {
+      const executor = new GitExecutor();
+      assert.strictEqual(await executor.resolveGitDirs(root), undefined);
+      fs.mkdirSync(path.join(root, ".git"));
+      assert.strictEqual((await executor.resolveGitDirs(root))?.gitDir, path.join(root, ".git"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+

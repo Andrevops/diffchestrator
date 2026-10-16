@@ -1,8 +1,9 @@
-import { execFile } from "child_process";
+import { execFile, spawn, type ChildProcessByStdio } from "child_process";
+import type { Readable } from "stream";
 import { promisify } from "util";
 import * as path from "path";
 import * as fs from "fs";
-import type { RepoStatus, FileChange, CommitEntry } from "../types.ts";
+import type { RepoStatus, FileChange, CommitEntry, MergeState } from "../types.ts";
 import { ChangeType, FileStatus } from "../types.ts";
 import { isValidRef } from "../utils/gitValidation.ts";
 
@@ -11,7 +12,69 @@ const execFileAsync = promisify(execFile);
 interface RunResult {
   stdout: string;
   stderr: string;
+  /** git's exit code; -1 when git didn't exit normally (see `failure`). */
   code: number;
+  /** Set when the process didn't exit on its own: output overflow, timeout kill, signal, or spawn error. */
+  failure?: "maxBuffer" | "timeout" | "signal" | "spawn";
+}
+
+interface StreamResult {
+  code: number;
+  stderr: string;
+  failure?: RunResult["failure"];
+  /** True when the consumer stopped reading early and the process was killed. */
+  stopped: boolean;
+}
+
+export interface GrepRecord {
+  file: string;
+  line: number;
+  /** 1-based match column; 0 when parsed without --column. */
+  column: number;
+  text: string;
+}
+
+/**
+ * Incremental parser for `git grep -z -n [--column]` output. Each record is
+ * "<file>\0<line>\0[<column>\0]<text>\n": the file name is NUL-terminated and
+ * verbatim (no C-quoting), so colons, spaces, non-ASCII and even newlines in
+ * paths survive. Feed chunks with push(); partial records are buffered.
+ */
+export class GrepZParser {
+  private _buf = "";
+  private readonly _withColumn: boolean;
+  constructor(withColumn: boolean) {
+    this._withColumn = withColumn;
+  }
+
+  /** Parse complete records from `chunk`; stops early (returns false) when `emit` returns false. */
+  push(chunk: string, emit: (r: GrepRecord) => boolean): boolean {
+    this._buf += chunk;
+    let pos = 0;
+    let keepGoing = true;
+    while (keepGoing) {
+      const z1 = this._buf.indexOf("\0", pos);
+      if (z1 < 0) break;
+      const z2 = this._buf.indexOf("\0", z1 + 1);
+      if (z2 < 0) break;
+      let z3 = z2;
+      if (this._withColumn) {
+        z3 = this._buf.indexOf("\0", z2 + 1);
+        if (z3 < 0) break;
+      }
+      const nl = this._buf.indexOf("\n", z3 + 1);
+      if (nl < 0) break;
+      const file = this._buf.slice(pos, z1);
+      const line = parseInt(this._buf.slice(z1 + 1, z2), 10);
+      const column = this._withColumn ? parseInt(this._buf.slice(z2 + 1, z3), 10) : 0;
+      const text = this._buf.slice(z3 + 1, nl);
+      pos = nl + 1;
+      if (!file || isNaN(line) || isNaN(column)) continue;
+      keepGoing = emit({ file, line, column, text });
+    }
+    this._buf = this._buf.slice(pos);
+    return keepGoing;
+  }
 }
 
 export interface GrepSearchOptions {
@@ -33,7 +96,7 @@ export interface GrepSearchMatch {
   text: string;
 }
 
-interface ShortStatusResult {
+export interface ShortStatusResult {
   staged: number;
   unstaged: number;
   untracked: number;
@@ -41,7 +104,21 @@ interface ShortStatusResult {
   ahead: number;
   behind: number;
   headOid: string;
-  mergeState?: import("../types.ts").MergeState;
+  /** Upstream tracking ref (e.g. "origin/main"); undefined when none is set. */
+  upstream?: string;
+  mergeState?: MergeState;
+}
+
+/** Internal status result: RepoStatus plus the HEAD oid ("(initial)" on an unborn branch). */
+interface StatusSnapshot extends RepoStatus {
+  headOid: string;
+}
+
+export interface GitDirs {
+  /** Per-worktree git dir (HEAD, index, MERGE_HEAD, rebase-*, FETCH_HEAD, ...). */
+  gitDir: string;
+  /** Shared dir (refs, packed-refs, objects); equals gitDir for a plain repo. */
+  commonDir: string;
 }
 
 export class GitExecutor {
@@ -66,14 +143,20 @@ export class GitExecutor {
     if (next) next();
   }
 
-  // Short-TTL cache for status() to deduplicate concurrent calls
-  private _statusCache = new Map<string, { result: RepoStatus; time: number }>();
-  private _statusInflight = new Map<string, Promise<RepoStatus>>();
-  // Watcher debounce + periodic tick + post-command refresh can all request a
-  // shortStatus for the same repo within milliseconds — share one process.
-  private _shortStatusInflight = new Map<string, Promise<ShortStatusResult>>();
-  private _statusEpoch = new Map<string, number>(); // guards against stale in-flight writes
+  // Short-TTL cache shared by status() and shortStatus(): watcher debounce,
+  // periodic tick, post-command refresh and tree views can all ask for the
+  // same repo's status within milliseconds — one `git status` serves them.
+  private _statusCache = new Map<string, { result: StatusSnapshot; time: number }>();
+  // In-flight runs are tagged with the epoch they started in: a caller only
+  // joins a run whose epoch is still current, so a request made after
+  // invalidateStatus() never receives pre-mutation data.
+  private _statusInflight = new Map<string, { promise: Promise<StatusSnapshot>; epoch: number }>();
+  private _statusEpoch = new Map<string, number>(); // bumped by invalidateStatus()
   private static readonly STATUS_CACHE_TTL = 1000; // ms
+
+  // Resolved git dirs per repo (.git may be a "gitdir:" pointer file for
+  // worktrees/submodules). Cached for the session; failures aren't cached.
+  private _gitDirs = new Map<string, Promise<GitDirs | undefined>>();
 
   // Metadata cache (30s TTL) for frequently accessed data
   private _metaCache = new Map<string, { value: unknown; time: number }>();
@@ -137,23 +220,41 @@ export class GitExecutor {
     }
   }
 
+  /**
+   * Config overrides prepended to EVERY git invocation. Scanned repos are
+   * untrusted: a `core.fsmonitor` command in a repo's .git/config would
+   * otherwise be executed by background status polling the moment the repo
+   * is scanned. Diff-producing commands additionally pass --no-ext-diff /
+   * --no-textconv (see DIFF_SAFETY_ARGS) to neutralize diff.external and
+   * textconv drivers.
+   */
+  static readonly SAFETY_CONFIG_ARGS: readonly string[] = ["-c", "core.fsmonitor=false"];
+  /** Added to commands that can render a diff (diff, show, stash show). */
+  private static readonly DIFF_SAFETY_ARGS: readonly string[] = ["--no-ext-diff", "--no-textconv"];
+
+  private static readonly DEFAULT_MAX_BUFFER = 10 * 1024 * 1024;
+
+  private static _gitEnv(): NodeJS.ProcessEnv {
+    return {
+      ...process.env,
+      GIT_TERMINAL_PROMPT: "0",
+      LC_ALL: "C", // stable English output for error-string matching
+      GIT_OPTIONAL_LOCKS: "0", // status polling must not take index.lock
+    };
+  }
+
   private async _run(
     args: string[],
     cwd: string,
-    opts?: { timeoutMs?: number; input?: string }
+    opts?: { timeoutMs?: number; input?: string; maxBuffer?: number }
   ): Promise<RunResult> {
     await this._acquireSlot();
     try {
-      const promise = execFileAsync("git", args, {
+      const promise = execFileAsync("git", [...GitExecutor.SAFETY_CONFIG_ARGS, ...args], {
         cwd,
-        maxBuffer: 10 * 1024 * 1024,
+        maxBuffer: opts?.maxBuffer ?? GitExecutor.DEFAULT_MAX_BUFFER,
         timeout: opts?.timeoutMs ?? 30_000, // 30s default per operation
-        env: {
-          ...process.env,
-          GIT_TERMINAL_PROMPT: "0",
-          LC_ALL: "C", // stable English output for error-string matching
-          GIT_OPTIONAL_LOCKS: "0", // status polling must not take index.lock
-        },
+        env: GitExecutor._gitEnv(),
       });
       if (opts?.input !== undefined && promise.child.stdin) {
         // If git exits before draining stdin (e.g. the repo vanished), the
@@ -166,14 +267,109 @@ export class GitExecutor {
       const { stdout, stderr } = await promise;
       return { stdout, stderr, code: 0 };
     } catch (err: unknown) {
-      const e = err as { stdout?: string; stderr?: string; code?: number };
+      const e = err as {
+        stdout?: string;
+        stderr?: string;
+        code?: number | string | null;
+        killed?: boolean;
+        signal?: string | null;
+      };
+      let failure: RunResult["failure"];
+      if (e.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") failure = "maxBuffer";
+      else if (e.killed) failure = "timeout";
+      else if (e.signal) failure = "signal";
+      else if (typeof e.code !== "number") failure = "spawn";
       return {
         stdout: e.stdout ?? "",
         stderr: e.stderr ?? String(err),
-        code: e.code ?? 1,
+        // Never map a kill/overflow (code null or a string) onto a real git
+        // exit code — callers treat exit 1 as "no matches"/"nothing to do".
+        code: typeof e.code === "number" ? e.code : -1,
+        failure,
       };
     } finally {
       this._releaseSlot();
+    }
+  }
+
+  /**
+   * Spawn git and stream stdout (UTF-8 decoded, split-safe) to `onData`.
+   * Returning false from `onData` stops reading and kills the process —
+   * used to cap result counts without buffering the full output.
+   */
+  private async _runStream(
+    args: string[],
+    cwd: string,
+    onData: (chunk: string) => boolean,
+    opts?: { timeoutMs?: number }
+  ): Promise<StreamResult> {
+    await this._acquireSlot();
+    try {
+      return await new Promise<StreamResult>((resolve) => {
+        let settled = false;
+        let stopped = false;
+        let timedOut = false;
+        let stderr = "";
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const finish = (r: StreamResult): void => {
+          if (settled) return;
+          settled = true;
+          if (timer) clearTimeout(timer);
+          resolve(r);
+        };
+        let child: ChildProcessByStdio<null, Readable, Readable>;
+        try {
+          child = spawn("git", [...GitExecutor.SAFETY_CONFIG_ARGS, ...args], {
+            cwd,
+            env: GitExecutor._gitEnv(),
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+        } catch (err) {
+          finish({ code: -1, stderr: String(err), failure: "spawn", stopped: false });
+          return;
+        }
+        timer = setTimeout(() => {
+          timedOut = true;
+          child.kill();
+        }, opts?.timeoutMs ?? 30_000);
+        child.stdout.setEncoding("utf8");
+        child.stdout.on("data", (chunk: string) => {
+          if (stopped) return;
+          if (!onData(chunk)) {
+            stopped = true;
+            child.kill();
+          }
+        });
+        child.stderr.setEncoding("utf8");
+        child.stderr.on("data", (chunk: string) => {
+          if (stderr.length < 64 * 1024) stderr += chunk;
+        });
+        child.on("error", (err) => {
+          finish({ code: -1, stderr: stderr || String(err), failure: "spawn", stopped });
+        });
+        child.on("close", (code, signal) => {
+          if (stopped) finish({ code: code ?? -1, stderr, stopped: true });
+          else if (timedOut) finish({ code: -1, stderr, failure: "timeout", stopped: false });
+          else if (code === null || signal) finish({ code: -1, stderr, failure: "signal", stopped: false });
+          else finish({ code, stderr, stopped: false });
+        });
+      });
+    } finally {
+      this._releaseSlot();
+    }
+  }
+
+  /** Throw a descriptive error for an abnormal termination (overflow, timeout, kill). */
+  private static _throwIfAbnormal(result: RunResult, what: string): void {
+    switch (result.failure) {
+      case "maxBuffer":
+        throw new Error(`git ${what} output too large (exceeded buffer) — result would be truncated`);
+      case "timeout":
+        throw new Error(`git ${what} timed out`);
+      case "signal":
+        throw new Error(`git ${what} was killed`);
+      case "spawn":
+        throw new Error(`git ${what} failed to run: ${result.stderr.trim()}`);
     }
   }
 
@@ -189,18 +385,8 @@ export class GitExecutor {
     this._statusEpoch.set(repoPath, (this._statusEpoch.get(repoPath) ?? 0) + 1);
   }
 
-  async isGitRepo(dirPath: string): Promise<boolean> {
-    const gitDir = path.join(dirPath, ".git");
-    try {
-      const stat = fs.statSync(gitDir);
-      return stat.isDirectory();
-    } catch {
-      return false;
-    }
-  }
-
   /** Shallow copy with copied arrays so callers can't mutate the cached object. */
-  private _cloneStatus(s: RepoStatus): RepoStatus {
+  private _cloneStatus(s: StatusSnapshot): RepoStatus {
     return {
       ...s,
       staged: [...s.staged],
@@ -209,56 +395,158 @@ export class GitExecutor {
     };
   }
 
-  async status(repoPath: string): Promise<RepoStatus> {
-    // Return cached result if fresh
+  /**
+   * Shared status source for status() and shortStatus(): fresh cache entry,
+   * else an in-flight run from the CURRENT epoch, else a new run. A run that
+   * started before invalidateStatus() is never joined — its data may predate
+   * the mutation that triggered the invalidation.
+   */
+  private _statusShared(repoPath: string): Promise<StatusSnapshot> {
     const cached = this._statusCache.get(repoPath);
     if (cached && Date.now() - cached.time < GitExecutor.STATUS_CACHE_TTL) {
-      return this._cloneStatus(cached.result);
+      return Promise.resolve(cached.result);
     }
-
-    // Deduplicate: if a call is already in-flight for this repo, return the same Promise
-    const inflight = this._statusInflight.get(repoPath);
-    if (inflight) return inflight.then((r) => this._cloneStatus(r));
 
     const epoch = this._statusEpoch.get(repoPath) ?? 0;
+    const inflight = this._statusInflight.get(repoPath);
+    if (inflight && inflight.epoch === epoch) return inflight.promise;
+
     const promise = this._statusUncached(repoPath, epoch);
-    this._statusInflight.set(repoPath, promise);
-    try {
-      return this._cloneStatus(await promise);
-    } finally {
-      this._statusInflight.delete(repoPath);
-    }
+    const entry = { promise, epoch };
+    this._statusInflight.set(repoPath, entry);
+    const clear = (): void => {
+      // Only clear our own entry — a newer-epoch run may have replaced it.
+      if (this._statusInflight.get(repoPath) === entry) this._statusInflight.delete(repoPath);
+    };
+    void promise.then(clear, clear);
+    return promise;
   }
 
-  private async _statusUncached(repoPath: string, epoch: number): Promise<RepoStatus> {
-    const result = await this._run(
-      ["status", "--porcelain=v2", "--branch", "-z", "-uall"],
-      repoPath
-    );
+  async status(repoPath: string): Promise<RepoStatus> {
+    return this._cloneStatus(await this._statusShared(repoPath));
+  }
+
+  /** Counts-only view of status(); shares its cache and in-flight process. */
+  async shortStatus(repoPath: string): Promise<ShortStatusResult> {
+    const s = await this._statusShared(repoPath);
+    return {
+      staged: s.staged.length,
+      unstaged: s.unstaged.length,
+      untracked: s.untracked.length,
+      branch: s.branch,
+      ahead: s.ahead,
+      behind: s.behind,
+      headOid: s.headOid,
+      upstream: s.upstream,
+      mergeState: s.mergeState,
+    };
+  }
+
+  /**
+   * Resolve a repo's git dirs. `.git` is a directory for a normal repo but a
+   * "gitdir: <path>" file for linked worktrees and submodules — merge-state
+   * sentinels and watch targets live in the pointed-to dir. Parsed from the
+   * filesystem (no git spawn) and cached; failures are retried next call.
+   */
+  resolveGitDirs(repoPath: string): Promise<GitDirs | undefined> {
+    const cached = this._gitDirs.get(repoPath);
+    if (cached) return cached;
+    const promise = GitExecutor._readGitDirs(repoPath);
+    this._gitDirs.set(repoPath, promise);
+    // _readGitDirs never rejects (it maps every failure to undefined)
+    void promise.then((r) => {
+      if (!r && this._gitDirs.get(repoPath) === promise) this._gitDirs.delete(repoPath);
+    });
+    return promise;
+  }
+
+  private static async _readGitDirs(repoPath: string): Promise<GitDirs | undefined> {
+    const dotGit = path.join(repoPath, ".git");
+    let gitDir: string;
+    try {
+      // Read rather than stat: 9p/drvfs mounts can misreport the entry type,
+      // but reading a directory reliably fails with EISDIR.
+      const content = await fs.promises.readFile(dotGit, "utf8");
+      const m = /^gitdir:\s*(.+?)\s*$/m.exec(content);
+      if (!m) return undefined;
+      gitDir = path.resolve(repoPath, m[1]);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EISDIR") return undefined;
+      gitDir = dotGit;
+    }
+    let commonDir = gitDir;
+    try {
+      const rel = (await fs.promises.readFile(path.join(gitDir, "commondir"), "utf8")).trim();
+      if (rel) commonDir = path.resolve(gitDir, rel);
+    } catch {
+      /* no commondir file — not a linked worktree */
+    }
+    return { gitDir, commonDir };
+  }
+
+  /** Merge/rebase/cherry-pick state from the per-worktree git dir's sentinel files. */
+  private async _detectMergeState(repoPath: string): Promise<MergeState> {
+    const dirs = await this.resolveGitDirs(repoPath);
+    if (!dirs) return undefined;
+    const exists = (name: string): Promise<boolean> =>
+      fs.promises.access(path.join(dirs.gitDir, name)).then(
+        () => true,
+        () => false
+      );
+    const [merge, rebaseMerge, rebaseApply, cherryPick] = await Promise.all([
+      exists("MERGE_HEAD"),
+      exists("rebase-merge"),
+      exists("rebase-apply"),
+      exists("CHERRY_PICK_HEAD"),
+    ]);
+    if (merge) return "merging";
+    if (rebaseMerge || rebaseApply) return "rebasing";
+    if (cherryPick) return "cherry-picking";
+    return undefined;
+  }
+
+  private async _statusUncached(repoPath: string, epoch: number): Promise<StatusSnapshot> {
+    const [result, mergeState] = await Promise.all([
+      this._run(["status", "--porcelain=v2", "--branch", "-z", "-uall"], repoPath),
+      this._detectMergeState(repoPath),
+    ]);
     if (result.code !== 0) {
       throw new Error(
         `git status failed: ${result.stderr.trim() || `exit code ${result.code}`}`
       );
     }
 
+    const statusResult: StatusSnapshot = { ...GitExecutor.parseStatusV2Z(result.stdout), mergeState };
+    // Only cache if no invalidation happened while the git process was running
+    if ((this._statusEpoch.get(repoPath) ?? 0) === epoch) {
+      this._statusCache.set(repoPath, { result: statusResult, time: Date.now() });
+    }
+    return statusResult;
+  }
+
+  /** Parse `git status --porcelain=v2 --branch -z` output. */
+  static parseStatusV2Z(stdout: string): StatusSnapshot {
     let branch = "HEAD";
     let upstream: string | undefined;
     let ahead = 0;
     let behind = 0;
+    let headOid = "";
     const staged: FileChange[] = [];
     const unstaged: FileChange[] = [];
     const untracked: FileChange[] = [];
 
     // -z mode: entries are NUL-separated, paths are NOT C-quoted, and rename
     // entries ("2 ...") consume TWO tokens: "<header fields> <path>" then "<origPath>"
-    const entries = result.stdout.split("\0");
+    const entries = stdout.split("\0");
     for (let i = 0; i < entries.length; i++) {
       const line = entries[i];
       if (!line) {
         continue;
       }
 
-      if (line.startsWith("# branch.head ")) {
+      if (line.startsWith("# branch.oid ")) {
+        headOid = line.slice("# branch.oid ".length);
+      } else if (line.startsWith("# branch.head ")) {
         branch = line.slice("# branch.head ".length);
       } else if (line.startsWith("# branch.upstream ")) {
         upstream = line.slice("# branch.upstream ".length);
@@ -295,7 +583,7 @@ export class GitExecutor {
           staged.push({
             path: filePath,
             oldPath,
-            changeType: this._parseChangeType(indexStatus),
+            changeType: GitExecutor._parseChangeType(indexStatus),
             status: FileStatus.Staged,
           });
         }
@@ -305,7 +593,7 @@ export class GitExecutor {
           unstaged.push({
             path: filePath,
             oldPath,
-            changeType: this._parseChangeType(worktreeStatus),
+            changeType: GitExecutor._parseChangeType(worktreeStatus),
             status: FileStatus.Unstaged,
           });
         }
@@ -328,97 +616,7 @@ export class GitExecutor {
       }
     }
 
-    // Detect merge/rebase/cherry-pick state from .git sentinel files
-    let mergeState: import("../types.ts").MergeState;
-    const gitDir = path.join(repoPath, ".git");
-    if (fs.existsSync(path.join(gitDir, "MERGE_HEAD"))) {
-      mergeState = "merging";
-    } else if (fs.existsSync(path.join(gitDir, "rebase-merge")) || fs.existsSync(path.join(gitDir, "rebase-apply"))) {
-      mergeState = "rebasing";
-    } else if (fs.existsSync(path.join(gitDir, "CHERRY_PICK_HEAD"))) {
-      mergeState = "cherry-picking";
-    }
-
-    const statusResult = { branch, upstream, ahead, behind, staged, unstaged, untracked, mergeState };
-    // Only cache if no invalidation happened while the git process was running
-    if ((this._statusEpoch.get(repoPath) ?? 0) === epoch) {
-      this._statusCache.set(repoPath, { result: statusResult, time: Date.now() });
-    }
-    return statusResult;
-  }
-
-  async shortStatus(repoPath: string): Promise<ShortStatusResult> {
-    const inflight = this._shortStatusInflight.get(repoPath);
-    if (inflight) return inflight;
-    const promise = this._shortStatusUncached(repoPath);
-    this._shortStatusInflight.set(repoPath, promise);
-    try {
-      return await promise;
-    } finally {
-      this._shortStatusInflight.delete(repoPath);
-    }
-  }
-
-  private async _shortStatusUncached(repoPath: string): Promise<ShortStatusResult> {
-    const result = await this._run(
-      ["status", "--porcelain=v2", "--branch", "-z", "-uall"],
-      repoPath
-    );
-    if (result.code !== 0) {
-      throw new Error(
-        `git status failed: ${result.stderr.trim() || `exit code ${result.code}`}`
-      );
-    }
-
-    let staged = 0;
-    let unstaged = 0;
-    let untracked = 0;
-    let branch = "HEAD";
-    let ahead = 0;
-    let behind = 0;
-    let headOid = "";
-
-    // -z mode: NUL-separated entries; rename entries consume two tokens
-    const entries = result.stdout.split("\0");
-    for (let i = 0; i < entries.length; i++) {
-      const line = entries[i];
-      if (!line) {
-        continue;
-      }
-      if (line.startsWith("# branch.oid ")) {
-        headOid = line.slice("# branch.oid ".length);
-      } else if (line.startsWith("# branch.head ")) {
-        branch = line.slice("# branch.head ".length);
-      } else if (line.startsWith("# branch.ab ")) {
-        const match = line.match(/\+(\d+)\s+-(\d+)/);
-        if (match) {
-          ahead = parseInt(match[1], 10);
-          behind = parseInt(match[2], 10);
-        }
-      } else if (line.startsWith("1 ") || line.startsWith("2 ")) {
-        if (line.startsWith("2 ")) i++; // skip the origPath token of a rename
-        const xy = line.split(" ")[1];
-        if (xy[0] !== ".") staged++;
-        if (xy[1] !== ".") unstaged++;
-      } else if (line.startsWith("? ")) {
-        untracked++;
-      } else if (line.startsWith("u ")) {
-        unstaged++;
-      }
-    }
-
-    // Detect merge/rebase/cherry-pick state
-    let mergeState: import("../types.ts").MergeState;
-    const gitDir = path.join(repoPath, ".git");
-    if (fs.existsSync(path.join(gitDir, "MERGE_HEAD"))) {
-      mergeState = "merging";
-    } else if (fs.existsSync(path.join(gitDir, "rebase-merge")) || fs.existsSync(path.join(gitDir, "rebase-apply"))) {
-      mergeState = "rebasing";
-    } else if (fs.existsSync(path.join(gitDir, "CHERRY_PICK_HEAD"))) {
-      mergeState = "cherry-picking";
-    }
-
-    return { staged, unstaged, untracked, branch, ahead, behind, headOid, mergeState };
+    return { branch, upstream, ahead, behind, headOid, staged, unstaged, untracked };
   }
 
   async diff(
@@ -426,7 +624,7 @@ export class GitExecutor {
     staged?: boolean,
     file?: string
   ): Promise<string> {
-    const args = ["diff"];
+    const args = ["diff", ...GitExecutor.DIFF_SAFETY_ARGS];
     if (staged) {
       args.push("--cached");
     }
@@ -435,17 +633,28 @@ export class GitExecutor {
       this._validateFilePath(repoPath, file);
       args.push("--", file);
     }
-    const result = await this._run(args, repoPath);
+    // Large diffs (lockfiles, generated code) can legitimately exceed the
+    // default buffer — allow more, but never return silently truncated output.
+    const result = await this._run(args, repoPath, { maxBuffer: GitExecutor.LARGE_OUTPUT_BUFFER });
+    GitExecutor._throwIfAbnormal(result, "diff");
+    if (result.code !== 0) {
+      throw new Error(`git diff failed: ${result.stderr.trim() || `exit code ${result.code}`}`);
+    }
     return result.stdout;
   }
+
+  private static readonly LARGE_OUTPUT_BUFFER = 64 * 1024 * 1024;
 
   async stage(repoPath: string, files: string[]): Promise<void> {
     for (const f of files) {
       this._validateFilePath(repoPath, f);
     }
     await this._serialized(repoPath, async () => {
-      await this._run(["add", "--", ...files], repoPath);
+      const result = await this._run(["add", "--", ...files], repoPath);
       this.invalidateStatus(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr.trim() || "Stage failed");
+      }
     });
   }
 
@@ -454,8 +663,18 @@ export class GitExecutor {
       this._validateFilePath(repoPath, f);
     }
     await this._serialized(repoPath, async () => {
-      await this._run(["reset", "HEAD", "--", ...files], repoPath);
+      // `reset HEAD -- <paths>` fails on an unborn branch (no commits yet);
+      // there, unstaging means removing the paths from the index entirely.
+      const hasHead =
+        (await this._run(["rev-parse", "--verify", "--quiet", "HEAD"], repoPath)).code === 0;
+      const args = hasHead
+        ? ["reset", "-q", "HEAD", "--", ...files]
+        : ["rm", "--cached", "-r", "-q", "--ignore-unmatch", "--", ...files];
+      const result = await this._run(args, repoPath);
       this.invalidateStatus(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr.trim() || "Unstage failed");
+      }
     });
   }
 
@@ -502,14 +721,6 @@ export class GitExecutor {
     });
   }
 
-  async getBranch(repoPath: string): Promise<string> {
-    const result = await this._run(
-      ["rev-parse", "--abbrev-ref", "HEAD"],
-      repoPath
-    );
-    return result.stdout.trim() || "HEAD";
-  }
-
   async resetSoft(repoPath: string, ref = "HEAD~1"): Promise<void> {
     return this._serialized(repoPath, async () => {
       const result = await this._run(["reset", "--soft", ref], repoPath);
@@ -548,39 +759,11 @@ export class GitExecutor {
     return url;
   }
 
+  private static readonly LOG_FORMAT = "--format=%H%n%h%n%an%n%ai%n%s%n---END---";
+
   async log(repoPath: string, count = 10): Promise<CommitEntry[]> {
-    const result = await this._run(
-      [
-        "log",
-        `-${count}`,
-        "--format=%H%n%h%n%an%n%ai%n%s%n---END---",
-      ],
-      repoPath
-    );
-
-    if (!result.stdout.trim()) {
-      return [];
-    }
-
-    const entries: CommitEntry[] = [];
-    const blocks = result.stdout.split("---END---\n");
-
-    for (const block of blocks) {
-      const trimmed = block.trim();
-      if (!trimmed) continue;
-      const lines = trimmed.split("\n");
-      if (lines.length >= 5) {
-        entries.push({
-          hash: lines[0],
-          shortHash: lines[1],
-          author: lines[2],
-          date: lines[3],
-          message: lines.slice(4).join("\n"),
-        });
-      }
-    }
-
-    return entries;
+    const result = await this._run(["log", `-${count}`, GitExecutor.LOG_FORMAT], repoPath);
+    return GitExecutor._parseLog(result.stdout);
   }
 
   async logSince(
@@ -589,23 +772,17 @@ export class GitExecutor {
     count = 50
   ): Promise<CommitEntry[]> {
     const result = await this._run(
-      [
-        "log",
-        `--since=${since}`,
-        `-${count}`,
-        "--format=%H%n%h%n%an%n%ai%n%s%n---END---",
-      ],
+      ["log", `--since=${since}`, `-${count}`, GitExecutor.LOG_FORMAT],
       repoPath
     );
+    return GitExecutor._parseLog(result.stdout);
+  }
 
-    if (!result.stdout.trim()) {
-      return [];
-    }
-
+  /** Parse LOG_FORMAT output: 5 lines per commit, blocks ended by "---END---". */
+  private static _parseLog(stdout: string): CommitEntry[] {
+    if (!stdout.trim()) return [];
     const entries: CommitEntry[] = [];
-    const blocks = result.stdout.split("---END---\n");
-
-    for (const block of blocks) {
+    for (const block of stdout.split("---END---\n")) {
       const trimmed = block.trim();
       if (!trimmed) continue;
       const lines = trimmed.split("\n");
@@ -619,7 +796,6 @@ export class GitExecutor {
         });
       }
     }
-
     return entries;
   }
 
@@ -637,35 +813,9 @@ export class GitExecutor {
     return date;
   }
 
-  /**
-   * Combined: get commits since a date AND the most recent commit date.
-   * Uses lastCommitDate cache (30s TTL) to avoid extra git process when cached.
-   */
-  async logSinceWithDate(
-    repoPath: string,
-    since: string,
-    count = 50
-  ): Promise<{ lastDate: string | undefined; commits: CommitEntry[] }> {
-    const cacheKey = `${repoPath}:lastCommitDate`;
-    const cachedDate = this._getCachedMeta<{ value: string | undefined }>(cacheKey);
-
-    if (cachedDate !== undefined) {
-      // Cache hit — only need session commits (1 git call)
-      const commits = await this.logSince(repoPath, since, count);
-      return { lastDate: cachedDate.value, commits };
-    }
-
-    // Cache miss — run both in parallel (2 git calls, but parallel)
-    const [lastDate, commits] = await Promise.all([
-      this.lastCommitDate(repoPath),
-      this.logSince(repoPath, since, count),
-    ]);
-    return { lastDate, commits };
-  }
-
   async show(repoPath: string, ref: string): Promise<string> {
     if (ref.startsWith("-")) return ""; // block flag injection
-    const result = await this._run(["show", ref], repoPath);
+    const result = await this._run(["show", ...GitExecutor.DIFF_SAFETY_ARGS, ref], repoPath);
     if (result.code !== 0) {
       return "";
     }
@@ -752,33 +902,53 @@ export class GitExecutor {
   }
 
   async diffStatSummary(repoPath: string): Promise<{ files: string[]; additions: number; deletions: number }> {
-    const result = await this._run(["diff", "--numstat", "HEAD"], repoPath);
-    if (result.code !== 0 || !result.stdout.trim()) return { files: [], additions: 0, deletions: 0 };
+    const result = await this._run(
+      ["diff", ...GitExecutor.DIFF_SAFETY_ARGS, "--numstat", "-z", "HEAD"],
+      repoPath
+    );
+    if (result.code !== 0 || !result.stdout) return { files: [], additions: 0, deletions: 0 };
+    return GitExecutor.parseNumstatZ(result.stdout);
+  }
+
+  /**
+   * Parse `git diff --numstat -z` output. Normal entries are
+   * "<add>\t<del>\t<path>\0"; renames/copies are "<add>\t<del>\t\0<old>\0<new>\0".
+   * Paths are verbatim (no C-quoting, no "old => new" arrows). Binary files
+   * report "-" for both counts. Returned `files` use the post-rename path.
+   */
+  static parseNumstatZ(out: string): { files: string[]; additions: number; deletions: number } {
     let additions = 0;
     let deletions = 0;
     const files: string[] = [];
-    for (const line of result.stdout.trim().split("\n")) {
-      const parts = line.split("\t");
-      if (parts.length >= 3) {
-        additions += parts[0] === "-" ? 0 : parseInt(parts[0], 10) || 0;
-        deletions += parts[1] === "-" ? 0 : parseInt(parts[1], 10) || 0;
-        files.push(parts[2]);
+    const tokens = out.split("\0");
+    for (let i = 0; i < tokens.length; i++) {
+      const tok = tokens[i];
+      if (!tok) continue;
+      const t1 = tok.indexOf("\t");
+      const t2 = t1 < 0 ? -1 : tok.indexOf("\t", t1 + 1);
+      if (t2 < 0) continue;
+      const add = tok.slice(0, t1);
+      const del = tok.slice(t1 + 1, t2);
+      additions += add === "-" ? 0 : parseInt(add, 10) || 0;
+      deletions += del === "-" ? 0 : parseInt(del, 10) || 0;
+      const p = tok.slice(t2 + 1);
+      if (p) {
+        files.push(p);
+      } else {
+        // Rename/copy: next two tokens are the old and new paths
+        i += 2;
+        const newPath = tokens[i];
+        if (newPath) files.push(newPath);
       }
     }
     return { files, additions, deletions };
   }
 
-  async fileCount(repoPath: string): Promise<number> {
-    const result = await this._run(["ls-files"], repoPath);
-    if (!result.stdout.trim()) return 0;
-    return result.stdout.trim().split("\n").length;
-  }
-
   async diffStatFile(repoPath: string, file: string, staged: boolean): Promise<{ additions: number; deletions: number }> {
     this._validateFilePath(repoPath, file);
     const args = staged
-      ? ["diff", "--cached", "--numstat", "--", file]
-      : ["diff", "--numstat", "--", file];
+      ? ["diff", ...GitExecutor.DIFF_SAFETY_ARGS, "--cached", "--numstat", "--", file]
+      : ["diff", ...GitExecutor.DIFF_SAFETY_ARGS, "--numstat", "--", file];
     const result = await this._run(args, repoPath);
     if (result.code !== 0 || !result.stdout.trim()) return { additions: 0, deletions: 0 };
     const parts = result.stdout.trim().split("\t");
@@ -788,10 +958,29 @@ export class GitExecutor {
     };
   }
 
+  /**
+   * Number of stash entries. Cached in the meta cache, keyed additionally by
+   * a stat signature of the stash reflog (logs/refs/stash in the common git
+   * dir): while the signature is unchanged the cached count is reused with no
+   * TTL, and any stash push/pop/drop — including from a terminal — changes it
+   * and forces a recount. Cheap enough to call on every refresh. Falls back
+   * to the plain 30s TTL when the git dir can't be resolved.
+   */
   async stashCount(repoPath: string): Promise<number> {
     const cacheKey = `${repoPath}:stashCount`;
-    const cached = this._getCachedMeta<number>(cacheKey);
-    if (cached !== undefined) return cached;
+    const sig = await this._stashSignature(repoPath);
+    if (sig === "none") {
+      // No stash reflog → `git stash list` would print nothing
+      this._setCachedMeta(cacheKey, { count: 0, sig });
+      return 0;
+    }
+    if (sig !== undefined) {
+      const raw = this._metaCache.get(cacheKey)?.value as { count: number; sig?: string } | undefined;
+      if (raw && raw.sig === sig) return raw.count;
+    } else {
+      const cached = this._getCachedMeta<{ count: number; sig?: string }>(cacheKey);
+      if (cached !== undefined) return cached.count;
+    }
     const result = await this._run(["stash", "list"], repoPath);
     // Zero stashes is the common case — cache it too, otherwise every scan
     // re-spawns `git stash list` for every clean repo.
@@ -799,8 +988,27 @@ export class GitExecutor {
       result.code !== 0 || !result.stdout.trim()
         ? 0
         : result.stdout.trim().split("\n").length;
-    this._setCachedMeta(cacheKey, count);
+    this._setCachedMeta(cacheKey, { count, sig });
     return count;
+  }
+
+  /** "ino:size:mtime" of the stash reflog, "none" if absent, undefined if the git dir is unknown. */
+  private async _stashSignature(repoPath: string): Promise<string | undefined> {
+    const dirs = await this.resolveGitDirs(repoPath);
+    if (!dirs) return undefined;
+    try {
+      const st = await fs.promises.stat(path.join(dirs.commonDir, "logs", "refs", "stash"));
+      return `${st.ino}:${st.size}:${st.mtimeMs}`;
+    } catch (err) {
+      return (err as NodeJS.ErrnoException).code === "ENOENT" ? "none" : undefined;
+    }
+  }
+
+  /** First parent of a commit, or undefined for a root commit / unknown oid. */
+  async firstParent(repoPath: string, oid: string): Promise<string | undefined> {
+    if (!/^[0-9a-f]{7,64}$/i.test(oid)) return undefined;
+    const result = await this._run(["rev-parse", "--verify", "--quiet", `${oid}^1`], repoPath);
+    return result.code === 0 ? result.stdout.trim() || undefined : undefined;
   }
 
   async branches(repoPath: string): Promise<{ name: string; current: boolean }[]> {
@@ -996,21 +1204,26 @@ export class GitExecutor {
     if (!Number.isInteger(index) || index < 0) {
       throw new Error("Invalid stash index");
     }
-    const result = await this._run(["stash", "show", "-p", `stash@{${index}}`], repoPath);
+    const result = await this._run(["stash", "show", ...GitExecutor.DIFF_SAFETY_ARGS, "-p", `stash@{${index}}`], repoPath);
     return result.stdout;
   }
 
-  async blame(repoPath: string, file: string, line: number): Promise<{
+  /**
+   * Blame one line. Pass `contents` (e.g. an editor's unsaved buffer) to
+   * blame that text instead of the on-disk file — line numbers then match
+   * the buffer, and lines changed in it report the all-zero hash.
+   */
+  async blame(repoPath: string, file: string, line: number, contents?: string): Promise<{
     hash: string;
     author: string;
     date: string;
     summary: string;
   } | undefined> {
     this._validateFilePath(repoPath, file);
-    const result = await this._run(
-      ["blame", "-L", `${line},${line}`, "--porcelain", "--", file],
-      repoPath
-    );
+    const args = ["blame", "--no-textconv", "-L", `${line},${line}`, "--porcelain"];
+    if (contents !== undefined) args.push("--contents", "-");
+    args.push("--", file);
+    const result = await this._run(args, repoPath, contents !== undefined ? { input: contents } : undefined);
     if (result.code !== 0 || !result.stdout.trim()) {
       return undefined;
     }
@@ -1040,30 +1253,41 @@ export class GitExecutor {
 
   async grep(repoPath: string, query: string, maxResults = 100, subdir?: string): Promise<{ file: string; line: number; text: string }[]> {
     if (subdir !== undefined) this._validateFilePath(repoPath, subdir);
-    const result = await this._run(
-      ["grep", "-n", "-I", "--no-color", "-i", "--untracked", "-e", query, "--", ...(subdir ? [subdir] : []), ":!*.min.*", ":!*.lock"],
-      repoPath
+    const { matches } = await this._grepStream(
+      repoPath,
+      ["grep", "-z", "-n", "-I", "--no-color", "-i", "--untracked", "-e", query, "--", ...(subdir ? [subdir] : []), ":!*.min.*", ":!*.lock"],
+      false,
+      maxResults
     );
-    // git grep exits 1 when no matches — not an error
-    if (!result.stdout.trim()) return [];
+    // Quick-pick search: errors (e.g. a bad regex mid-typing) just mean no results.
+    return matches.map((m) => ({ file: m.file, line: m.line, text: m.text.trim() }));
+  }
 
-    const matches: { file: string; line: number; text: string }[] = [];
-    for (const l of result.stdout.split("\n")) {
-      if (!l.trim()) continue;
-      // Format: file:line:text
-      const firstColon = l.indexOf(":");
-      if (firstColon < 0) continue;
-      const secondColon = l.indexOf(":", firstColon + 1);
-      if (secondColon < 0) continue;
-      const file = l.slice(0, firstColon);
-      const lineNo = parseInt(l.slice(firstColon + 1, secondColon), 10);
-      const text = l.slice(secondColon + 1);
-      if (!isNaN(lineNo)) {
-        matches.push({ file, line: lineNo, text: text.trim() });
-      }
-      if (matches.length >= maxResults) break;
-    }
-    return matches;
+  /**
+   * Run a `git grep -z -n` command, streaming and parsing records until
+   * `max` matches are collected, then killing git. `truncated` is true when
+   * the cap cut the output short.
+   */
+  private async _grepStream(
+    repoPath: string,
+    args: string[],
+    withColumn: boolean,
+    max: number
+  ): Promise<{ matches: GrepRecord[]; truncated: boolean; result: StreamResult }> {
+    const parser = new GrepZParser(withColumn);
+    const matches: GrepRecord[] = [];
+    let truncated = false;
+    const result = await this._runStream(args, repoPath, (chunk) =>
+      parser.push(chunk, (rec) => {
+        if (matches.length >= max) {
+          truncated = true;
+          return false;
+        }
+        matches.push(rec);
+        return true;
+      })
+    );
+    return { matches, truncated, result };
   }
 
   /**
@@ -1078,7 +1302,9 @@ export class GitExecutor {
     opts: GrepSearchOptions = {}
   ): Promise<{ matches: GrepSearchMatch[]; truncated: boolean }> {
     const max = opts.maxResults ?? 2000;
-    const args = ["grep", "-n", "--column", "-I", "--no-color", "--untracked"];
+    // -z: NUL after file name and line/column fields, so paths containing
+    // ':' or non-ASCII (otherwise C-quoted) parse correctly.
+    const args = ["grep", "-z", "-n", "--column", "-I", "--no-color", "--untracked"];
     if (!opts.caseSensitive) args.push("-i");
     args.push(opts.regex ? "-E" : "-F");
     if (opts.wholeWord) args.push("-w");
@@ -1086,36 +1312,29 @@ export class GitExecutor {
     for (const inc of opts.include ?? []) args.push(inc);
     for (const exc of opts.exclude ?? []) args.push(`:!${exc}`);
 
-    const result = await this._run(args, repoPath);
-    // Exit 1 with empty stderr = no matches; anything else is a real error
-    // (invalid regex, bad pathspec) the caller should show to the user.
-    if (result.code !== 0 && result.code !== 1) {
-      throw new Error(result.stderr.trim() || "git grep failed");
-    }
-    if (result.code === 1 && result.stderr.trim()) {
-      throw new Error(result.stderr.trim());
+    // Streamed: a broad query in a big repo can produce far more output than
+    // any buffer — stop and kill git as soon as the cap is reached.
+    const { matches: records, truncated, result } = await this._grepStream(repoPath, args, true, max);
+    if (!result.stopped) {
+      // A timeout/kill must not read as "no matches" (exit 1).
+      if (result.failure) {
+        throw new Error(
+          result.failure === "timeout"
+            ? "git grep timed out — narrow the search"
+            : result.stderr.trim() || `git grep failed (${result.failure})`
+        );
+      }
+      // Exit 1 with empty stderr = no matches; anything else is a real error
+      // (invalid regex, bad pathspec) the caller should show to the user.
+      if (result.code !== 0 && result.code !== 1) {
+        throw new Error(result.stderr.trim() || "git grep failed");
+      }
+      if (result.code === 1 && result.stderr.trim()) {
+        throw new Error(result.stderr.trim());
+      }
     }
 
-    const matches: GrepSearchMatch[] = [];
-    let truncated = false;
-    for (const l of result.stdout.split("\n")) {
-      if (!l) continue;
-      if (matches.length >= max) {
-        truncated = true;
-        break;
-      }
-      // Format: file:line:column:text
-      const c1 = l.indexOf(":");
-      if (c1 < 0) continue;
-      const c2 = l.indexOf(":", c1 + 1);
-      if (c2 < 0) continue;
-      const c3 = l.indexOf(":", c2 + 1);
-      if (c3 < 0) continue;
-      const file = l.slice(0, c1);
-      const line = parseInt(l.slice(c1 + 1, c2), 10);
-      const column = parseInt(l.slice(c2 + 1, c3), 10);
-      if (isNaN(line) || isNaN(column)) continue;
-      let text = l.slice(c3 + 1);
+    const matches: GrepSearchMatch[] = records.map(({ file, line, column, text }) => {
       // Window very long lines (minified files) around the match so the
       // webview always renders the matched portion.
       if (text.length > 400) {
@@ -1125,28 +1344,9 @@ export class GitExecutor {
           text.slice(start, start + 360) +
           (start + 360 < text.length ? "…" : "");
       }
-      matches.push({ file, line, column, text });
-    }
-    return { matches, truncated };
-  }
-
-  /**
-   * Which of the given repo-relative paths are gitignored. Exit code 1 means
-   * "none ignored" (not an error), so an empty result is the common case.
-   */
-  async checkIgnore(repoPath: string, paths: string[]): Promise<Set<string>> {
-    const ignored = new Set<string>();
-    if (paths.length === 0) return ignored;
-    for (const p of paths) this._validateFilePath(repoPath, p);
-    // -z requires --stdin; with both, input and output are NUL-separated and
-    // output paths are echoed verbatim (no C-quoting).
-    const result = await this._run(["check-ignore", "--stdin", "-z"], repoPath, {
-      input: paths.join("\0") + "\0",
+      return { file, line, column, text };
     });
-    for (const p of result.stdout.split("\0")) {
-      if (p) ignored.add(p);
-    }
-    return ignored;
+    return { matches, truncated };
   }
 
   // Concurrent directory expansions all need the same ignore set — share one
@@ -1192,14 +1392,19 @@ export class GitExecutor {
   }
 
   async listFiles(repoPath: string, query?: string): Promise<string[]> {
+    // -z: paths verbatim (no C-quoting of non-ASCII like "caf\303\251.txt")
     const result = await this._run(
-      ["ls-files", "--cached", "--others", "--exclude-standard"],
-      repoPath
+      ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+      repoPath,
+      { maxBuffer: GitExecutor.LARGE_OUTPUT_BUFFER }
     );
+    GitExecutor._throwIfAbnormal(result, "ls-files");
+    if (result.code !== 0) {
+      throw new Error(`git ls-files failed: ${result.stderr.trim() || `exit code ${result.code}`}`);
+    }
 
-    const files = result.stdout
-      .split("\n")
-      .filter((f) => f.trim().length > 0);
+    // Unmerged paths appear once per stage with --cached — dedupe.
+    const files = [...new Set(result.stdout.split("\0").filter((f) => f.length > 0))];
 
     if (query) {
       const lower = query.toLowerCase();
@@ -1234,7 +1439,7 @@ export class GitExecutor {
     });
   }
 
-  private _parseChangeType(code: string): ChangeType {
+  private static _parseChangeType(code: string): ChangeType {
     switch (code) {
       case "M":
         return ChangeType.Modified;
