@@ -1,4 +1,5 @@
-import { execFile } from "child_process";
+import { execFile, spawn, type ChildProcessByStdio } from "child_process";
+import type { Readable } from "stream";
 import { promisify } from "util";
 import * as path from "path";
 import * as fs from "fs";
@@ -15,6 +16,65 @@ interface RunResult {
   code: number;
   /** Set when the process didn't exit on its own: output overflow, timeout kill, signal, or spawn error. */
   failure?: "maxBuffer" | "timeout" | "signal" | "spawn";
+}
+
+interface StreamResult {
+  code: number;
+  stderr: string;
+  failure?: RunResult["failure"];
+  /** True when the consumer stopped reading early and the process was killed. */
+  stopped: boolean;
+}
+
+export interface GrepRecord {
+  file: string;
+  line: number;
+  /** 1-based match column; 0 when parsed without --column. */
+  column: number;
+  text: string;
+}
+
+/**
+ * Incremental parser for `git grep -z -n [--column]` output. Each record is
+ * "<file>\0<line>\0[<column>\0]<text>\n": the file name is NUL-terminated and
+ * verbatim (no C-quoting), so colons, spaces, non-ASCII and even newlines in
+ * paths survive. Feed chunks with push(); partial records are buffered.
+ */
+export class GrepZParser {
+  private _buf = "";
+  private readonly _withColumn: boolean;
+  constructor(withColumn: boolean) {
+    this._withColumn = withColumn;
+  }
+
+  /** Parse complete records from `chunk`; stops early (returns false) when `emit` returns false. */
+  push(chunk: string, emit: (r: GrepRecord) => boolean): boolean {
+    this._buf += chunk;
+    let pos = 0;
+    let keepGoing = true;
+    while (keepGoing) {
+      const z1 = this._buf.indexOf("\0", pos);
+      if (z1 < 0) break;
+      const z2 = this._buf.indexOf("\0", z1 + 1);
+      if (z2 < 0) break;
+      let z3 = z2;
+      if (this._withColumn) {
+        z3 = this._buf.indexOf("\0", z2 + 1);
+        if (z3 < 0) break;
+      }
+      const nl = this._buf.indexOf("\n", z3 + 1);
+      if (nl < 0) break;
+      const file = this._buf.slice(pos, z1);
+      const line = parseInt(this._buf.slice(z1 + 1, z2), 10);
+      const column = this._withColumn ? parseInt(this._buf.slice(z2 + 1, z3), 10) : 0;
+      const text = this._buf.slice(z3 + 1, nl);
+      pos = nl + 1;
+      if (!file || isNaN(line) || isNaN(column)) continue;
+      keepGoing = emit({ file, line, column, text });
+    }
+    this._buf = this._buf.slice(pos);
+    return keepGoing;
+  }
 }
 
 export interface GrepSearchOptions {
@@ -207,6 +267,73 @@ export class GitExecutor {
         code: typeof e.code === "number" ? e.code : -1,
         failure,
       };
+    } finally {
+      this._releaseSlot();
+    }
+  }
+
+  /**
+   * Spawn git and stream stdout (UTF-8 decoded, split-safe) to `onData`.
+   * Returning false from `onData` stops reading and kills the process —
+   * used to cap result counts without buffering the full output.
+   */
+  private async _runStream(
+    args: string[],
+    cwd: string,
+    onData: (chunk: string) => boolean,
+    opts?: { timeoutMs?: number }
+  ): Promise<StreamResult> {
+    await this._acquireSlot();
+    try {
+      return await new Promise<StreamResult>((resolve) => {
+        let settled = false;
+        let stopped = false;
+        let timedOut = false;
+        let stderr = "";
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const finish = (r: StreamResult): void => {
+          if (settled) return;
+          settled = true;
+          if (timer) clearTimeout(timer);
+          resolve(r);
+        };
+        let child: ChildProcessByStdio<null, Readable, Readable>;
+        try {
+          child = spawn("git", [...GitExecutor.SAFETY_CONFIG_ARGS, ...args], {
+            cwd,
+            env: GitExecutor._gitEnv(),
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+        } catch (err) {
+          finish({ code: -1, stderr: String(err), failure: "spawn", stopped: false });
+          return;
+        }
+        timer = setTimeout(() => {
+          timedOut = true;
+          child.kill();
+        }, opts?.timeoutMs ?? 30_000);
+        child.stdout.setEncoding("utf8");
+        child.stdout.on("data", (chunk: string) => {
+          if (stopped) return;
+          if (!onData(chunk)) {
+            stopped = true;
+            child.kill();
+          }
+        });
+        child.stderr.setEncoding("utf8");
+        child.stderr.on("data", (chunk: string) => {
+          if (stderr.length < 64 * 1024) stderr += chunk;
+        });
+        child.on("error", (err) => {
+          finish({ code: -1, stderr: stderr || String(err), failure: "spawn", stopped });
+        });
+        child.on("close", (code, signal) => {
+          if (stopped) finish({ code: code ?? -1, stderr, stopped: true });
+          else if (timedOut) finish({ code: -1, stderr, failure: "timeout", stopped: false });
+          else if (code === null || signal) finish({ code: -1, stderr, failure: "signal", stopped: false });
+          else finish({ code, stderr, stopped: false });
+        });
+      });
     } finally {
       this._releaseSlot();
     }
@@ -484,17 +611,28 @@ export class GitExecutor {
       this._validateFilePath(repoPath, file);
       args.push("--", file);
     }
-    const result = await this._run(args, repoPath);
+    // Large diffs (lockfiles, generated code) can legitimately exceed the
+    // default buffer — allow more, but never return silently truncated output.
+    const result = await this._run(args, repoPath, { maxBuffer: GitExecutor.LARGE_OUTPUT_BUFFER });
+    GitExecutor._throwIfAbnormal(result, "diff");
+    if (result.code !== 0) {
+      throw new Error(`git diff failed: ${result.stderr.trim() || `exit code ${result.code}`}`);
+    }
     return result.stdout;
   }
+
+  private static readonly LARGE_OUTPUT_BUFFER = 64 * 1024 * 1024;
 
   async stage(repoPath: string, files: string[]): Promise<void> {
     for (const f of files) {
       this._validateFilePath(repoPath, f);
     }
     await this._serialized(repoPath, async () => {
-      await this._run(["add", "--", ...files], repoPath);
+      const result = await this._run(["add", "--", ...files], repoPath);
       this.invalidateStatus(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr.trim() || "Stage failed");
+      }
     });
   }
 
@@ -503,8 +641,18 @@ export class GitExecutor {
       this._validateFilePath(repoPath, f);
     }
     await this._serialized(repoPath, async () => {
-      await this._run(["reset", "HEAD", "--", ...files], repoPath);
+      // `reset HEAD -- <paths>` fails on an unborn branch (no commits yet);
+      // there, unstaging means removing the paths from the index entirely.
+      const hasHead =
+        (await this._run(["rev-parse", "--verify", "--quiet", "HEAD"], repoPath)).code === 0;
+      const args = hasHead
+        ? ["reset", "-q", "HEAD", "--", ...files]
+        : ["rm", "--cached", "-r", "-q", "--ignore-unmatch", "--", ...files];
+      const result = await this._run(args, repoPath);
       this.invalidateStatus(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr.trim() || "Unstage failed");
+      }
     });
   }
 
@@ -801,17 +949,43 @@ export class GitExecutor {
   }
 
   async diffStatSummary(repoPath: string): Promise<{ files: string[]; additions: number; deletions: number }> {
-    const result = await this._run(["diff", ...GitExecutor.DIFF_SAFETY_ARGS, "--numstat", "HEAD"], repoPath);
-    if (result.code !== 0 || !result.stdout.trim()) return { files: [], additions: 0, deletions: 0 };
+    const result = await this._run(
+      ["diff", ...GitExecutor.DIFF_SAFETY_ARGS, "--numstat", "-z", "HEAD"],
+      repoPath
+    );
+    if (result.code !== 0 || !result.stdout) return { files: [], additions: 0, deletions: 0 };
+    return GitExecutor.parseNumstatZ(result.stdout);
+  }
+
+  /**
+   * Parse `git diff --numstat -z` output. Normal entries are
+   * "<add>\t<del>\t<path>\0"; renames/copies are "<add>\t<del>\t\0<old>\0<new>\0".
+   * Paths are verbatim (no C-quoting, no "old => new" arrows). Binary files
+   * report "-" for both counts. Returned `files` use the post-rename path.
+   */
+  static parseNumstatZ(out: string): { files: string[]; additions: number; deletions: number } {
     let additions = 0;
     let deletions = 0;
     const files: string[] = [];
-    for (const line of result.stdout.trim().split("\n")) {
-      const parts = line.split("\t");
-      if (parts.length >= 3) {
-        additions += parts[0] === "-" ? 0 : parseInt(parts[0], 10) || 0;
-        deletions += parts[1] === "-" ? 0 : parseInt(parts[1], 10) || 0;
-        files.push(parts[2]);
+    const tokens = out.split("\0");
+    for (let i = 0; i < tokens.length; i++) {
+      const tok = tokens[i];
+      if (!tok) continue;
+      const t1 = tok.indexOf("\t");
+      const t2 = t1 < 0 ? -1 : tok.indexOf("\t", t1 + 1);
+      if (t2 < 0) continue;
+      const add = tok.slice(0, t1);
+      const del = tok.slice(t1 + 1, t2);
+      additions += add === "-" ? 0 : parseInt(add, 10) || 0;
+      deletions += del === "-" ? 0 : parseInt(del, 10) || 0;
+      const p = tok.slice(t2 + 1);
+      if (p) {
+        files.push(p);
+      } else {
+        // Rename/copy: next two tokens are the old and new paths
+        i += 2;
+        const newPath = tokens[i];
+        if (newPath) files.push(newPath);
       }
     }
     return { files, additions, deletions };
@@ -1089,30 +1263,41 @@ export class GitExecutor {
 
   async grep(repoPath: string, query: string, maxResults = 100, subdir?: string): Promise<{ file: string; line: number; text: string }[]> {
     if (subdir !== undefined) this._validateFilePath(repoPath, subdir);
-    const result = await this._run(
-      ["grep", "-n", "-I", "--no-color", "-i", "--untracked", "-e", query, "--", ...(subdir ? [subdir] : []), ":!*.min.*", ":!*.lock"],
-      repoPath
+    const { matches } = await this._grepStream(
+      repoPath,
+      ["grep", "-z", "-n", "-I", "--no-color", "-i", "--untracked", "-e", query, "--", ...(subdir ? [subdir] : []), ":!*.min.*", ":!*.lock"],
+      false,
+      maxResults
     );
-    // git grep exits 1 when no matches — not an error
-    if (!result.stdout.trim()) return [];
+    // Quick-pick search: errors (e.g. a bad regex mid-typing) just mean no results.
+    return matches.map((m) => ({ file: m.file, line: m.line, text: m.text.trim() }));
+  }
 
-    const matches: { file: string; line: number; text: string }[] = [];
-    for (const l of result.stdout.split("\n")) {
-      if (!l.trim()) continue;
-      // Format: file:line:text
-      const firstColon = l.indexOf(":");
-      if (firstColon < 0) continue;
-      const secondColon = l.indexOf(":", firstColon + 1);
-      if (secondColon < 0) continue;
-      const file = l.slice(0, firstColon);
-      const lineNo = parseInt(l.slice(firstColon + 1, secondColon), 10);
-      const text = l.slice(secondColon + 1);
-      if (!isNaN(lineNo)) {
-        matches.push({ file, line: lineNo, text: text.trim() });
-      }
-      if (matches.length >= maxResults) break;
-    }
-    return matches;
+  /**
+   * Run a `git grep -z -n` command, streaming and parsing records until
+   * `max` matches are collected, then killing git. `truncated` is true when
+   * the cap cut the output short.
+   */
+  private async _grepStream(
+    repoPath: string,
+    args: string[],
+    withColumn: boolean,
+    max: number
+  ): Promise<{ matches: GrepRecord[]; truncated: boolean; result: StreamResult }> {
+    const parser = new GrepZParser(withColumn);
+    const matches: GrepRecord[] = [];
+    let truncated = false;
+    const result = await this._runStream(args, repoPath, (chunk) =>
+      parser.push(chunk, (rec) => {
+        if (matches.length >= max) {
+          truncated = true;
+          return false;
+        }
+        matches.push(rec);
+        return true;
+      })
+    );
+    return { matches, truncated, result };
   }
 
   /**
@@ -1127,7 +1312,9 @@ export class GitExecutor {
     opts: GrepSearchOptions = {}
   ): Promise<{ matches: GrepSearchMatch[]; truncated: boolean }> {
     const max = opts.maxResults ?? 2000;
-    const args = ["grep", "-n", "--column", "-I", "--no-color", "--untracked"];
+    // -z: NUL after file name and line/column fields, so paths containing
+    // ':' or non-ASCII (otherwise C-quoted) parse correctly.
+    const args = ["grep", "-z", "-n", "--column", "-I", "--no-color", "--untracked"];
     if (!opts.caseSensitive) args.push("-i");
     args.push(opts.regex ? "-E" : "-F");
     if (opts.wholeWord) args.push("-w");
@@ -1135,36 +1322,29 @@ export class GitExecutor {
     for (const inc of opts.include ?? []) args.push(inc);
     for (const exc of opts.exclude ?? []) args.push(`:!${exc}`);
 
-    const result = await this._run(args, repoPath);
-    // Exit 1 with empty stderr = no matches; anything else is a real error
-    // (invalid regex, bad pathspec) the caller should show to the user.
-    if (result.code !== 0 && result.code !== 1) {
-      throw new Error(result.stderr.trim() || "git grep failed");
-    }
-    if (result.code === 1 && result.stderr.trim()) {
-      throw new Error(result.stderr.trim());
+    // Streamed: a broad query in a big repo can produce far more output than
+    // any buffer — stop and kill git as soon as the cap is reached.
+    const { matches: records, truncated, result } = await this._grepStream(repoPath, args, true, max);
+    if (!result.stopped) {
+      // A timeout/kill must not read as "no matches" (exit 1).
+      if (result.failure) {
+        throw new Error(
+          result.failure === "timeout"
+            ? "git grep timed out — narrow the search"
+            : result.stderr.trim() || `git grep failed (${result.failure})`
+        );
+      }
+      // Exit 1 with empty stderr = no matches; anything else is a real error
+      // (invalid regex, bad pathspec) the caller should show to the user.
+      if (result.code !== 0 && result.code !== 1) {
+        throw new Error(result.stderr.trim() || "git grep failed");
+      }
+      if (result.code === 1 && result.stderr.trim()) {
+        throw new Error(result.stderr.trim());
+      }
     }
 
-    const matches: GrepSearchMatch[] = [];
-    let truncated = false;
-    for (const l of result.stdout.split("\n")) {
-      if (!l) continue;
-      if (matches.length >= max) {
-        truncated = true;
-        break;
-      }
-      // Format: file:line:column:text
-      const c1 = l.indexOf(":");
-      if (c1 < 0) continue;
-      const c2 = l.indexOf(":", c1 + 1);
-      if (c2 < 0) continue;
-      const c3 = l.indexOf(":", c2 + 1);
-      if (c3 < 0) continue;
-      const file = l.slice(0, c1);
-      const line = parseInt(l.slice(c1 + 1, c2), 10);
-      const column = parseInt(l.slice(c2 + 1, c3), 10);
-      if (isNaN(line) || isNaN(column)) continue;
-      let text = l.slice(c3 + 1);
+    const matches: GrepSearchMatch[] = records.map(({ file, line, column, text }) => {
       // Window very long lines (minified files) around the match so the
       // webview always renders the matched portion.
       if (text.length > 400) {
@@ -1174,8 +1354,8 @@ export class GitExecutor {
           text.slice(start, start + 360) +
           (start + 360 < text.length ? "…" : "");
       }
-      matches.push({ file, line, column, text });
-    }
+      return { file, line, column, text };
+    });
     return { matches, truncated };
   }
 
@@ -1241,14 +1421,19 @@ export class GitExecutor {
   }
 
   async listFiles(repoPath: string, query?: string): Promise<string[]> {
+    // -z: paths verbatim (no C-quoting of non-ASCII like "caf\303\251.txt")
     const result = await this._run(
-      ["ls-files", "--cached", "--others", "--exclude-standard"],
-      repoPath
+      ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+      repoPath,
+      { maxBuffer: GitExecutor.LARGE_OUTPUT_BUFFER }
     );
+    GitExecutor._throwIfAbnormal(result, "ls-files");
+    if (result.code !== 0) {
+      throw new Error(`git ls-files failed: ${result.stderr.trim() || `exit code ${result.code}`}`);
+    }
 
-    const files = result.stdout
-      .split("\n")
-      .filter((f) => f.trim().length > 0);
+    // Unmerged paths appear once per stage with --cached — dedupe.
+    const files = [...new Set(result.stdout.split("\0").filter((f) => f.length > 0))];
 
     if (query) {
       const lower = query.toLowerCase();
