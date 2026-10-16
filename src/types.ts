@@ -119,9 +119,9 @@ export type DashboardMessage =
   | { type: "loadSnapshot" }
   | { type: "claudeReviewAll" }
   | { type: "filterByTag" }
-  | { type: "stashPop"; repoPath: string }
-  | { type: "stashApply"; repoPath: string; index: number }
-  | { type: "stashDrop"; repoPath: string; index: number }
+  | { type: "stashPop"; repoPath: string; sha: string }
+  | { type: "stashApply"; repoPath: string; index: number; sha: string }
+  | { type: "stashDrop"; repoPath: string; index: number; sha: string }
   | { type: "pinRepo"; repoPath: string }
   | { type: "unpinRepo"; repoPath: string }
   | { type: "exportActivity"; format: "clipboard" | "file"; entries: { repoName: string; shortHash: string; author: string; date: string; message: string }[] }

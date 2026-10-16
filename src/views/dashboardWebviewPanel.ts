@@ -15,7 +15,7 @@ interface DiffStatSummary {
 interface StashOverviewEntry {
   repoName: string;
   repoPath: string;
-  stashes: { index: number; message: string }[];
+  stashes: { index: number; sha: string; message: string; date: string }[];
 }
 
 interface SyncOverviewEntry {
@@ -91,6 +91,8 @@ const REPO_SCOPED = new Set<string>([
 function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((x) => typeof x === "string");
 }
+
+const STASH_SHA_RE = /^[0-9a-f]{40}$/;
 
 const MAX_EXPORT_ENTRIES = 10_000;
 const MAX_EXPORT_FIELD = 1_000;
@@ -374,7 +376,7 @@ export class DashboardWebviewPanel {
               diffStats.set(r.path, results[resultIdx++] as DiffStatSummary);
             }
             if (r.stashCount > 0) {
-              const stashes = results[resultIdx] as { index: number; message: string }[];
+              const stashes = results[resultIdx] as StashOverviewEntry["stashes"];
               if (stashes.length > 0) {
                 stashEntries.push({ repoName: r.name, repoPath: r.path, stashes });
               }
@@ -670,46 +672,11 @@ export class DashboardWebviewPanel {
         await this._update();
         break;
 
-      case "stashPop": {
-        const repoPath = msg.repoPath;
-        try {
-          await this._git.stashPop(repoPath);
-          await this._repoManager.refreshRepo(repoPath);
-          await this._update();
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          vscode.window.showErrorMessage(`Diffchestrator: Stash pop failed: ${errMsg}`);
-        }
+      case "stashPop":
+      case "stashApply":
+      case "stashDrop":
+        await this._handleStashOp(msg);
         break;
-      }
-
-      case "stashApply": {
-        const repoPath = msg.repoPath;
-        const index = msg.index;
-        try {
-          await this._git.stashApply(repoPath, index);
-          await this._repoManager.refreshRepo(repoPath);
-          await this._update();
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          vscode.window.showErrorMessage(`Diffchestrator: Stash apply failed: ${errMsg}`);
-        }
-        break;
-      }
-
-      case "stashDrop": {
-        const repoPath = msg.repoPath;
-        const index = msg.index;
-        try {
-          await this._git.stashDrop(repoPath, index);
-          await this._repoManager.refreshRepo(repoPath);
-          await this._update();
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          vscode.window.showErrorMessage(`Diffchestrator: Stash drop failed: ${errMsg}`);
-        }
-        break;
-      }
 
       case "pinRepo": {
         const repoPath = msg.repoPath;
@@ -825,6 +792,67 @@ export class DashboardWebviewPanel {
           this._postSettings();
         }
         break;
+      }
+    }
+  }
+
+  /**
+   * Stash apply/pop/drop. The webview identifies the stash by index *and* the
+   * SHA it rendered; the SHA is re-checked against the live stash stack so a
+   * stale index (double-click, concurrent stash from a terminal) can never
+   * hit a different stash. Always posts `stashOpDone` so the webview can
+   * re-enable the row's buttons.
+   */
+  private async _handleStashOp(
+    msg: Extract<DashboardMessage, { type: "stashPop" | "stashApply" | "stashDrop" }>
+  ): Promise<void> {
+    const repoPath = msg.repoPath;
+    const sha: unknown = msg.sha;
+    const index: unknown = msg.type === "stashPop" ? 0 : msg.index;
+    const verb = msg.type === "stashPop" ? "pop" : msg.type === "stashApply" ? "apply" : "drop";
+    try {
+      if (!Number.isInteger(index) || (index as number) < 0 || typeof sha !== "string" || !STASH_SHA_RE.test(sha)) {
+        console.warn(`[Diffchestrator] Dashboard: rejected ${msg.type} with invalid index/sha`);
+        return;
+      }
+      const idx = index as number;
+      const stashes = await this._git.stashList(repoPath);
+      const entry = stashes.find((s) => s.index === idx);
+      if (!entry || entry.sha !== sha) {
+        vscode.window.showWarningMessage(
+          "Diffchestrator: Stash list changed — refresh and try again"
+        );
+        await this._update();
+        return;
+      }
+
+      if (msg.type === "stashDrop") {
+        const choice = await vscode.window.showWarningMessage(
+          `Drop stash@{${idx}} in ${path.basename(repoPath)}?`,
+          { modal: true, detail: `${entry.message}\n\nThis cannot be undone.` },
+          "Drop"
+        );
+        if (choice !== "Drop" || this._disposed) return;
+      }
+
+      if (msg.type === "stashDrop") {
+        await this._git.stashDrop(repoPath, idx, sha);
+      } else if (msg.type === "stashApply") {
+        await this._git.stashApply(repoPath, idx, sha);
+      } else {
+        // stashPop has no SHA guard in GitExecutor; the stashList check above
+        // narrows (but cannot fully close) the race window.
+        await this._git.stashPop(repoPath);
+      }
+      await this._repoManager.refreshRepo(repoPath);
+      await this._update();
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(`Diffchestrator: Stash ${verb} failed: ${errMsg}`);
+      await this._update();
+    } finally {
+      if (!this._disposed) {
+        this._panel.webview.postMessage({ type: "stashOpDone", repoPath });
       }
     }
   }
