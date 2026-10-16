@@ -12,7 +12,13 @@ export class GitContentProvider implements vscode.TextDocumentContentProvider {
   private _onDidChange = new vscode.EventEmitter<vscode.Uri>();
   readonly onDidChange = this._onDidChange.event;
 
-  constructor(private _git: GitExecutor) {}
+  private _git: GitExecutor;
+
+  // Explicit field (not a parameter property) so Node's strip-only
+  // TypeScript loader can run this module in unit tests.
+  constructor(git: GitExecutor) {
+    this._git = git;
+  }
 
   /**
    * Invalidate all open git-show documents so VS Code re-fetches content.
@@ -41,9 +47,12 @@ export class GitContentProvider implements vscode.TextDocumentContentProvider {
         return await this._git.show(repoPath, ref);
       }
 
-      const gitRef = ref === "HEAD" ? "HEAD" : ref;
-      if (filePath && !isValidRef(filePath)) return "";
-      const result = await this._git.show(repoPath, `${gitRef}:${filePath}`);
+      // Only the ref is validated: paths legitimately contain ( ) $ & ; { }
+      // (e.g. Next.js "app/(auth)/page.tsx"). git receives the "<ref>:<path>"
+      // arg via execFile (no shell), and it can't start with "-" because a
+      // valid ref doesn't.
+      if (typeof filePath !== "string" || !filePath) return "";
+      const result = await this._git.show(repoPath, `${ref}:${filePath}`);
       return result;
     } catch {
       return "";
