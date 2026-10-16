@@ -854,6 +854,18 @@ export class GitExecutor {
     });
   }
 
+  /** Discard both staged and unstaged changes to a file, restoring it from HEAD (removes newly added files). */
+  async restoreFileFromHead(repoPath: string, file: string): Promise<void> {
+    this._validateFilePath(repoPath, file);
+    return this._serialized(repoPath, async () => {
+      const result = await this._run(["restore", "--staged", "--worktree", "--source=HEAD", "--", file], repoPath);
+      this.invalidateStatus(repoPath);
+      if (result.code !== 0) {
+        throw new Error(result.stderr || "Discard failed");
+      }
+    });
+  }
+
   async checkoutAll(repoPath: string): Promise<void> {
     return this._serialized(repoPath, async () => {
       const result = await this._run(["checkout", "--", "."], repoPath);
@@ -886,9 +898,9 @@ export class GitExecutor {
     });
   }
 
-  async stashList(repoPath: string): Promise<{ index: number; message: string; date: string }[]> {
+  async stashList(repoPath: string): Promise<{ index: number; sha: string; message: string; date: string }[]> {
     const result = await this._run(
-      ["stash", "list", "--format=%gd%n%ai%n%s%n---END---"],
+      ["stash", "list", "--format=%gd%n%H%n%ai%n%s%n---END---"],
       repoPath
     );
     if (!result.stdout.trim()) return [];
@@ -897,15 +909,28 @@ export class GitExecutor {
       const lines = block.trim().split("\n");
       return {
         index: i,
-        date: lines[1] ?? "",
-        message: lines[2] ?? lines[0] ?? "",
+        sha: lines[1] ?? "",
+        date: lines[2] ?? "",
+        message: lines[3] ?? lines[0] ?? "",
       };
     });
   }
 
-  async stashPush(repoPath: string, message?: string): Promise<string> {
+  /** Throw if stash@{index} no longer points at expectedSha (stack shifted since it was listed). */
+  private async _assertStashSha(repoPath: string, index: number, expectedSha?: string): Promise<void> {
+    if (expectedSha === undefined) return;
+    const result = await this._run(["rev-parse", "--verify", "--quiet", `stash@{${index}}`], repoPath);
+    if (result.code !== 0 || result.stdout.trim() !== expectedSha) {
+      throw new Error("Stash list changed — refresh and try again");
+    }
+  }
+
+  async stashPush(repoPath: string, message?: string, includeUntracked = false): Promise<string> {
     return this._serialized(repoPath, async () => {
       const args = ["stash", "push"];
+      if (includeUntracked) {
+        args.push("--include-untracked");
+      }
       if (message) {
         args.push("-m", message);
       }
@@ -915,7 +940,12 @@ export class GitExecutor {
       if (result.code !== 0) {
         throw new Error(result.stderr || "Stash push failed");
       }
-      return result.stdout || result.stderr;
+      const out = result.stdout || result.stderr;
+      // `git stash push` exits 0 when there is nothing to stash
+      if (/No local changes to save/.test(out)) {
+        throw new Error("No local changes to save");
+      }
+      return out;
     });
   }
 
@@ -931,11 +961,12 @@ export class GitExecutor {
     });
   }
 
-  async stashApply(repoPath: string, index: number): Promise<string> {
+  async stashApply(repoPath: string, index: number, expectedSha?: string): Promise<string> {
     if (!Number.isInteger(index) || index < 0) {
       throw new Error("Invalid stash index");
     }
     return this._serialized(repoPath, async () => {
+      await this._assertStashSha(repoPath, index, expectedSha);
       const result = await this._run(["stash", "apply", `stash@{${index}}`], repoPath);
       this.invalidateStatus(repoPath);
       this.invalidateMetaCache(repoPath);
@@ -946,11 +977,12 @@ export class GitExecutor {
     });
   }
 
-  async stashDrop(repoPath: string, index: number): Promise<string> {
+  async stashDrop(repoPath: string, index: number, expectedSha?: string): Promise<string> {
     if (!Number.isInteger(index) || index < 0) {
       throw new Error("Invalid stash index");
     }
     return this._serialized(repoPath, async () => {
+      await this._assertStashSha(repoPath, index, expectedSha);
       const result = await this._run(["stash", "drop", `stash@{${index}}`], repoPath);
       this.invalidateMetaCache(repoPath);
       if (result.code !== 0) {
