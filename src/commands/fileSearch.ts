@@ -285,22 +285,29 @@ export function registerFileSearchCommand(
       }, 300);
     });
 
-    quickPick.onDidAccept(() => {
+    quickPick.onDidAccept(async () => {
       const selected = quickPick.selectedItems[0] as
         | GrepItem
         | undefined;
+      quickPick.dispose();
       if (selected?._fullPath && !selected._noAction) {
         const line = (selected._line ?? 1) - 1;
-        // Switch to the repo if it's a multi-repo search
-        if (selected._repoPath && selected._repoPath !== repoManager.selectedRepo) {
-          vscode.commands.executeCommand(CMD.viewDiff, { path: selected._repoPath });
+        try {
+          // Switch to the repo if it's a multi-repo search. Await it: viewDiff
+          // closes the old repo's tabs and opens the new repo's first diff —
+          // un-awaited, that landed on top of the grep hit.
+          if (selected._repoPath && selected._repoPath !== repoManager.selectedRepo) {
+            await vscode.commands.executeCommand(CMD.viewDiff, { path: selected._repoPath });
+          }
+          await vscode.window.showTextDocument(
+            vscode.Uri.file(selected._fullPath),
+            { selection: new vscode.Range(line, 0, line, 0) }
+          );
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          vscode.window.showErrorMessage(`Diffchestrator: Could not open ${path.basename(selected._fullPath)}: ${msg}`);
         }
-        vscode.window.showTextDocument(
-          vscode.Uri.file(selected._fullPath),
-          { selection: new vscode.Range(line, 0, line, 0) }
-        );
       }
-      quickPick.dispose();
     });
 
     quickPick.onDidHide(() => {
