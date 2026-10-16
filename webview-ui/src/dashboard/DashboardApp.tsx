@@ -80,22 +80,57 @@ export interface SessionSummaryEntry {
   }[];
 }
 
+export type DashboardPhase1Payload = Pick<DashboardPayload, "syncOverview" | "branchMap" | "sessionStartTime">;
+
+/**
+ * Merge a Phase-1 payload into the previous dashboard state. Phase-2 arrays
+ * are preserved, and each repo keeps its previous diffStat while it still has
+ * changes (Phase 1 can't compute diff stats without git calls).
+ */
+function mergePhase1(prev: DashboardPayload | null, p1: DashboardPhase1Payload): DashboardPayload {
+  if (!prev) {
+    return {
+      ...p1,
+      changeHeatmap: [],
+      sessionSummary: [],
+      activityLog: [],
+      stashOverview: [],
+    };
+  }
+  const prevStats = new Map(prev.syncOverview.map((e) => [e.path, e.diffStat]));
+  return {
+    ...prev,
+    ...p1,
+    syncOverview: p1.syncOverview.map((e) =>
+      e.diffStat || e.totalChanges === 0 ? e : { ...e, diffStat: prevStats.get(e.path) }
+    ),
+  };
+}
+
 type Tab = "dashboard" | "activity" | "settings" | "shortcuts";
 
 export default function DashboardApp() {
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<Tab>("dashboard");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       const msg = event.data;
-      if (msg.type === "dashboardData" || msg.type === "dashboardUpdate") {
-        setData(msg.data);
+      if (msg.type === "dashboardData") {
+        // Phase 1 (no git calls): merge into the previous state so Phase-2
+        // sections keep their last data until the new Phase-2 payload lands.
+        setData((prev) => mergePhase1(prev, msg.data as DashboardPhase1Payload));
+        setLoading(false);
+      } else if (msg.type === "dashboardUpdate") {
+        setData(msg.data as DashboardPayload);
         setLoading(false);
       } else if (msg.type === "refreshing") {
-        setLoading(true);
+        setRefreshing(true);
+      } else if (msg.type === "refreshDone") {
+        setRefreshing(false);
       }
     };
     window.addEventListener("message", handler);
@@ -104,6 +139,8 @@ export default function DashboardApp() {
   }, []);
 
   const handleRefresh = () => {
+    if (refreshing) return;
+    setRefreshing(true); // optimistic; cleared by refreshDone
     vscode.postMessage({ type: "refresh" });
   };
 
@@ -202,10 +239,12 @@ export default function DashboardApp() {
               <button
                 className="header-icon-btn"
                 onClick={handleRefresh}
-                disabled={loading}
+                disabled={refreshing}
                 title="Refresh data"
+                aria-label="Refresh data"
+                aria-busy={refreshing}
               >
-                {loading ? <span className="spinner" /> : "↻"}
+                {refreshing ? <span className="spinner" /> : "↻"}
               </button>
             </>
           )}

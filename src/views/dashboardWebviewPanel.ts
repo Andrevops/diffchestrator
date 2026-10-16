@@ -77,6 +77,8 @@ interface DashboardPayload {
   sessionStartTime: string;
 }
 
+type DashboardPhase1Payload = Pick<DashboardPayload, "syncOverview" | "branchMap" | "sessionStartTime">;
+
 const MAIN_BRANCHES = new Set(["main", "master", "develop", "development"]);
 
 const MAX_PINNED_REPOS = 100;
@@ -151,6 +153,10 @@ export class DashboardWebviewPanel {
   private _sessionStartTime: number;
   private _updateThrottleTimer: ReturnType<typeof setTimeout> | undefined;
   private _updateInProgress = false;
+  /** A change event arrived while an update was running — rerun once after. */
+  private _updateDirty = false;
+  /** A user-requested refresh (refreshAll + update) is running. */
+  private _refreshInProgress = false;
   private _updateGeneration = 0;
   private _pendingWhileHidden = false;
   private _disposed = false;
@@ -242,19 +248,35 @@ export class DashboardWebviewPanel {
   }
 
   private _scheduleUpdate(): void {
-    if (this._disposed || this._updateThrottleTimer || this._updateInProgress) return;
+    if (this._disposed) return;
     if (!this._panel.visible) {
       this._pendingWhileHidden = true;
       return;
     }
+    // An event arriving mid-update must not be dropped: mark dirty and rerun
+    // once when the current update finishes.
+    if (this._updateInProgress) {
+      this._updateDirty = true;
+      return;
+    }
+    if (this._updateThrottleTimer) return; // already scheduled — coalesce
     this._updateThrottleTimer = setTimeout(async () => {
       this._updateThrottleTimer = undefined;
-      if (this._updateInProgress) return;
+      if (this._disposed) return;
+      if (this._updateInProgress) {
+        this._updateDirty = true;
+        return;
+      }
       this._updateInProgress = true;
+      this._updateDirty = false;
       try {
         await this._update();
       } finally {
         this._updateInProgress = false;
+        if (this._updateDirty && !this._disposed) {
+          this._updateDirty = false;
+          this._scheduleUpdate();
+        }
       }
     }, 2000);
   }
@@ -332,18 +354,17 @@ export class DashboardWebviewPanel {
       isMainBranch: MAIN_BRANCHES.has(r.branch),
     }));
 
-    // Send phase 1 immediately
+    // Send phase 1 immediately. Only the Phase-1 fields are sent: the webview
+    // merges them into its previous state so the Phase-2 sections (heatmap,
+    // session, activity, stashes) keep their last data instead of flickering
+    // empty until the new Phase-2 payload arrives.
     this._panel.webview.postMessage({
       type: "dashboardData",
       data: {
         syncOverview,
         branchMap,
-        changeHeatmap: [],
-        sessionSummary: [],
-        activityLog: [],
-        stashOverview: [],
         sessionStartTime: sinceISO,
-      } satisfies DashboardPayload,
+      } satisfies DashboardPhase1Payload,
     });
 
     // Phase 2: batched git calls
@@ -502,9 +523,18 @@ export class DashboardWebviewPanel {
         break;
 
       case "refresh":
-        if (this._updateThrottleTimer) break; // prevent double-refresh
-        await this._repoManager.refreshAll();
-        await this._update();
+        if (this._refreshInProgress) break; // prevent double-refresh
+        this._refreshInProgress = true;
+        this._panel.webview.postMessage({ type: "refreshing" });
+        try {
+          await this._repoManager.refreshAll();
+          await this._update();
+        } finally {
+          this._refreshInProgress = false;
+          if (!this._disposed) {
+            this._panel.webview.postMessage({ type: "refreshDone" });
+          }
+        }
         break;
 
       case "scan":
