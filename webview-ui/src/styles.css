@@ -314,3 +314,63 @@ body {
   color: var(--vscode-descriptionForeground);
   font-size: 13px;
 }
+
+.spinner--inline {
+  width: 12px;
+  height: 12px;
+  border-width: 1.5px;
+  margin-right: 6px;
+}
+
+/* Header toggles: a real <button> spanning the clickable header area */
+.header-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: inherit;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.header-toggle:focus-visible,
+.icon-btn:focus-visible,
+.link-btn:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+.file-note {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  margin: 4px 8px;
+}
+
+.file-note--error {
+  color: var(--vscode-errorForeground);
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+  font: inherit;
+}
+
+.link-btn:hover {
+  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+  text-decoration: underline;
+}
+
+.refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

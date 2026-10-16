@@ -154,7 +154,16 @@ export type DiffWebviewMessage =
   | { type: "stageAll"; repoPath: string }
   | { type: "unstageAll"; repoPath: string }
   | { type: "openTerminal"; repoPath: string }
-  | { type: "askClaude"; repoPath: string; filePath: string; hunkContent: string };
+  | { type: "askClaude"; repoPath: string; filePath: string; hunkContent: string }
+  | {
+      type: "getFileDiff";
+      requestId: number;
+      repoPath: string;
+      filePath: string;
+      staged: boolean;
+      /** Send even when the diff exceeds the large-diff threshold. */
+      force?: boolean;
+    };
 
 // Helper to extract repoPath from a message if present
 export function getMessageRepoPath(msg: DashboardMessage | DiffWebviewMessage): string | undefined {

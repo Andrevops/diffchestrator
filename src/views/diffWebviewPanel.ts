@@ -10,7 +10,15 @@ import { buildAskClaudePrompt, MAX_ASK_CLAUDE_HUNK_INPUT } from "./askClaudeProm
 // Message types that must carry a valid repoPath (rejected when it's missing).
 const REPO_SCOPED = new Set<string>([
   "stageFile", "unstageFile", "stageAll", "unstageAll", "openTerminal", "askClaude",
+  "getFileDiff",
 ]);
+
+/** Debounce for change-event driven refreshes. */
+const UPDATE_DEBOUNCE_MS = 300;
+/** Per-file diffs above this many lines are only sent after an explicit "load anyway". */
+const LARGE_DIFF_LINES = 5000;
+/** Hard cap on a single file diff posted to the webview, even when forced. */
+const MAX_FILE_DIFF_CHARS = 5_000_000;
 
 export class DiffWebviewPanel {
   public static currentPanel: DiffWebviewPanel | undefined;
@@ -20,6 +28,12 @@ export class DiffWebviewPanel {
   private _repoManager: RepoManager;
   private _git;
   private _disposed = false;
+  /** Bumped on every _update; stale runs never post. */
+  private _generation = 0;
+  private _updateTimer: ReturnType<typeof setTimeout> | undefined;
+  private _pendingWhileHidden = false;
+  /** Fingerprint of the selection + selected repos' summaries last posted. */
+  private _lastFingerprint: string | undefined;
 
   static createOrShow(
     extensionUri: vscode.Uri,
@@ -32,7 +46,7 @@ export class DiffWebviewPanel {
     // If we already have a panel, show it
     if (DiffWebviewPanel.currentPanel) {
       DiffWebviewPanel.currentPanel._panel.reveal(column);
-      DiffWebviewPanel.currentPanel._update();
+      DiffWebviewPanel.currentPanel._scheduleUpdate(0);
       return;
     }
 
@@ -82,9 +96,35 @@ export class DiffWebviewPanel {
     // Handle disposal
     this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
-    // Listen for repo changes
+    // Repo summaries changed (any repo) — only refresh when the selected
+    // repos' summaries actually differ from what we last posted.
     this._repoManager.onDidChangeRepos(
-      () => this._update(),
+      () => {
+        if (this._fingerprint() !== this._lastFingerprint) this._scheduleUpdate();
+      },
+      null,
+      this._disposables
+    );
+
+    // Selection changes fire a separate event — without this, deselected
+    // repos lingered until some unrelated repo change.
+    this._repoManager.onDidChangeSelection(
+      () => {
+        if (this._fingerprint() !== this._lastFingerprint) this._scheduleUpdate();
+      },
+      null,
+      this._disposables
+    );
+
+    // Skip work while hidden; catch up once when shown again.
+    this._panel.onDidChangeViewState(
+      () => {
+        if (this._disposed) return;
+        if (this._panel.visible && this._pendingWhileHidden) {
+          this._pendingWhileHidden = false;
+          this._scheduleUpdate(0);
+        }
+      },
       null,
       this._disposables
     );
@@ -127,41 +167,72 @@ export class DiffWebviewPanel {
 </html>`;
   }
 
+  /** Selection + the summary fields refreshRepo compares, for the selected repos. */
+  private _fingerprint(): string {
+    const parts: string[] = [];
+    for (const p of [...this._repoManager.selectedRepoPaths].sort()) {
+      const r = this._repoManager.getRepo(p);
+      parts.push(
+        r
+          ? [p, r.branch, r.headOid, r.stagedCount, r.unstagedCount, r.untrackedCount].join("\0")
+          : p
+      );
+    }
+    return parts.join("\n");
+  }
+
+  private _scheduleUpdate(delay = UPDATE_DEBOUNCE_MS): void {
+    if (this._disposed) return;
+    if (!this._panel.visible) {
+      this._pendingWhileHidden = true;
+      return;
+    }
+    if (this._updateTimer) clearTimeout(this._updateTimer);
+    this._updateTimer = setTimeout(() => {
+      this._updateTimer = undefined;
+      void this._update();
+    }, delay);
+  }
+
   private async _update(): Promise<void> {
     if (this._disposed) return;
-    const selectedPaths = this._repoManager.selectedRepoPaths;
-    if (selectedPaths.size === 0) {
-      // If nothing is multi-selected, fall back to all repos
+    if (this._updateTimer) {
+      clearTimeout(this._updateTimer);
+      this._updateTimer = undefined;
+    }
+    if (!this._panel.visible) {
+      this._pendingWhileHidden = true;
+      return;
+    }
+    const generation = ++this._generation;
+    const fingerprint = this._fingerprint();
+    const selectedPaths = [...this._repoManager.selectedRepoPaths];
+    if (selectedPaths.length === 0) {
+      this._lastFingerprint = fingerprint;
       this._panel.webview.postMessage({
         type: "setDiffData",
         repos: [],
+        noSelection: true,
       });
       return;
     }
 
     this._panel.webview.postMessage({ type: "refreshing" });
 
-    // All repos and all three git calls per repo run concurrently — the
-    // GitExecutor's global process limiter bounds actual spawn count.
+    // Status only — file diffs are fetched lazily per file on expand
+    // (getFileDiff), so a large working tree no longer posts and parses every
+    // staged + unstaged diff up front.
     const results = await Promise.all(
-      [...selectedPaths].map(async (repoPath) => {
+      selectedPaths.map(async (repoPath) => {
         const repoSummary = this._repoManager.getRepo(repoPath);
         const name = repoSummary?.name ?? path.basename(repoPath);
 
         try {
-          const [status, stagedDiff, unstagedDiff]: [RepoStatus, string, string] =
-            await Promise.all([
-              this._git.status(repoPath),
-              this._git.diff(repoPath, true),
-              this._git.diff(repoPath, false),
-            ]);
-
+          const status: RepoStatus = await this._git.status(repoPath);
           return {
             name,
             path: repoPath,
             branch: status.branch,
-            stagedDiff,
-            unstagedDiff,
             stagedFiles: status.staged.map((f) => ({
               path: f.path,
               changeType: f.changeType,
@@ -180,7 +251,7 @@ export class DiffWebviewPanel {
           };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
-          if (!this._disposed) {
+          if (!this._disposed && generation === this._generation) {
             vscode.window.showErrorMessage(
               `Diffchestrator: Error reading ${name}: ${msg}`
             );
@@ -191,11 +262,62 @@ export class DiffWebviewPanel {
     );
     const repos = results.filter((r) => r !== undefined);
 
-    if (this._disposed) return;
+    // A newer update started while we awaited — its data wins.
+    if (this._disposed || generation !== this._generation) return;
+    this._lastFingerprint = fingerprint;
     this._panel.webview.postMessage({
       type: "setDiffData",
       repos,
+      noSelection: false,
     });
+  }
+
+  private async _postFileDiff(
+    msg: Extract<DiffWebviewMessage, { type: "getFileDiff" }>
+  ): Promise<void> {
+    const { requestId, repoPath, filePath } = msg;
+    if (!Number.isInteger(requestId)) return;
+    const reply = (payload: Record<string, unknown>) => {
+      if (!this._disposed) {
+        this._panel.webview.postMessage({ type: "fileDiff", requestId, ...payload });
+      }
+    };
+    if (typeof filePath !== "string" || filePath === "" || filePath.length > 4096) {
+      reply({ error: "Invalid file path" });
+      return;
+    }
+    try {
+      let diff = await this._git.diff(repoPath, msg.staged === true, filePath);
+      let lineCount = 0;
+      for (let i = diff.indexOf("\n"); i !== -1; i = diff.indexOf("\n", i + 1)) lineCount++;
+      if (lineCount > LARGE_DIFF_LINES && msg.force !== true) {
+        reply({ tooLarge: true, lineCount });
+        return;
+      }
+      let truncated = false;
+      if (diff.length > MAX_FILE_DIFF_CHARS) {
+        // Cut at a line boundary so the parser sees whole lines.
+        const cut = diff.lastIndexOf("\n", MAX_FILE_DIFF_CHARS);
+        diff = diff.slice(0, cut > 0 ? cut + 1 : MAX_FILE_DIFF_CHARS);
+        truncated = true;
+      }
+      reply({ diff, lineCount, truncated });
+    } catch (err: unknown) {
+      reply({ error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  private async _runRepoOp(repoPath: string, label: string, op: () => Promise<void>): Promise<void> {
+    try {
+      await op();
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(
+        `Diffchestrator: ${label} failed for ${path.basename(repoPath)}: ${errMsg}`
+      );
+    }
+    await this._repoManager.refreshRepo(repoPath);
+    await this._update();
   }
 
   private async _handleMessage(msg: DiffWebviewMessage): Promise<void> {
@@ -219,37 +341,41 @@ export class DiffWebviewPanel {
         break;
 
       case "refresh":
-        await this._repoManager.refreshAll();
-        await this._update();
+        try {
+          await this._repoManager.refreshAll();
+        } finally {
+          // Always answer so the webview's refresh indicator clears.
+          await this._update();
+        }
+        break;
+
+      case "getFileDiff":
+        await this._postFileDiff(msg);
         break;
 
       case "stageFile": {
         if (typeof msg.filePath !== "string" || msg.filePath === "") break;
-        await this._git.stage(msg.repoPath, [msg.filePath]);
-        await this._repoManager.refreshRepo(msg.repoPath);
-        await this._update();
+        const { repoPath, filePath } = msg;
+        await this._runRepoOp(repoPath, "Stage", () => this._git.stage(repoPath, [filePath]));
         break;
       }
 
       case "unstageFile": {
         if (typeof msg.filePath !== "string" || msg.filePath === "") break;
-        await this._git.unstage(msg.repoPath, [msg.filePath]);
-        await this._repoManager.refreshRepo(msg.repoPath);
-        await this._update();
+        const { repoPath, filePath } = msg;
+        await this._runRepoOp(repoPath, "Unstage", () => this._git.unstage(repoPath, [filePath]));
         break;
       }
 
       case "stageAll": {
-        await this._git.stage(msg.repoPath, ["."]);
-        await this._repoManager.refreshRepo(msg.repoPath);
-        await this._update();
+        const { repoPath } = msg;
+        await this._runRepoOp(repoPath, "Stage all", () => this._git.stage(repoPath, ["."]));
         break;
       }
 
       case "unstageAll": {
-        await this._git.unstage(msg.repoPath, ["."]);
-        await this._repoManager.refreshRepo(msg.repoPath);
-        await this._update();
+        const { repoPath } = msg;
+        await this._runRepoOp(repoPath, "Unstage all", () => this._git.unstage(repoPath, ["."]));
         break;
       }
 
@@ -295,6 +421,10 @@ export class DiffWebviewPanel {
   dispose(): void {
     this._disposed = true;
     DiffWebviewPanel.currentPanel = undefined;
+    if (this._updateTimer) {
+      clearTimeout(this._updateTimer);
+      this._updateTimer = undefined;
+    }
     this._panel.dispose();
     while (this._disposables.length) {
       const d = this._disposables.pop();
