@@ -3,7 +3,7 @@ import type { Readable } from "stream";
 import { promisify } from "util";
 import * as path from "path";
 import * as fs from "fs";
-import type { RepoStatus, FileChange, CommitEntry } from "../types.ts";
+import type { RepoStatus, FileChange, CommitEntry, MergeState } from "../types.ts";
 import { ChangeType, FileStatus } from "../types.ts";
 import { isValidRef } from "../utils/gitValidation.ts";
 
@@ -96,7 +96,7 @@ export interface GrepSearchMatch {
   text: string;
 }
 
-interface ShortStatusResult {
+export interface ShortStatusResult {
   staged: number;
   unstaged: number;
   untracked: number;
@@ -104,7 +104,21 @@ interface ShortStatusResult {
   ahead: number;
   behind: number;
   headOid: string;
-  mergeState?: import("../types.ts").MergeState;
+  /** Upstream tracking ref (e.g. "origin/main"); undefined when none is set. */
+  upstream?: string;
+  mergeState?: MergeState;
+}
+
+/** Internal status result: RepoStatus plus the HEAD oid ("(initial)" on an unborn branch). */
+interface StatusSnapshot extends RepoStatus {
+  headOid: string;
+}
+
+export interface GitDirs {
+  /** Per-worktree git dir (HEAD, index, MERGE_HEAD, rebase-*, FETCH_HEAD, ...). */
+  gitDir: string;
+  /** Shared dir (refs, packed-refs, objects); equals gitDir for a plain repo. */
+  commonDir: string;
 }
 
 export class GitExecutor {
@@ -129,14 +143,20 @@ export class GitExecutor {
     if (next) next();
   }
 
-  // Short-TTL cache for status() to deduplicate concurrent calls
-  private _statusCache = new Map<string, { result: RepoStatus; time: number }>();
-  private _statusInflight = new Map<string, Promise<RepoStatus>>();
-  // Watcher debounce + periodic tick + post-command refresh can all request a
-  // shortStatus for the same repo within milliseconds — share one process.
-  private _shortStatusInflight = new Map<string, Promise<ShortStatusResult>>();
-  private _statusEpoch = new Map<string, number>(); // guards against stale in-flight writes
+  // Short-TTL cache shared by status() and shortStatus(): watcher debounce,
+  // periodic tick, post-command refresh and tree views can all ask for the
+  // same repo's status within milliseconds — one `git status` serves them.
+  private _statusCache = new Map<string, { result: StatusSnapshot; time: number }>();
+  // In-flight runs are tagged with the epoch they started in: a caller only
+  // joins a run whose epoch is still current, so a request made after
+  // invalidateStatus() never receives pre-mutation data.
+  private _statusInflight = new Map<string, { promise: Promise<StatusSnapshot>; epoch: number }>();
+  private _statusEpoch = new Map<string, number>(); // bumped by invalidateStatus()
   private static readonly STATUS_CACHE_TTL = 1000; // ms
+
+  // Resolved git dirs per repo (.git may be a "gitdir:" pointer file for
+  // worktrees/submodules). Cached for the session; failures aren't cached.
+  private _gitDirs = new Map<string, Promise<GitDirs | undefined>>();
 
   // Metadata cache (30s TTL) for frequently accessed data
   private _metaCache = new Map<string, { value: unknown; time: number }>();
@@ -376,7 +396,7 @@ export class GitExecutor {
   }
 
   /** Shallow copy with copied arrays so callers can't mutate the cached object. */
-  private _cloneStatus(s: RepoStatus): RepoStatus {
+  private _cloneStatus(s: StatusSnapshot): RepoStatus {
     return {
       ...s,
       staged: [...s.staged],
@@ -385,56 +405,157 @@ export class GitExecutor {
     };
   }
 
-  async status(repoPath: string): Promise<RepoStatus> {
-    // Return cached result if fresh
+  /**
+   * Shared status source for status() and shortStatus(): fresh cache entry,
+   * else an in-flight run from the CURRENT epoch, else a new run. A run that
+   * started before invalidateStatus() is never joined — its data may predate
+   * the mutation that triggered the invalidation.
+   */
+  private _statusShared(repoPath: string): Promise<StatusSnapshot> {
     const cached = this._statusCache.get(repoPath);
     if (cached && Date.now() - cached.time < GitExecutor.STATUS_CACHE_TTL) {
-      return this._cloneStatus(cached.result);
+      return Promise.resolve(cached.result);
     }
-
-    // Deduplicate: if a call is already in-flight for this repo, return the same Promise
-    const inflight = this._statusInflight.get(repoPath);
-    if (inflight) return inflight.then((r) => this._cloneStatus(r));
 
     const epoch = this._statusEpoch.get(repoPath) ?? 0;
+    const inflight = this._statusInflight.get(repoPath);
+    if (inflight && inflight.epoch === epoch) return inflight.promise;
+
     const promise = this._statusUncached(repoPath, epoch);
-    this._statusInflight.set(repoPath, promise);
-    try {
-      return this._cloneStatus(await promise);
-    } finally {
-      this._statusInflight.delete(repoPath);
-    }
+    const entry = { promise, epoch };
+    this._statusInflight.set(repoPath, entry);
+    const clear = (): void => {
+      // Only clear our own entry — a newer-epoch run may have replaced it.
+      if (this._statusInflight.get(repoPath) === entry) this._statusInflight.delete(repoPath);
+    };
+    promise.then(clear, clear);
+    return promise;
   }
 
-  private async _statusUncached(repoPath: string, epoch: number): Promise<RepoStatus> {
-    const result = await this._run(
-      ["status", "--porcelain=v2", "--branch", "-z", "-uall"],
-      repoPath
-    );
+  async status(repoPath: string): Promise<RepoStatus> {
+    return this._cloneStatus(await this._statusShared(repoPath));
+  }
+
+  /** Counts-only view of status(); shares its cache and in-flight process. */
+  async shortStatus(repoPath: string): Promise<ShortStatusResult> {
+    const s = await this._statusShared(repoPath);
+    return {
+      staged: s.staged.length,
+      unstaged: s.unstaged.length,
+      untracked: s.untracked.length,
+      branch: s.branch,
+      ahead: s.ahead,
+      behind: s.behind,
+      headOid: s.headOid,
+      upstream: s.upstream,
+      mergeState: s.mergeState,
+    };
+  }
+
+  /**
+   * Resolve a repo's git dirs. `.git` is a directory for a normal repo but a
+   * "gitdir: <path>" file for linked worktrees and submodules — merge-state
+   * sentinels and watch targets live in the pointed-to dir. Parsed from the
+   * filesystem (no git spawn) and cached; failures are retried next call.
+   */
+  resolveGitDirs(repoPath: string): Promise<GitDirs | undefined> {
+    const cached = this._gitDirs.get(repoPath);
+    if (cached) return cached;
+    const promise = GitExecutor._readGitDirs(repoPath);
+    this._gitDirs.set(repoPath, promise);
+    promise.then((r) => {
+      if (!r && this._gitDirs.get(repoPath) === promise) this._gitDirs.delete(repoPath);
+    });
+    return promise;
+  }
+
+  private static async _readGitDirs(repoPath: string): Promise<GitDirs | undefined> {
+    const dotGit = path.join(repoPath, ".git");
+    let gitDir: string;
+    try {
+      // Read rather than stat: 9p/drvfs mounts can misreport the entry type,
+      // but reading a directory reliably fails with EISDIR.
+      const content = await fs.promises.readFile(dotGit, "utf8");
+      const m = /^gitdir:\s*(.+?)\s*$/m.exec(content);
+      if (!m) return undefined;
+      gitDir = path.resolve(repoPath, m[1]);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EISDIR") return undefined;
+      gitDir = dotGit;
+    }
+    let commonDir = gitDir;
+    try {
+      const rel = (await fs.promises.readFile(path.join(gitDir, "commondir"), "utf8")).trim();
+      if (rel) commonDir = path.resolve(gitDir, rel);
+    } catch {
+      /* no commondir file — not a linked worktree */
+    }
+    return { gitDir, commonDir };
+  }
+
+  /** Merge/rebase/cherry-pick state from the per-worktree git dir's sentinel files. */
+  private async _detectMergeState(repoPath: string): Promise<MergeState> {
+    const dirs = await this.resolveGitDirs(repoPath);
+    if (!dirs) return undefined;
+    const exists = (name: string): Promise<boolean> =>
+      fs.promises.access(path.join(dirs.gitDir, name)).then(
+        () => true,
+        () => false
+      );
+    const [merge, rebaseMerge, rebaseApply, cherryPick] = await Promise.all([
+      exists("MERGE_HEAD"),
+      exists("rebase-merge"),
+      exists("rebase-apply"),
+      exists("CHERRY_PICK_HEAD"),
+    ]);
+    if (merge) return "merging";
+    if (rebaseMerge || rebaseApply) return "rebasing";
+    if (cherryPick) return "cherry-picking";
+    return undefined;
+  }
+
+  private async _statusUncached(repoPath: string, epoch: number): Promise<StatusSnapshot> {
+    const [result, mergeState] = await Promise.all([
+      this._run(["status", "--porcelain=v2", "--branch", "-z", "-uall"], repoPath),
+      this._detectMergeState(repoPath),
+    ]);
     if (result.code !== 0) {
       throw new Error(
         `git status failed: ${result.stderr.trim() || `exit code ${result.code}`}`
       );
     }
 
+    const statusResult: StatusSnapshot = { ...GitExecutor.parseStatusV2Z(result.stdout), mergeState };
+    // Only cache if no invalidation happened while the git process was running
+    if ((this._statusEpoch.get(repoPath) ?? 0) === epoch) {
+      this._statusCache.set(repoPath, { result: statusResult, time: Date.now() });
+    }
+    return statusResult;
+  }
+
+  /** Parse `git status --porcelain=v2 --branch -z` output. */
+  static parseStatusV2Z(stdout: string): StatusSnapshot {
     let branch = "HEAD";
     let upstream: string | undefined;
     let ahead = 0;
     let behind = 0;
+    let headOid = "";
     const staged: FileChange[] = [];
     const unstaged: FileChange[] = [];
     const untracked: FileChange[] = [];
 
     // -z mode: entries are NUL-separated, paths are NOT C-quoted, and rename
     // entries ("2 ...") consume TWO tokens: "<header fields> <path>" then "<origPath>"
-    const entries = result.stdout.split("\0");
+    const entries = stdout.split("\0");
     for (let i = 0; i < entries.length; i++) {
       const line = entries[i];
       if (!line) {
         continue;
       }
 
-      if (line.startsWith("# branch.head ")) {
+      if (line.startsWith("# branch.oid ")) {
+        headOid = line.slice("# branch.oid ".length);
+      } else if (line.startsWith("# branch.head ")) {
         branch = line.slice("# branch.head ".length);
       } else if (line.startsWith("# branch.upstream ")) {
         upstream = line.slice("# branch.upstream ".length);
@@ -471,7 +592,7 @@ export class GitExecutor {
           staged.push({
             path: filePath,
             oldPath,
-            changeType: this._parseChangeType(indexStatus),
+            changeType: GitExecutor._parseChangeType(indexStatus),
             status: FileStatus.Staged,
           });
         }
@@ -481,7 +602,7 @@ export class GitExecutor {
           unstaged.push({
             path: filePath,
             oldPath,
-            changeType: this._parseChangeType(worktreeStatus),
+            changeType: GitExecutor._parseChangeType(worktreeStatus),
             status: FileStatus.Unstaged,
           });
         }
@@ -504,97 +625,7 @@ export class GitExecutor {
       }
     }
 
-    // Detect merge/rebase/cherry-pick state from .git sentinel files
-    let mergeState: import("../types.ts").MergeState;
-    const gitDir = path.join(repoPath, ".git");
-    if (fs.existsSync(path.join(gitDir, "MERGE_HEAD"))) {
-      mergeState = "merging";
-    } else if (fs.existsSync(path.join(gitDir, "rebase-merge")) || fs.existsSync(path.join(gitDir, "rebase-apply"))) {
-      mergeState = "rebasing";
-    } else if (fs.existsSync(path.join(gitDir, "CHERRY_PICK_HEAD"))) {
-      mergeState = "cherry-picking";
-    }
-
-    const statusResult = { branch, upstream, ahead, behind, staged, unstaged, untracked, mergeState };
-    // Only cache if no invalidation happened while the git process was running
-    if ((this._statusEpoch.get(repoPath) ?? 0) === epoch) {
-      this._statusCache.set(repoPath, { result: statusResult, time: Date.now() });
-    }
-    return statusResult;
-  }
-
-  async shortStatus(repoPath: string): Promise<ShortStatusResult> {
-    const inflight = this._shortStatusInflight.get(repoPath);
-    if (inflight) return inflight;
-    const promise = this._shortStatusUncached(repoPath);
-    this._shortStatusInflight.set(repoPath, promise);
-    try {
-      return await promise;
-    } finally {
-      this._shortStatusInflight.delete(repoPath);
-    }
-  }
-
-  private async _shortStatusUncached(repoPath: string): Promise<ShortStatusResult> {
-    const result = await this._run(
-      ["status", "--porcelain=v2", "--branch", "-z", "-uall"],
-      repoPath
-    );
-    if (result.code !== 0) {
-      throw new Error(
-        `git status failed: ${result.stderr.trim() || `exit code ${result.code}`}`
-      );
-    }
-
-    let staged = 0;
-    let unstaged = 0;
-    let untracked = 0;
-    let branch = "HEAD";
-    let ahead = 0;
-    let behind = 0;
-    let headOid = "";
-
-    // -z mode: NUL-separated entries; rename entries consume two tokens
-    const entries = result.stdout.split("\0");
-    for (let i = 0; i < entries.length; i++) {
-      const line = entries[i];
-      if (!line) {
-        continue;
-      }
-      if (line.startsWith("# branch.oid ")) {
-        headOid = line.slice("# branch.oid ".length);
-      } else if (line.startsWith("# branch.head ")) {
-        branch = line.slice("# branch.head ".length);
-      } else if (line.startsWith("# branch.ab ")) {
-        const match = line.match(/\+(\d+)\s+-(\d+)/);
-        if (match) {
-          ahead = parseInt(match[1], 10);
-          behind = parseInt(match[2], 10);
-        }
-      } else if (line.startsWith("1 ") || line.startsWith("2 ")) {
-        if (line.startsWith("2 ")) i++; // skip the origPath token of a rename
-        const xy = line.split(" ")[1];
-        if (xy[0] !== ".") staged++;
-        if (xy[1] !== ".") unstaged++;
-      } else if (line.startsWith("? ")) {
-        untracked++;
-      } else if (line.startsWith("u ")) {
-        unstaged++;
-      }
-    }
-
-    // Detect merge/rebase/cherry-pick state
-    let mergeState: import("../types.ts").MergeState;
-    const gitDir = path.join(repoPath, ".git");
-    if (fs.existsSync(path.join(gitDir, "MERGE_HEAD"))) {
-      mergeState = "merging";
-    } else if (fs.existsSync(path.join(gitDir, "rebase-merge")) || fs.existsSync(path.join(gitDir, "rebase-apply"))) {
-      mergeState = "rebasing";
-    } else if (fs.existsSync(path.join(gitDir, "CHERRY_PICK_HEAD"))) {
-      mergeState = "cherry-picking";
-    }
-
-    return { staged, unstaged, untracked, branch, ahead, behind, headOid, mergeState };
+    return { branch, upstream, ahead, behind, headOid, staged, unstaged, untracked };
   }
 
   async diff(
@@ -1468,7 +1499,7 @@ export class GitExecutor {
     });
   }
 
-  private _parseChangeType(code: string): ChangeType {
+  private static _parseChangeType(code: string): ChangeType {
     switch (code) {
       case "M":
         return ChangeType.Modified;

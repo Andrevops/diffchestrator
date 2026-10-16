@@ -3,6 +3,8 @@ import * as assert from "node:assert";
 import { GitExecutor } from "./gitExecutor.ts";
 import { ChangeType, FileStatus } from "../types.ts";
 import * as path from "node:path";
+import * as fs from "node:fs";
+import * as os from "node:os";
 
 describe("GitExecutor Path Validation", () => {
   const executor = new GitExecutor();
@@ -630,7 +632,7 @@ describe("GitExecutor shortStatus dedup", () => {
     assert.strictEqual(c.branch, "main");
   });
 
-  test("sequential shortStatus calls each run (no TTL cache)", async () => {
+  test("shortStatus shares status()'s TTL cache; invalidateStatus forces a re-run", async () => {
     const executor = new GitExecutor();
     let n = 0;
     (executor as any)._run = async () => {
@@ -638,8 +640,151 @@ describe("GitExecutor shortStatus dedup", () => {
       return { stdout: "# branch.head main\0", stderr: "", code: 0 };
     };
     await executor.shortStatus("/tmp/repo-ss2");
+    await executor.status("/tmp/repo-ss2");
+    await executor.shortStatus("/tmp/repo-ss2");
+    assert.strictEqual(n, 1, "status() and shortStatus() share one git status run");
+    executor.invalidateStatus("/tmp/repo-ss2");
     await executor.shortStatus("/tmp/repo-ss2");
     assert.strictEqual(n, 2);
+  });
+
+  test("status and shortStatus in flight together spawn one process", async () => {
+    const executor = new GitExecutor();
+    let n = 0;
+    (executor as any)._run = async () => {
+      n++;
+      await new Promise((r) => setImmediate(r));
+      return { stdout: "# branch.head main\0? a.txt\0", stderr: "", code: 0 };
+    };
+    const [full, short] = await Promise.all([
+      executor.status("/tmp/repo-ss3"),
+      executor.shortStatus("/tmp/repo-ss3"),
+    ]);
+    assert.strictEqual(n, 1);
+    assert.strictEqual(full.untracked.length, 1);
+    assert.strictEqual(short.untracked, 1);
+  });
+});
+
+describe("GitExecutor status epoch (stale in-flight)", () => {
+  /** _run that blocks until released; each call returns the output current at release time. */
+  function gatedExecutor() {
+    const executor = new GitExecutor();
+    let output = "# branch.oid aaaa\0# branch.head main\0";
+    const gates: (() => void)[] = [];
+    let spawned = 0;
+    (executor as any)._run = async () => {
+      spawned++;
+      const snapshot = output; // what git saw when it started
+      await new Promise<void>((r) => gates.push(r));
+      return { stdout: snapshot, stderr: "", code: 0 };
+    };
+    return {
+      executor,
+      setOutput: (o: string) => { output = o; },
+      releaseAll: () => { for (const g of gates.splice(0)) g(); },
+      spawned: () => spawned,
+    };
+  }
+
+  test("a caller after invalidateStatus() does not join a pre-invalidation run", async () => {
+    const { executor, setOutput, releaseAll, spawned } = gatedExecutor();
+    const stale = executor.shortStatus("/tmp/repo-ep1"); // starts with old HEAD
+    await new Promise((r) => setImmediate(r));
+    // A commit lands; the caller invalidates and asks again
+    setOutput("# branch.oid bbbb\0# branch.head main\0");
+    executor.invalidateStatus("/tmp/repo-ep1");
+    const fresh = executor.shortStatus("/tmp/repo-ep1");
+    await new Promise((r) => setImmediate(r));
+    assert.strictEqual(spawned(), 2, "post-invalidation request must start its own run");
+    releaseAll();
+    assert.strictEqual((await stale).headOid, "aaaa");
+    assert.strictEqual((await fresh).headOid, "bbbb");
+  });
+
+  test("the stale run's result is not cached and does not clobber the fresh in-flight entry", async () => {
+    const { executor, setOutput, releaseAll, spawned } = gatedExecutor();
+    const stale = executor.status("/tmp/repo-ep2");
+    await new Promise((r) => setImmediate(r));
+    setOutput("# branch.oid bbbb\0# branch.head feature\0");
+    executor.invalidateStatus("/tmp/repo-ep2");
+    const fresh = executor.status("/tmp/repo-ep2");
+    await new Promise((r) => setImmediate(r));
+    releaseAll();
+    await stale;
+    // A third caller while `fresh` may still be settling must not see stale data
+    const third = await executor.status("/tmp/repo-ep2");
+    assert.strictEqual(third.branch, "feature");
+    assert.strictEqual((await fresh).branch, "feature");
+    assert.strictEqual(spawned(), 2);
+  });
+});
+
+describe("GitExecutor gitdir resolution + merge state (real fs)", () => {
+  test("resolves a .git directory and detects MERGE_HEAD", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "dc-gitdir-"));
+    try {
+      fs.mkdirSync(path.join(root, ".git"));
+      const executor = new GitExecutor();
+      assert.deepStrictEqual(await executor.resolveGitDirs(root), {
+        gitDir: path.join(root, ".git"),
+        commonDir: path.join(root, ".git"),
+      });
+      fs.writeFileSync(path.join(root, ".git", "MERGE_HEAD"), "x");
+      (executor as any)._run = async () => ({ stdout: "# branch.head main\0", stderr: "", code: 0 });
+      assert.strictEqual((await executor.shortStatus(root)).mergeState, "merging");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("follows a gitdir: pointer file (worktree) incl. commondir", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "dc-gitdir-"));
+    try {
+      const main = path.join(root, "main");
+      const wt = path.join(root, "wt");
+      const wtGitDir = path.join(main, ".git", "worktrees", "wt");
+      fs.mkdirSync(wtGitDir, { recursive: true });
+      fs.mkdirSync(wt);
+      fs.writeFileSync(path.join(wt, ".git"), `gitdir: ${wtGitDir}\n`);
+      fs.writeFileSync(path.join(wtGitDir, "commondir"), "../..\n");
+      fs.mkdirSync(path.join(wtGitDir, "rebase-merge"));
+      const executor = new GitExecutor();
+      assert.deepStrictEqual(await executor.resolveGitDirs(wt), {
+        gitDir: wtGitDir,
+        commonDir: path.join(main, ".git"),
+      });
+      (executor as any)._run = async () => ({ stdout: "# branch.head main\0", stderr: "", code: 0 });
+      assert.strictEqual((await executor.status(wt)).mergeState, "rebasing");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("relative gitdir: pointer (submodule) resolves against the repo", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "dc-gitdir-"));
+    try {
+      const sub = path.join(root, "sub");
+      fs.mkdirSync(path.join(root, ".git", "modules", "sub"), { recursive: true });
+      fs.mkdirSync(sub);
+      fs.writeFileSync(path.join(sub, ".git"), "gitdir: ../.git/modules/sub\n");
+      const dirs = await new GitExecutor().resolveGitDirs(sub);
+      assert.strictEqual(dirs?.gitDir, path.join(root, ".git", "modules", "sub"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("missing .git resolves to undefined and is retried later", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "dc-gitdir-"));
+    try {
+      const executor = new GitExecutor();
+      assert.strictEqual(await executor.resolveGitDirs(root), undefined);
+      fs.mkdirSync(path.join(root, ".git"));
+      assert.strictEqual((await executor.resolveGitDirs(root))?.gitDir, path.join(root, ".git"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
