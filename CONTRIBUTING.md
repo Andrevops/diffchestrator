@@ -35,10 +35,10 @@ make watch        # Watch mode for development
 - `src/utils/` — Shared utilities (time, paths, shell escaping, disposables)
 - `src/views/` — Webview panels: multi-repo diff, dashboard, and search
 - `src/test-setup/` — `vscode` module stub used by unit tests
-- `webview-ui/` — React webviews, three separate Vite builds:
-  - `src/App.tsx` — multi-repo diff view (react-diff-view) → `dist/webview/`
-  - `src/dashboard/` — dashboard → `dist/webview-dashboard/`
-  - `src/search/` — full-text search panel → `dist/webview-search/`
+- `webview-ui/` — React webviews, one multi-entry Vite build → `dist/webview/` (shared `vendor.js` React chunk + `manifest.json`; panels build their HTML via `src/views/webviewHtml.ts`):
+  - `src/App.tsx` — multi-repo diff view (react-diff-view)
+  - `src/dashboard/` — dashboard
+  - `src/search/` — full-text search panel
 - `scripts/` — Release automation (`release.mjs`, `releaseLib.mjs`, Open VSX packaging, release notes)
 
 ## Conventions

@@ -27,3 +27,5 @@ RELEASE_NOTES.md
 .claude/**
 # Vite HTML shells are unused; panels build HTML from manifest.json
 dist/webview/*.html
+# Stale output dirs from the pre-consolidation Vite builds
+dist/webview-*/**

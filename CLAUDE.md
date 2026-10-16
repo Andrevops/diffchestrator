@@ -15,9 +15,9 @@ make test               # Unit tests
 make clean              # Remove build artifacts
 ```
 
-Dashboard webview only:
+Webviews only (diff + dashboard + search, one multi-entry Vite build):
 ```bash
-cd webview-ui && npm run build:dashboard
+cd webview-ui && npm run build
 ```
 
 ## Release Workflow
@@ -57,8 +57,8 @@ make publish-openvsx      # Open VSX only
 - `src/views/searchWebviewPanel.ts` — full-text search panel for the selected repo
 - `src/commands/` — command handlers (one file per feature)
 - `src/providers/` — tree data providers for sidebar views
-- `webview-ui/src/dashboard/` — React dashboard (separate Vite build → `dist/webview-dashboard/`)
-- `webview-ui/src/search/` — React search panel (separate Vite build → `dist/webview-search/`)
+- `webview-ui/src/dashboard/` — React dashboard
+- `webview-ui/src/search/` — React search panel
 - `webview-ui/src/App.tsx` — React diff viewer (Vite build → `dist/webview/`)
 
 ## Conventions
@@ -96,7 +96,7 @@ Message protocol: webview sends `{ type, ...payload }`, panel handles in `_handl
 ## Important Notes
 
 - `make install` installs `diffchestrator-<package.json version>.vsix` (Marketplace build only)
-- Dashboard, diff, and search webviews are separate Vite builds with separate configs
+- Diff, dashboard, and search webviews are entries of one Vite build (`webview-ui/vite.config.ts`) → `dist/webview/` with a shared `vendor.js` React chunk; panels render HTML from `manifest.json` via `src/views/webviewHtml.ts` (nonce'd module scripts, no inline styles)
 - `RepoTreeProvider` implements `Disposable` — must be pushed to `context.subscriptions`
 - GitExecutor has metadata cache (30s TTL) for `getRemoteUrl`, `stashCount`, `lastCommitDate`
 - Health scores computed in Phase 1: `100 - changesPenalty - syncPenalty - stashPenalty`

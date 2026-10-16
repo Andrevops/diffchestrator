@@ -521,8 +521,7 @@ webview-ui/                   # React apps (diff + dashboard)
 │       ├── ActivityLog.tsx    # Activity tab with filters
 │       ├── SettingsPanel.tsx  # Settings tab
 │       └── ShortcutRef.tsx    # Shortcuts tab
-├── vite.config.ts             # Builds diff webview → dist/webview/
-└── vite.dashboard.config.ts   # Builds dashboard → dist/webview-dashboard/
+└── vite.config.ts             # One multi-entry build (diff, dashboard, search) → dist/webview/
 
 scripts/
 └── release.mjs               # Auto-detect semver bump + changelog + commit + tag + dual build (Marketplace + Open VSX)
