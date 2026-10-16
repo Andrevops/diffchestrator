@@ -449,15 +449,11 @@ export class RepoManager implements vscode.Disposable {
 
       // Lazily discover repo paths for this root
       const paths = await this._getPathsForRoot(root, maxDepth, extraSkip);
-      // Longest basename first to avoid partial matches ("foo" matching "foo-bar")
-      const sorted = [...paths].sort(
-        (a, b) => path.basename(b).length - path.basename(a).length
-      );
-
-      for (const p of sorted) {
-        if (terminalName.includes(path.basename(p))) {
-          return { root, path: p };
-        }
+      // Exact basename match only — substring matching let unrelated
+      // terminals (e.g. "node") hijack the root.
+      const match = paths.find((p) => path.basename(p) === terminalName);
+      if (match) {
+        return { root, path: match };
       }
     }
     return undefined;

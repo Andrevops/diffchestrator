@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import type { RepoSummary } from "../types";
+import { stripCredentials } from "../utils/remoteUrl";
 import { CMD } from "../constants";
 import { timeAgo } from "../utils/time";
 
@@ -301,7 +302,7 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<TreeNode>, vsco
     }
     if (r.stashCount > 0) lines.push(`Stashes: ${r.stashCount}`);
     if (r.mergeState) lines.push(`⚠ ${r.mergeState}`);
-    if (r.remoteUrl) lines.push(`Remote: ${r.remoteUrl}`);
+    if (r.remoteUrl) lines.push(`Remote: ${stripCredentials(r.remoteUrl)}`);
 
     const lastCommit = this._lastCommitCache.get(r.path);
     if (lastCommit) {
