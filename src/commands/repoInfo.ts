@@ -3,6 +3,7 @@ import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 import { resolveRepoPath } from "../utils/fileItem";
+import { stripCredentials, toBrowsableUrl } from "../utils/remoteUrl";
 
 export function registerRepoInfoCommands(
   context: vscode.ExtensionContext,
@@ -22,7 +23,9 @@ export function registerRepoInfoCommands(
         { label: "$(git-branch) Branch", description: repo?.branch ?? "unknown", _value: repo?.branch ?? "" },
       ];
       if (repo?.remoteUrl) {
-        items.push({ label: "$(link) Remote URL", description: repo.remoteUrl, _value: repo.remoteUrl });
+        // Never copy/display embedded credentials (https://user:token@host/...)
+        const remote = stripCredentials(repo.remoteUrl);
+        items.push({ label: "$(link) Remote URL", description: remote, _value: remote });
       }
       items.push({ label: "$(repo) Name", description: path.basename(repoPath), _value: path.basename(repoPath) });
       const picked = await vscode.window.showQuickPick(items, { placeHolder: "Copy to clipboard" });
@@ -86,18 +89,21 @@ export function registerRepoInfoCommands(
         return;
       }
       const repo = repoManager.getRepo(repoPath);
-      let url = repo?.remoteUrl;
-      if (!url) {
+      const remote = repo?.remoteUrl;
+      if (!remote) {
         vscode.window.showWarningMessage("Diffchestrator: No remote URL found for this repo.");
         return;
       }
-      // Convert git@ SSH URLs to HTTPS
-      if (url.startsWith("git@")) {
-        url = url.replace(/^git@([^:]+):/, "https://$1/").replace(/\.git$/, "");
-      } else if (url.endsWith(".git")) {
-        url = url.replace(/\.git$/, "");
+      // http(s) only, ssh/scp converted to https, credentials stripped —
+      // the remote is repo-controlled and must not reach openExternal raw.
+      const url = toBrowsableUrl(remote);
+      if (!url) {
+        vscode.window.showWarningMessage(
+          `Diffchestrator: Remote "${stripCredentials(remote)}" can't be opened in a browser (only http, https, and ssh remotes are supported).`
+        );
+        return;
       }
-      await vscode.env.openExternal(vscode.Uri.parse(url));
+      await vscode.env.openExternal(vscode.Uri.parse(url, true));
     })
   );
 
