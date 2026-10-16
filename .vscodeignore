@@ -24,3 +24,6 @@ public_key.pem
 CONTRIBUTING.md
 checksums.txt*
 RELEASE_NOTES.md
+.claude/**
+# Vite HTML shells are unused; panels build HTML from manifest.json
+dist/webview/*.html

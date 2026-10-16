@@ -4,3 +4,4 @@ dist/
 *.tsbuildinfo
 .vscode-test/
 build_output.txt
+.claude/worktrees/
