@@ -1445,7 +1445,7 @@
     }
   },
   "scripts": {
-    "build:webview": "cd webview-ui && npm run build && npm run build:dashboard && npm run build:search",
+    "build:webview": "cd webview-ui && npm run build",
     "compile": "node esbuild.mjs",
     "build": "npm run build:webview && node esbuild.mjs --production",
     "watch": "node esbuild.mjs --watch",

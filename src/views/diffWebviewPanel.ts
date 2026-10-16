@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { RepoManager } from "../services/repoManager";
-import { getNonce } from "./nonce";
+import { buildWebviewHtml, webviewResourceRoots } from "./webviewHtml";
 import type { RepoStatus, DiffWebviewMessage } from "../types";
 import { escapeForTerminal } from "../utils/shell";
 import { terminalIcon } from "../commands/terminal";
@@ -60,9 +60,7 @@ export class DiffWebviewPanel {
         // No retainContextWhenHidden: the webview posts "ready" on mount and
         // the panel refetches, so only expand state is lost — not worth
         // holding the full diff DOM in memory while hidden.
-        localResourceRoots: [
-          vscode.Uri.joinPath(extensionUri, "dist", "webview"),
-        ],
+        localResourceRoots: webviewResourceRoots(extensionUri),
       }
     );
 
@@ -131,40 +129,7 @@ export class DiffWebviewPanel {
   }
 
   private _getWebviewContent(): string {
-    const webview = this._panel.webview;
-    const distPath = vscode.Uri.joinPath(
-      this._extensionUri,
-      "dist",
-      "webview"
-    );
-
-    const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(distPath, "main.js")
-    );
-    const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(distPath, "main.css")
-    );
-
-    const nonce = getNonce();
-
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none';
-             style-src ${webview.cspSource} 'unsafe-inline';
-             script-src 'nonce-${nonce}';
-             font-src ${webview.cspSource};">
-  <link rel="stylesheet" href="${styleUri}">
-  <title>Multi-Repo Diff</title>
-</head>
-<body>
-  <div id="root"></div>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
-</body>
-</html>`;
+    return buildWebviewHtml(this._panel.webview, this._extensionUri, "index.html", "Multi-Repo Diff");
   }
 
   /** Selection + the summary fields refreshRepo compares, for the selected repos. */
