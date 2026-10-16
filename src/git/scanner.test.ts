@@ -1,6 +1,8 @@
 import { test, describe } from "node:test";
 import * as assert from "node:assert";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { Scanner } from "./scanner.ts";
 import type { GitExecutor } from "./gitExecutor.ts";
 
@@ -28,6 +30,23 @@ describe("Scanner", () => {
 
       const errorLog = logs.find(log => log.includes("readdir error") && log.includes("EACCES"));
       assert.ok(errorLog, "Should log the readdir error");
+    });
+
+    test("reports progress (throttled, with a final report)", async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "dc-scan-"));
+      try {
+        for (let i = 0; i < 120; i++) fs.mkdirSync(path.join(root, `d${i}`));
+        fs.mkdirSync(path.join(root, "d7", ".git"));
+        fs.mkdirSync(path.join(root, "d42", ".git"));
+        const scanner = new Scanner({} as GitExecutor, 3);
+        const reports: { dirsScanned: number; reposFound: number }[] = [];
+        const repos = await scanner.scanFast(root, (p) => reports.push(p));
+        assert.strictEqual(repos.length, 2);
+        assert.ok(reports.length >= 2 && reports.length <= 5, `throttled: got ${reports.length} reports`);
+        assert.deepStrictEqual(reports[reports.length - 1], { dirsScanned: 121, reposFound: 2 });
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
     });
   });
 });

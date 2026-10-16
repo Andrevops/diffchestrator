@@ -547,7 +547,7 @@ describe("GitExecutor Per-Repo Mutation Mutex", () => {
   test("reads are not serialized behind a mutation", async () => {
     const { executor, events, release } = deferredExecutor();
     const p1 = executor.pull("/tmp/repo-d");
-    const p2 = executor.getBranch("/tmp/repo-d"); // read — must not queue behind pull
+    const p2 = executor.lastCommitMessage("/tmp/repo-d"); // read — must not queue behind pull
     await new Promise((r) => setImmediate(r));
     assert.strictEqual(events.filter((e) => e.startsWith("start:")).length, 2);
     release();

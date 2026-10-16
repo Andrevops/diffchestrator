@@ -208,6 +208,33 @@ describe("RepoManager", () => {
     });
   });
 
+  describe("scan progress", () => {
+    const origScanFast = Scanner.prototype.scanFast;
+    const origFetchMetadata = Scanner.prototype.fetchMetadata;
+    afterEach(() => {
+      Scanner.prototype.scanFast = origScanFast;
+      Scanner.prototype.fetchMetadata = origFetchMetadata;
+    });
+
+    test("scan() forwards scanner progress to onDidScanProgress", async () => {
+      Scanner.prototype.scanFast = async function (_root: string, onProgress?: (p: { dirsScanned: number; reposFound: number }) => void) {
+        onProgress?.({ dirsScanned: 50, reposFound: 1 });
+        onProgress?.({ dirsScanned: 80, reposFound: 2 });
+        return [];
+      };
+      Scanner.prototype.fetchMetadata = async () => {};
+      const rm = new RepoManager(makeState());
+      const seen: number[] = [];
+      rm.onDidScanProgress((p) => seen.push(p.dirsScanned));
+      try {
+        await rm.scan("/root-progress");
+        assert.deepStrictEqual(seen, [50, 80]);
+      } finally {
+        rm.dispose();
+      }
+    });
+  });
+
   describe("refreshRepo", () => {
     const H1 = "1".repeat(40);
     const H2 = "2".repeat(40);

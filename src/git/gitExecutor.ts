@@ -385,16 +385,6 @@ export class GitExecutor {
     this._statusEpoch.set(repoPath, (this._statusEpoch.get(repoPath) ?? 0) + 1);
   }
 
-  async isGitRepo(dirPath: string): Promise<boolean> {
-    const gitDir = path.join(dirPath, ".git");
-    try {
-      const stat = fs.statSync(gitDir);
-      return stat.isDirectory();
-    } catch {
-      return false;
-    }
-  }
-
   /** Shallow copy with copied arrays so callers can't mutate the cached object. */
   private _cloneStatus(s: StatusSnapshot): RepoStatus {
     return {
@@ -730,14 +720,6 @@ export class GitExecutor {
     });
   }
 
-  async getBranch(repoPath: string): Promise<string> {
-    const result = await this._run(
-      ["rev-parse", "--abbrev-ref", "HEAD"],
-      repoPath
-    );
-    return result.stdout.trim() || "HEAD";
-  }
-
   async resetSoft(repoPath: string, ref = "HEAD~1"): Promise<void> {
     return this._serialized(repoPath, async () => {
       const result = await this._run(["reset", "--soft", ref], repoPath);
@@ -776,39 +758,11 @@ export class GitExecutor {
     return url;
   }
 
+  private static readonly LOG_FORMAT = "--format=%H%n%h%n%an%n%ai%n%s%n---END---";
+
   async log(repoPath: string, count = 10): Promise<CommitEntry[]> {
-    const result = await this._run(
-      [
-        "log",
-        `-${count}`,
-        "--format=%H%n%h%n%an%n%ai%n%s%n---END---",
-      ],
-      repoPath
-    );
-
-    if (!result.stdout.trim()) {
-      return [];
-    }
-
-    const entries: CommitEntry[] = [];
-    const blocks = result.stdout.split("---END---\n");
-
-    for (const block of blocks) {
-      const trimmed = block.trim();
-      if (!trimmed) continue;
-      const lines = trimmed.split("\n");
-      if (lines.length >= 5) {
-        entries.push({
-          hash: lines[0],
-          shortHash: lines[1],
-          author: lines[2],
-          date: lines[3],
-          message: lines.slice(4).join("\n"),
-        });
-      }
-    }
-
-    return entries;
+    const result = await this._run(["log", `-${count}`, GitExecutor.LOG_FORMAT], repoPath);
+    return GitExecutor._parseLog(result.stdout);
   }
 
   async logSince(
@@ -817,23 +771,17 @@ export class GitExecutor {
     count = 50
   ): Promise<CommitEntry[]> {
     const result = await this._run(
-      [
-        "log",
-        `--since=${since}`,
-        `-${count}`,
-        "--format=%H%n%h%n%an%n%ai%n%s%n---END---",
-      ],
+      ["log", `--since=${since}`, `-${count}`, GitExecutor.LOG_FORMAT],
       repoPath
     );
+    return GitExecutor._parseLog(result.stdout);
+  }
 
-    if (!result.stdout.trim()) {
-      return [];
-    }
-
+  /** Parse LOG_FORMAT output: 5 lines per commit, blocks ended by "---END---". */
+  private static _parseLog(stdout: string): CommitEntry[] {
+    if (!stdout.trim()) return [];
     const entries: CommitEntry[] = [];
-    const blocks = result.stdout.split("---END---\n");
-
-    for (const block of blocks) {
+    for (const block of stdout.split("---END---\n")) {
       const trimmed = block.trim();
       if (!trimmed) continue;
       const lines = trimmed.split("\n");
@@ -847,7 +795,6 @@ export class GitExecutor {
         });
       }
     }
-
     return entries;
   }
 
@@ -863,32 +810,6 @@ export class GitExecutor {
     const date = result.stdout.trim() || undefined;
     this._setCachedMeta(cacheKey, { value: date });
     return date;
-  }
-
-  /**
-   * Combined: get commits since a date AND the most recent commit date.
-   * Uses lastCommitDate cache (30s TTL) to avoid extra git process when cached.
-   */
-  async logSinceWithDate(
-    repoPath: string,
-    since: string,
-    count = 50
-  ): Promise<{ lastDate: string | undefined; commits: CommitEntry[] }> {
-    const cacheKey = `${repoPath}:lastCommitDate`;
-    const cachedDate = this._getCachedMeta<{ value: string | undefined }>(cacheKey);
-
-    if (cachedDate !== undefined) {
-      // Cache hit — only need session commits (1 git call)
-      const commits = await this.logSince(repoPath, since, count);
-      return { lastDate: cachedDate.value, commits };
-    }
-
-    // Cache miss — run both in parallel (2 git calls, but parallel)
-    const [lastDate, commits] = await Promise.all([
-      this.lastCommitDate(repoPath),
-      this.logSince(repoPath, since, count),
-    ]);
-    return { lastDate, commits };
   }
 
   async show(repoPath: string, ref: string): Promise<string> {
@@ -1020,12 +941,6 @@ export class GitExecutor {
       }
     }
     return { files, additions, deletions };
-  }
-
-  async fileCount(repoPath: string): Promise<number> {
-    const result = await this._run(["ls-files"], repoPath);
-    if (!result.stdout.trim()) return 0;
-    return result.stdout.trim().split("\n").length;
   }
 
   async diffStatFile(repoPath: string, file: string, staged: boolean): Promise<{ additions: number; deletions: number }> {
@@ -1431,25 +1346,6 @@ export class GitExecutor {
       return { file, line, column, text };
     });
     return { matches, truncated };
-  }
-
-  /**
-   * Which of the given repo-relative paths are gitignored. Exit code 1 means
-   * "none ignored" (not an error), so an empty result is the common case.
-   */
-  async checkIgnore(repoPath: string, paths: string[]): Promise<Set<string>> {
-    const ignored = new Set<string>();
-    if (paths.length === 0) return ignored;
-    for (const p of paths) this._validateFilePath(repoPath, p);
-    // -z requires --stdin; with both, input and output are NUL-separated and
-    // output paths are echoed verbatim (no C-quoting).
-    const result = await this._run(["check-ignore", "--stdin", "-z"], repoPath, {
-      input: paths.join("\0") + "\0",
-    });
-    for (const p of result.stdout.split("\0")) {
-      if (p) ignored.add(p);
-    }
-    return ignored;
   }
 
   // Concurrent directory expansions all need the same ignore set — share one

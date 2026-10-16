@@ -335,8 +335,11 @@ export class RepoManager implements vscode.Disposable {
 
     const scanner = new Scanner(this._git, maxDepth, extraSkip, this._log);
 
-    // Phase 1: Fast BFS — no git calls, repos appear instantly
-    const repos = await scanner.scanFast(rootPath);
+    // Phase 1: Fast BFS — no git calls, repos appear instantly.
+    // Progress drives the scan/rescan commands' notification text.
+    const repos = await scanner.scanFast(rootPath, (p) => {
+      if (epoch === this._scanEpoch) this._onDidScanProgress.fire(p);
+    });
     // Epoch guard: a newer scan() may have started (and cleared _repos for its
     // own root) while we awaited — inserting now would merge two roots' repos.
     if (epoch !== this._scanEpoch) return;
