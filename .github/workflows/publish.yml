@@ -5,23 +5,44 @@ on:
     tags:
       - "v*"
 
+# Read-only by default; only the publish job is granted write scopes.
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  release:
+  # ── Build: no secrets, read-only token ───────────────────────────────
+  build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # tags are needed for the compare link
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            webview-ui/package-lock.json
+
+      - name: Verify tag matches package.json version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "${GITHUB_REF_NAME}" != "v${VERSION}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version v${VERSION}"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Install extension dependencies
         run: npm ci
@@ -29,121 +50,146 @@ jobs:
       - name: Install webview dependencies
         run: npm ci --prefix webview-ui
 
-      - name: Run tests
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
         run: npm test
 
-      - name: Build extension
-        run: npm run build
-
-      - name: Package .vsix (Marketplace — andrevops-com)
-        run: npx @vscode/vsce package --no-dependencies
+      - name: Build and package .vsix (Marketplace — andrevops-com)
+        run: npm run package
 
       - name: Package .vsix (Open VSX — andrevops)
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('package.json','utf-8'));
-            pkg.publisher = 'andrevops';
-            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
-          npx @vscode/vsce package --no-dependencies -o "diffchestrator-${VERSION}-openvsx.vsix"
-          git checkout package.json
+        run: npm run package:openvsx
+
+      - name: Verify package.json is unchanged
+        run: git diff --exit-code -- package.json
 
       - name: Generate checksums
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          sha256sum *.vsix > checksums.txt
+          sha256sum "diffchestrator-${VERSION}.vsix" "diffchestrator-${VERSION}-openvsx.vsix" > checksums.txt
           cat checksums.txt
 
-      - name: Sign checksums
+      - name: Release notes (from CHANGELOG.md)
         env:
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          VERSION: ${{ steps.version.outputs.version }}
+          REPO: ${{ github.repository }}
         run: |
-          echo "$SIGNING_KEY" | base64 -d > /tmp/signing.pem
-          openssl pkey -in /tmp/signing.pem -noout
-          openssl pkeyutl -sign -inkey /tmp/signing.pem -rawin -in checksums.txt \
-            | xxd -p -c 256 | tr -d '\n' > checksums.txt.sig
-          rm /tmp/signing.pem
-          echo "signature: $(cat checksums.txt.sig)"
-
-      - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: "*.vsix"
-
-      - name: Generate changelog
-        id: changelog
-        run: |
-          # Find the previous tag
-          CURRENT_TAG="${GITHUB_REF#refs/tags/}"
-          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${CURRENT_TAG}$" | head -1)
-
-          if [ -n "$PREV_TAG" ]; then
-            RANGE="${PREV_TAG}..${CURRENT_TAG}"
-          else
-            RANGE="${CURRENT_TAG}"
-          fi
-
-          # Build changelog grouped by type
+          PREV_TAG=$(git tag --list 'v*' --sort=-v:refname | grep -vx "${GITHUB_REF_NAME}" | head -1 || true)
           {
             echo "## What's Changed"
             echo ""
-
-            FEATS=$(git log "$RANGE" --pretty=format:"%s" --no-merges | grep -E "^feat" | sed 's/^feat[^:]*: //' || true)
-            FIXES=$(git log "$RANGE" --pretty=format:"%s" --no-merges | grep -E "^fix" | sed 's/^fix[^:]*: //' || true)
-            OTHERS=$(git log "$RANGE" --pretty=format:"%s" --no-merges | grep -vE "^(feat|fix|chore\(release\))" | head -10 || true)
-
-            cap() { echo "$1" | sed 's/^./\U&/'; }
-
-            if [ -n "$FEATS" ]; then
-              echo "### Features"
-              echo "$FEATS" | while IFS= read -r line; do echo "- $(cap "$line")"; done
-              echo ""
-            fi
-
-            if [ -n "$FIXES" ]; then
-              echo "### Bug Fixes"
-              echo "$FIXES" | while IFS= read -r line; do echo "- $(cap "$line")"; done
-              echo ""
-            fi
-
-            if [ -n "$OTHERS" ]; then
-              echo "### Other"
-              echo "$OTHERS" | while IFS= read -r line; do echo "- $(cap "$line")"; done
-              echo ""
-            fi
-
-            echo "---"
-            echo "**Full Changelog**: [\`${PREV_TAG:-initial}..${CURRENT_TAG}\`](https://github.com/${{ github.repository }}/compare/${PREV_TAG:-initial}...${CURRENT_TAG})"
+            node scripts/release-notes.mjs "${VERSION}"
             echo ""
+            echo "---"
+            if [ -n "${PREV_TAG}" ]; then
+              echo "**Full Changelog**: [\`${PREV_TAG}..${GITHUB_REF_NAME}\`](https://github.com/${REPO}/compare/${PREV_TAG}...${GITHUB_REF_NAME})"
+              echo ""
+            fi
             echo "## Verify"
             echo ""
             echo '```sh'
-            echo "# Verify build provenance"
-            echo "gh attestation verify diffchestrator-*.vsix --repo ${{ github.repository }}"
+            echo "# Primary: verify build provenance (SLSA attestation from this workflow)"
+            echo "gh attestation verify diffchestrator-${VERSION}.vsix --repo ${REPO}"
             echo ""
-            echo "# Verify checksum signature (requires public_key.pem from repo)"
-            echo "curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/public_key.pem -o public_key.pem"
+            echo "# Secondary: verify the checksum signature (see README for the pinned key fingerprint)"
+            echo "curl -fsSL https://raw.githubusercontent.com/${REPO}/${GITHUB_REF_NAME}/public_key.pem -o public_key.pem"
             echo "xxd -r -p checksums.txt.sig | openssl pkeyutl -verify -pubin -inkey public_key.pem -rawin -in checksums.txt -sigfile /dev/stdin"
+            echo "sha256sum -c checksums.txt"
             echo '```'
           } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-bundle
+          path: |
+            diffchestrator-${{ steps.version.outputs.version }}.vsix
+            diffchestrator-${{ steps.version.outputs.version }}-openvsx.vsix
+            checksums.txt
+            RELEASE_NOTES.md
+          if-no-files-found: error
+          retention-days: 30
+
+  # ── Publish: write scopes + secrets, gated by the `release` environment ─
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: write # create the GitHub Release
+      id-token: write # build provenance attestation
+      attestations: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      HAS_VSCE: ${{ secrets.VSCE_PAT != '' }}
+    steps:
+      # Checkout is only for package-lock.json → pinned vsce/ovsx; nothing is built here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      # --ignore-scripts: no dependency lifecycle scripts run in the job holding
+      # write scopes and an OIDC token. vsce/ovsx publish do not need them.
+      - name: Install pinned publishing tools
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Download release bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-bundle
+          path: release
+
+      - name: Verify checksums
+        working-directory: release
+        run: sha256sum -c checksums.txt
+
+      - name: Sign checksums
+        working-directory: release
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: |
+          umask 077
+          KEY="${RUNNER_TEMP}/signing.pem"
+          trap 'rm -f "$KEY"' EXIT
+          printf '%s' "$SIGNING_KEY" | base64 -d > "$KEY"
+          openssl pkey -in "$KEY" -noout
+          openssl pkeyutl -sign -inkey "$KEY" -rawin -in checksums.txt \
+            | xxd -p -c 256 | tr -d '\n' > checksums.txt.sig
+          echo "signature: $(cat checksums.txt.sig)"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: "release/*.vsix"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: |
-            *.vsix
-            checksums.txt
-            checksums.txt.sig
-          body_path: RELEASE_NOTES.md
+            release/*.vsix
+            release/checksums.txt
+            release/checksums.txt.sig
+          body_path: release/RELEASE_NOTES.md
+          fail_on_unmatched_files: true
 
-      # Uncomment when VSCE_PAT secret is configured
-      # - name: Publish to VS Code Marketplace
-      #   run: npx @vscode/vsce publish --no-dependencies
-      #   env:
-      #     VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      # Publishes the exact CI-built, attested .vsix. Skipped (not failed) until
+      # the VSCE_PAT secret is configured on the `release` environment.
+      - name: Publish to VS Code Marketplace
+        if: env.HAS_VSCE == 'true'
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx --no-install vsce publish --no-dependencies --packagePath "release/diffchestrator-${VERSION}.vsix"
 
       - name: Publish to Open VSX
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          npx ovsx publish "diffchestrator-${VERSION}-openvsx.vsix" -p ${{ secrets.OVSX_PAT }}
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: npx --no-install ovsx publish --packagePath "release/diffchestrator-${VERSION}-openvsx.vsix"
