@@ -3,6 +3,7 @@ import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 import { resolveRepoPath } from "../utils/fileItem";
+import { formatRepoList, pluralRepos } from "../utils/repoList";
 
 export function registerCommitCommands(
   context: vscode.ExtensionContext,
@@ -111,6 +112,16 @@ export function registerCommitCommands(
 
       if (!message) return;
 
+      const confirm = await vscode.window.showWarningMessage(
+        `Commit staged changes in ${pluralRepos(selectedPaths.size)}?`,
+        {
+          modal: true,
+          detail: `Message: ${message.trim()}\n\n${formatRepoList([...selectedPaths].map((p) => path.basename(p)))}`,
+        },
+        "Commit"
+      );
+      if (confirm !== "Commit") return;
+
       channel.show();
 
       let success = 0;
@@ -151,9 +162,9 @@ export function registerCommitCommands(
         }
       );
 
-      vscode.window.showInformationMessage(
-        `Diffchestrator: Bulk commit complete. ${success} succeeded, ${failed} failed.`
-      );
+      const summary = `Diffchestrator: Bulk commit complete. ${success} succeeded, ${failed} failed.`;
+      if (failed > 0) vscode.window.showWarningMessage(summary);
+      else vscode.window.showInformationMessage(summary);
     })
   );
 

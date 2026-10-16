@@ -3,6 +3,7 @@ import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 import { resolveRepoPath } from "../utils/fileItem";
+import { formatRepoList, pluralRepos } from "../utils/repoList";
 
 export function registerPushCommands(
   context: vscode.ExtensionContext,
@@ -119,8 +120,8 @@ export function registerPushCommands(
       }
 
       const confirm = await vscode.window.showWarningMessage(
-        `Push ${selectedPaths.size} repositories?`,
-        { modal: true },
+        `Push ${pluralRepos(selectedPaths.size)}?`,
+        { modal: true, detail: formatRepoList([...selectedPaths].map((p) => path.basename(p))) },
         "Push"
       );
 
@@ -163,9 +164,9 @@ export function registerPushCommands(
         }
       );
 
-      vscode.window.showInformationMessage(
-        `Diffchestrator: Bulk push complete. ${success} succeeded, ${failed} failed.`
-      );
+      const summary = `Diffchestrator: Bulk push complete. ${success} succeeded, ${failed} failed.`;
+      if (failed > 0) vscode.window.showWarningMessage(summary);
+      else vscode.window.showInformationMessage(summary);
     })
   );
 }
