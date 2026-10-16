@@ -78,7 +78,7 @@ make publish-openvsx      # Open VSX only
 ```bash
 npm test            # Node.js native test runner: src/**/*.test.ts + scripts/**/*.test.mjs
 npm run typecheck   # tsc for extension + webview-ui (esbuild does not typecheck)
-npm run lint        # ESLint, high-signal rules, warn-only (errors fail CI)
+npm run lint        # ESLint, high-signal rules, promise rules are errors (fail CI), unused vars warn
 ```
 
 Tests live next to the code they cover anywhere under `src/` (git/, services/, commands/, utils/, …). The `vscode` module is stubbed via `src/test-setup/`. `@types/vscode` is pinned to `engines.vscode` (~1.95). Don't use newer APIs without raising both.

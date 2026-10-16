@@ -195,7 +195,6 @@ for (const [label, shell] of [["bash", POSIX], ["PowerShell", POWERSHELL], ["pws
   test(`escapeForTerminal ${label}: no control characters reach the terminal`, () => {
     for (const input of INJECTIONS) {
       const out = escapeForTerminal(input, shell);
-      // eslint-disable-next-line no-control-regex
       assert.ok(!/[\x00-\x1f\x7f]/.test(out),
         `Control character leaked for ${JSON.stringify(input)}: ${JSON.stringify(out)}`);
     }

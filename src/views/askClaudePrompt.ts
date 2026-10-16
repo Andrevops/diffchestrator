@@ -14,7 +14,6 @@
 export const MAX_ASK_CLAUDE_PROMPT = 6000;
 export const MAX_ASK_CLAUDE_HUNK_INPUT = 200_000;
 
-// eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\x00-\x08\x0b-\x1f\x7f\u0085\u2028\u2029]/g;
 
 function oneLine(s: string): string {

@@ -49,7 +49,7 @@ export function registerNotifications(
 
     if (pendingNotifications.length === 1) {
       const n = pendingNotifications.shift()!;
-      showNotification(n);
+      void showNotification(n);
       return;
     }
 
@@ -80,7 +80,7 @@ export function registerNotifications(
       const commits = await sharedGit.log(repoPath, 1);
       const msg = commits.length > 0 ? commits[0].message : "new commit";
       if (repoManager.windowFocused) {
-        showNotification({ type: "commit", repoPath, repoName, message: msg });
+        void showNotification({ type: "commit", repoPath, repoName, message: msg });
       } else {
         pendingNotifications.push({ type: "commit", repoPath, repoName, message: msg });
       }
@@ -91,7 +91,7 @@ export function registerNotifications(
 
   repoManager.onDidDetectChanges(async ({ repoPath, repoName, count }) => {
     if (repoManager.windowFocused) {
-      showNotification({ type: "changes", repoPath, repoName, count });
+      void showNotification({ type: "changes", repoPath, repoName, count });
     } else {
       pendingNotifications.push({ type: "changes", repoPath, repoName, count });
     }

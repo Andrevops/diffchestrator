@@ -729,7 +729,7 @@ export class RepoManager implements vscode.Disposable {
       if (state.focused && !this._scanning) {
         // Reset timer first to prevent it from firing during/after our refresh
         this._resetTimer();
-        this.refreshAll();
+        void this.refreshAll();
       }
     });
 
@@ -752,7 +752,7 @@ export class RepoManager implements vscode.Disposable {
         } else {
           this._hiddenTickCounter = 0;
         }
-        this.refreshAll();
+        void this.refreshAll();
       }, interval * 1000);
     }
   }

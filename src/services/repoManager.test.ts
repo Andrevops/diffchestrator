@@ -1,4 +1,4 @@
-import { test, describe, before, beforeEach, afterEach } from "node:test";
+import { test, describe, beforeEach, afterEach } from "node:test";
 import * as assert from "node:assert";
 import type * as vscode from "vscode";
 import { RepoManager } from "./repoManager.ts";

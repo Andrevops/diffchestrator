@@ -142,7 +142,7 @@ export class InlineBlameService implements vscode.Disposable {
           this._clearDecorations();
         } else {
           const editor = vscode.window.activeTextEditor;
-          if (editor) this._updateBlame(editor);
+          if (editor) void this._updateBlame(editor);
         }
         vscode.window.showInformationMessage(
           `Diffchestrator: Inline blame ${this._enabled ? "enabled" : "disabled"}`
@@ -154,7 +154,7 @@ export class InlineBlameService implements vscode.Disposable {
   private _debouncedUpdate(editor: vscode.TextEditor): void {
     if (this._debounceTimer) clearTimeout(this._debounceTimer);
     this._debounceTimer = setTimeout(() => {
-      this._updateBlame(editor);
+      void this._updateBlame(editor);
     }, 300);
   }
 

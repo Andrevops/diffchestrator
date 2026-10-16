@@ -16,11 +16,11 @@ describe("Scanner", () => {
 
       const scanner = new Scanner(mockGit, 2, [], logFn);
 
-      t.mock.method(fs.promises, "access", async (p: fs.PathLike) => {
+      t.mock.method(fs.promises, "access", async (_p: fs.PathLike) => {
         throw new Error("ENOENT: no such file or directory");
       });
 
-      t.mock.method(fs.promises, "readdir", async (p: fs.PathLike, options: any) => {
+      t.mock.method(fs.promises, "readdir", async (_p: fs.PathLike, _options: any) => {
         throw new Error("EACCES: permission denied, scandir '/mock/dir'");
       });
 

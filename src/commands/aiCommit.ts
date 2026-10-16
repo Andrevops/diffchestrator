@@ -107,7 +107,7 @@ export function registerAiCommitCommands(
             // Trigger on HEAD, index, or refs changes (covers commits and staging)
             if (filename && /^(HEAD|index|COMMIT_EDITMSG|refs)/.test(filename)) {
               if (debounce) clearTimeout(debounce);
-              debounce = setTimeout(() => repoManager.refreshRepo(repoPath), 1000);
+              debounce = setTimeout(() => void repoManager.refreshRepo(repoPath), 1000);
             }
           });
         } catch {

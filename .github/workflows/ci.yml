@@ -42,7 +42,7 @@ jobs:
       - name: Test
         run: npm test
 
-      # Rules are warn-only for now: warnings are annotated, only errors fail.
+      # Floating/misused promises are errors and fail CI; unused vars are warnings.
       - name: Lint
         run: npm run lint
 

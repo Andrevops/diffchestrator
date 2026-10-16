@@ -66,7 +66,7 @@ The release script auto-detects the bump type from commit subjects and bodies:
 ### Code Style
 
 - TypeScript `strict`. esbuild only strips types, so run `npm run typecheck` (CI does too)
-- `npm run lint`: ESLint with a small high-signal rule set (floating/misused promises, unused vars). The rules are warn-only for now, and only errors fail CI
+- `npm run lint`: ESLint with a small high-signal rule set (floating/misused promises, unused vars). Floating/misused promises are errors and fail CI (mark intentional fire-and-forget with `void`); unused vars are warnings
 - `@types/vscode` is pinned to match `engines.vscode`. Don't use newer VS Code APIs without raising both
 - Use `repoManager.git` (shared singleton) instead of `new GitExecutor()`
 - All commands registered via `CMD` constants in `src/constants.ts`

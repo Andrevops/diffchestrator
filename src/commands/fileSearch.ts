@@ -100,7 +100,7 @@ export function registerFileSearchCommand(
           return;
         }
 
-        debounceTimer = setTimeout(async () => {
+        debounceTimer = setTimeout(() => void (async () => {
           quickPick.busy = true;
           const items: vscode.QuickPickItem[] = [];
 
@@ -134,7 +134,7 @@ export function registerFileSearchCommand(
 
           quickPick.items = items.slice(0, 100);
           quickPick.busy = false;
-        }, 300);
+        })(), 300);
       });
 
       quickPick.onDidAccept(() => {
@@ -230,7 +230,7 @@ export function registerFileSearchCommand(
         return;
       }
 
-      debounceTimer = setTimeout(async () => {
+      debounceTimer = setTimeout(() => void (async () => {
         quickPick.busy = true;
         try {
           // Grep all repos in parallel (batched to 5)
@@ -276,7 +276,7 @@ export function registerFileSearchCommand(
           quickPick.items = [{ label: "$(warning) Search failed", description: "" }];
         }
         quickPick.busy = false;
-      }, 300);
+      })(), 300);
     });
 
     quickPick.onDidAccept(async () => {

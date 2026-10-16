@@ -125,7 +125,6 @@ function validateSkipDirName(raw: string, existing: readonly string[]): string |
   if (name.length > 255) return "Name is too long";
   if (name === "." || name === "..") return "Not a valid directory name";
   if (/[\\/]/.test(name)) return "Enter a directory name, not a path";
-  // eslint-disable-next-line no-control-regex
   if (/[\x00-\x1f\x7f]/.test(name)) return "Name contains control characters";
   if (existing.includes(name)) return `"${name}" is already skipped`;
   return undefined;
@@ -187,7 +186,7 @@ export class DashboardWebviewPanel {
 
     if (DashboardWebviewPanel.currentPanel) {
       DashboardWebviewPanel.currentPanel._panel.reveal(column);
-      DashboardWebviewPanel.currentPanel._update();
+      void DashboardWebviewPanel.currentPanel._update();
       return;
     }
 
@@ -273,7 +272,7 @@ export class DashboardWebviewPanel {
       return;
     }
     if (this._updateThrottleTimer) return; // already scheduled — coalesce
-    this._updateThrottleTimer = setTimeout(async () => {
+    this._updateThrottleTimer = setTimeout(() => void (async () => {
       this._updateThrottleTimer = undefined;
       if (this._disposed) return;
       if (this._updateInProgress) {
@@ -291,7 +290,7 @@ export class DashboardWebviewPanel {
           this._scheduleUpdate();
         }
       }
-    }, 2000);
+    })(), 2000);
   }
 
   private _getWebviewContent(): string {

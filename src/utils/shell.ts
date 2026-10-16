@@ -11,7 +11,6 @@ import * as vscode from "vscode";
 export function stripControlChars(text: string): string {
   return text
     .replace(/[\r\n\t]+/g, " ")
-    // eslint-disable-next-line no-control-regex
     .replace(/[\x00-\x1f\x7f]/g, "");
 }
 
