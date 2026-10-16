@@ -1,6 +1,27 @@
 import * as assert from "node:assert";
 import { test, describe } from "node:test";
-import { isWithin, findOwningRoot } from "./paths.ts";
+import { isWithin, findOwningRoot, uriBelongsToRepo } from "./paths.ts";
+
+describe("uriBelongsToRepo", () => {
+  const file = (p: string) => ({ scheme: "file", fsPath: p, query: "" });
+  const show = (query: string) => ({ scheme: "git-show", fsPath: "/x", query });
+
+  test("file URIs by containment, not prefix", () => {
+    assert.ok(uriBelongsToRepo(file("/r/foo/a.ts"), "/r/foo", "/"));
+    assert.ok(uriBelongsToRepo(file("/r/foo"), "/r/foo", "/"));
+    assert.ok(!uriBelongsToRepo(file("/r/foo-bar/a.ts"), "/r/foo", "/"));
+  });
+
+  test("git-show URIs by repoPath in the query", () => {
+    assert.ok(uriBelongsToRepo(show(JSON.stringify({ repoPath: "/r/foo", path: "a" })), "/r/foo", "/"));
+    assert.ok(!uriBelongsToRepo(show(JSON.stringify({ repoPath: "/r/other" })), "/r/foo", "/"));
+    assert.ok(!uriBelongsToRepo(show("not json"), "/r/foo", "/"));
+  });
+
+  test("other schemes never belong", () => {
+    assert.ok(!uriBelongsToRepo({ scheme: "untitled", fsPath: "/r/foo/a", query: "" }, "/r/foo", "/"));
+  });
+});
 
 describe("isWithin", () => {
   test("self and descendants", () => {
