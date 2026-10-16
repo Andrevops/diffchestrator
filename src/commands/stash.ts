@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
-import { resolveRepoPath } from "../utils/fileItem";
+import { withRepo } from "./withRepo";
 
 export function registerStashCommands(
   context: vscode.ExtensionContext,
@@ -13,16 +13,7 @@ export function registerStashCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.stash,
-      async (item?: any) => {
-        const repoPath =
-          resolveRepoPath(item, repoManager.selectedRepo);
-        if (!repoPath) {
-          vscode.window.showWarningMessage(
-            "Diffchestrator: No repository selected."
-          );
-          return;
-        }
-
+      withRepo(repoManager, async (repoPath) => {
         const repoName = path.basename(repoPath);
 
         const action = await vscode.window.showQuickPick(
@@ -190,7 +181,7 @@ export function registerStashCommands(
             `Diffchestrator: Stash operation failed: ${msg}`
           );
         }
-      }
+      })
     )
   );
 }

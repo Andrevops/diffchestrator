@@ -4,7 +4,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
-import { resolveRepoPath } from "../utils/fileItem";
+import { withRepo } from "./withRepo";
 import {
   repoTerminals,
   key,
@@ -538,12 +538,7 @@ export function registerTerminalCommand(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.openTerminal,
-      (item?: any) => {
-        const targetPath = resolveRepoPath(item, repoManager.selectedRepo);
-        if (!targetPath) {
-          vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-          return;
-        }
+      withRepo(repoManager, async (targetPath) => {
         // If path is not a known repo, track as directory entry
         if (!repoManager.getRepo(targetPath)) {
           repoManager.addDirectoryPath(targetPath);
@@ -552,7 +547,7 @@ export function registerTerminalCommand(
         }
         const terminal = getOrCreateTerminal(targetPath);
         terminal.show();
-      }
+      })
     )
   );
 }

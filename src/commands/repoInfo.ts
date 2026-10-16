@@ -2,8 +2,8 @@ import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
-import { resolveRepoPath } from "../utils/fileItem";
 import { stripCredentials, toBrowsableUrl } from "../utils/remoteUrl";
+import { withRepo } from "./withRepo";
 
 export function registerRepoInfoCommands(
   context: vscode.ExtensionContext,
@@ -11,12 +11,7 @@ export function registerRepoInfoCommands(
 ): void {
   // Copy repo info to clipboard (#33)
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.copyRepoInfo, async (item?: any) => {
-      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
+    vscode.commands.registerCommand(CMD.copyRepoInfo, withRepo(repoManager, async (repoPath) => {
       const repo = repoManager.getRepo(repoPath);
       const items = [
         { label: "$(file-directory) Path", description: repoPath, _value: repoPath },
@@ -33,7 +28,7 @@ export function registerRepoInfoCommands(
         await vscode.env.clipboard.writeText(picked._value);
         vscode.window.showInformationMessage(`Copied: ${picked._value}`);
       }
-    })
+    }))
   );
 
   // Keyboard shortcut cheatsheet (#34)
@@ -82,12 +77,7 @@ export function registerRepoInfoCommands(
 
   // Open remote URL (#37)
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.openRemoteUrl, async (item?: any) => {
-      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
+    vscode.commands.registerCommand(CMD.openRemoteUrl, withRepo(repoManager, async (repoPath) => {
       const repo = repoManager.getRepo(repoPath);
       const remote = repo?.remoteUrl;
       if (!remote) {
@@ -104,18 +94,13 @@ export function registerRepoInfoCommands(
         return;
       }
       await vscode.env.openExternal(vscode.Uri.parse(url, true));
-    })
+    }))
   );
 
   // Reveal in system file explorer
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.revealInExplorer, async (item?: any) => {
-      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
+    vscode.commands.registerCommand(CMD.revealInExplorer, withRepo(repoManager, async (repoPath) => {
       await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(repoPath));
-    })
+    }))
   );
 }

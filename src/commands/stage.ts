@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import { GitExecutor } from "../git/gitExecutor";
 import type { RepoManager } from "../services/repoManager";
+import { withRepo } from "./withRepo";
 import { CMD } from "../constants";
 import { FileStatus, ChangeType } from "../types";
 import type { FileChange } from "../types";
@@ -154,12 +155,7 @@ export function registerStageCommands(
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.stageAll, async () => {
-      const repoPath = repoManager.selectedRepo;
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
+    vscode.commands.registerCommand(CMD.stageAll, withRepo(repoManager, async (repoPath) => {
       try {
         const status = await git.status(repoPath);
         const files = [
@@ -179,16 +175,11 @@ export function registerStageCommands(
         const msg = err instanceof Error ? err.message : String(err);
         vscode.window.showErrorMessage(`Diffchestrator: Failed to stage all: ${msg}`);
       }
-    })
+    }, { selectedOnly: true }))
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.unstageAll, async () => {
-      const repoPath = repoManager.selectedRepo;
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
+    vscode.commands.registerCommand(CMD.unstageAll, withRepo(repoManager, async (repoPath) => {
       try {
         const status = await git.status(repoPath);
         const files = status.staged.map((f) => f.path);
@@ -205,7 +196,7 @@ export function registerStageCommands(
         const msg = err instanceof Error ? err.message : String(err);
         vscode.window.showErrorMessage(`Diffchestrator: Failed to unstage all: ${msg}`);
       }
-    })
+    }, { selectedOnly: true }))
   );
 
   // Stage/unstage the file currently open in the editor (editor title bar buttons)

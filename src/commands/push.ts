@@ -2,8 +2,8 @@ import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
-import { resolveRepoPath } from "../utils/fileItem";
 import { formatRepoList, pluralRepos } from "../utils/repoList";
+import { withRepo } from "./withRepo";
 
 export function registerPushCommands(
   context: vscode.ExtensionContext,
@@ -15,15 +15,7 @@ export function registerPushCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.push,
-      async (item?: any) => {
-        const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-        if (!repoPath) {
-          vscode.window.showWarningMessage(
-            "Diffchestrator: No repository selected."
-          );
-          return;
-        }
-
+      withRepo(repoManager, async (repoPath) => {
         const repoName = path.basename(repoPath);
 
         try {
@@ -64,20 +56,14 @@ export function registerPushCommands(
             );
           }
         }
-      }
+      })
     )
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.forcePush,
-      async (item?: any) => {
-        const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-        if (!repoPath) {
-          vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-          return;
-        }
-
+      withRepo(repoManager, async (repoPath) => {
         const repoName = path.basename(repoPath);
         // Always modal — also reached from the push-rejected toast
         const confirm = await vscode.window.showWarningMessage(
@@ -110,7 +96,7 @@ export function registerPushCommands(
           const msg = err instanceof Error ? err.message : String(err);
           vscode.window.showErrorMessage(`Diffchestrator: Force push failed for ${repoName}: ${msg}`);
         }
-      }
+      })
     )
   );
 

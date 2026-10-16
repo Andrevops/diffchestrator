@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
+import { withRepo } from "./withRepo";
 import { CMD } from "../constants";
 import { ChangeType } from "../types";
 import { resolveFileItem, resolveFileStatus } from "../utils/fileItem";
@@ -80,15 +81,7 @@ export function registerDiscardCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.discardAll,
-      async () => {
-        const repoPath = repoManager.selectedRepo;
-        if (!repoPath) {
-          vscode.window.showWarningMessage(
-            "Diffchestrator: No repository selected."
-          );
-          return;
-        }
-
+      withRepo(repoManager, async (repoPath) => {
         const repoName = path.basename(repoPath);
         const confirm = await vscode.window.showWarningMessage(
           `Discard ALL changes in "${repoName}"? This will revert modified files and remove untracked files. This cannot be undone.`,
@@ -113,7 +106,7 @@ export function registerDiscardCommands(
             `Diffchestrator: Failed to discard all: ${msg}`
           );
         }
-      }
+      }, { selectedOnly: true })
     )
   );
 }

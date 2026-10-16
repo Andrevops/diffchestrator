@@ -2,8 +2,8 @@ import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
-import { resolveRepoPath } from "../utils/fileItem";
 import { formatRepoList, pluralRepos } from "../utils/repoList";
+import { withRepo } from "./withRepo";
 
 export function registerCommitCommands(
   context: vscode.ExtensionContext,
@@ -29,15 +29,7 @@ export function registerCommitCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.commit,
-      async (item?: any) => {
-        const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-        if (!repoPath) {
-          vscode.window.showWarningMessage(
-            "Diffchestrator: No repository selected."
-          );
-          return;
-        }
-
+      withRepo(repoManager, async (repoPath) => {
         const repoName = path.basename(repoPath);
 
         // Conventional commit prefix picker
@@ -99,7 +91,7 @@ export function registerCommitCommands(
             `Diffchestrator: Commit failed for ${repoName}: ${msg}`
           );
         }
-      }
+      })
     )
   );
 
@@ -186,12 +178,7 @@ export function registerCommitCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.amendCommit,
-      async (item?: any) => {
-        const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-        if (!repoPath) {
-          vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-          return;
-        }
+      withRepo(repoManager, async (repoPath) => {
         const repoName = path.basename(repoPath);
 
         try {
@@ -223,18 +210,13 @@ export function registerCommitCommands(
           const msg = err instanceof Error ? err.message : String(err);
           vscode.window.showErrorMessage(`Diffchestrator: Amend failed for ${repoName}: ${msg}`);
         }
-      }
+      })
     )
   );
 
   // Undo last commit (#41)
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.undoCommit, async (item?: any) => {
-      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
+    vscode.commands.registerCommand(CMD.undoCommit, withRepo(repoManager, async (repoPath) => {
       const repoName = path.basename(repoPath);
       try {
         const commits = await git.log(repoPath, 1);
@@ -262,6 +244,6 @@ export function registerCommitCommands(
         const msg = err instanceof Error ? err.message : String(err);
         vscode.window.showErrorMessage(`Diffchestrator: Undo failed: ${msg}`);
       }
-    })
+    }))
   );
 }

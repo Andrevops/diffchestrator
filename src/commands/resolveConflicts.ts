@@ -3,7 +3,7 @@ import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 import { ChangeType } from "../types";
-import { resolveRepoPath } from "../utils/fileItem";
+import { withRepo } from "./withRepo";
 
 /**
  * Open the next conflicted file in the given repo (or the selected repo if no
@@ -18,13 +18,7 @@ export function registerResolveConflictsCommand(
   repoManager: RepoManager
 ): void {
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.resolveConflicts, async (item?: unknown) => {
-      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
-
+    vscode.commands.registerCommand(CMD.resolveConflicts, withRepo(repoManager, async (repoPath) => {
       let status;
       try {
         status = await repoManager.git.status(repoPath);
@@ -61,6 +55,6 @@ export function registerResolveConflictsCommand(
         { placeHolder: `${conflicts.length} conflicted files — pick one to open` }
       );
       if (picked) await openFile(picked._path);
-    })
+    }))
   );
 }

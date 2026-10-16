@@ -6,7 +6,7 @@ import { CMD, CONFIG } from "../constants";
 import { terminalIcon, validateCli } from "./terminal";
 import { markDedicatedTerminal } from "./terminalLogic";
 import { escapeForTerminal } from "../utils/shell";
-import { resolveRepoPath } from "../utils/fileItem";
+import { withRepo } from "./withRepo";
 
 const AI_COMMIT_PROMPT =
   "Review the current git changes and create an appropriate commit. " +
@@ -71,16 +71,7 @@ export function registerAiCommitCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.aiCommit,
-      async (item?: any) => {
-        const repoPath =
-          resolveRepoPath(item, repoManager.selectedRepo);
-        if (!repoPath) {
-          vscode.window.showWarningMessage(
-            "Diffchestrator: No repository selected for AI commit."
-          );
-          return;
-        }
-
+      withRepo(repoManager, async (repoPath) => {
         if (!(await validateCli("claude"))) return;
 
         const permissionMode = resolvePermissionMode(
@@ -161,7 +152,7 @@ export function registerAiCommitCommands(
         } else {
           terminal.sendText(cmd);
         }
-      }
+      }, { message: "Diffchestrator: No repository selected for AI commit." })
     )
   );
 }
