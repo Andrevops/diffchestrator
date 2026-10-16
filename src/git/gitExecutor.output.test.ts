@@ -291,6 +291,34 @@ describe("GitExecutor parsers on real git output", { skip: isWin }, () => {
     }
   });
 
+  test("stashCount tracks terminal stash push/drop without waiting for a TTL, and caches when unchanged", async () => {
+    const ex = new GitExecutor();
+    let spawns = 0;
+    const realRun = (ex as any)._run.bind(ex);
+    (ex as any)._run = async (args: string[], cwd: string, o?: unknown) => {
+      if (args[0] === "stash") spawns++;
+      return realRun(args, cwd, o);
+    };
+    assert.strictEqual(await ex.stashCount(repo.dir), 0);
+    assert.strictEqual(spawns, 0, "no stash reflog → 0 without spawning");
+    repo.write("café.txt", "hello\nstashed\n");
+    repo.git("stash", "push", "-q");
+    assert.strictEqual(await ex.stashCount(repo.dir), 1, "terminal stash push is seen immediately");
+    assert.strictEqual(await ex.stashCount(repo.dir), 1);
+    assert.strictEqual(spawns, 1, "unchanged reflog → cached");
+    repo.git("stash", "drop", "-q");
+    assert.strictEqual(await ex.stashCount(repo.dir), 0, "terminal stash drop is seen immediately");
+  });
+
+  test("firstParent returns the parent oid, undefined for a root commit", async () => {
+    const head = repo.git("rev-parse", "HEAD").trim();
+    const parent = repo.git("rev-parse", "HEAD^").trim();
+    assert.strictEqual(await executor.firstParent(repo.dir, head), parent);
+    const root = repo.git("rev-list", "--max-parents=0", "HEAD").trim();
+    assert.strictEqual(await executor.firstParent(repo.dir, root), undefined);
+    assert.strictEqual(await executor.firstParent(repo.dir, "--output=x"), undefined);
+  });
+
   test("stage throws when git fails (index.lock held)", async () => {
     const lock = path.join(repo.dir, ".git", "index.lock");
     fs.writeFileSync(lock, "");

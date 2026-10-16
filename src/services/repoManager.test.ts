@@ -208,6 +208,139 @@ describe("RepoManager", () => {
     });
   });
 
+  describe("refreshRepo", () => {
+    const H1 = "1".repeat(40);
+    const H2 = "2".repeat(40);
+    const H3 = "3".repeat(40);
+
+    type Short = Awaited<ReturnType<RepoManager["git"]["shortStatus"]>>;
+    const short = (o: Partial<Short> = {}): Short => ({
+      staged: 0, unstaged: 0, untracked: 0, branch: "main", ahead: 0, behind: 0,
+      headOid: H1, upstream: undefined, mergeState: undefined, ...o,
+    });
+
+    function setup(initial: Partial<RepoSummary> = {}) {
+      const rm = new RepoManager(makeState());
+      const repo: RepoSummary = {
+        path: "/r/a", name: "a", branch: "main", stagedCount: 0, unstagedCount: 0,
+        untrackedCount: 0, totalChanges: 0, ahead: 0, behind: 0, headOid: H1, stashCount: 0,
+        ...initial,
+      };
+      (rm as any)._repos.set(repo.path, repo);
+      let next = short();
+      let stashes = 0;
+      const parents = new Map<string, string>();
+      const suppressed: string[] = [];
+      const git = rm.git as any;
+      git.shortStatus = async () => next;
+      git.stashCount = async () => stashes;
+      git.firstParent = async (_p: string, oid: string) => parents.get(oid);
+      rm.fileWatcher = { suppressRefresh: (p: string) => { suppressed.push(p); } };
+      const commits: string[] = [];
+      rm.onDidDetectCommit(({ repoPath }) => commits.push(repoPath));
+      return {
+        rm, repo, commits, suppressed, parents,
+        setStatus: (o: Partial<Short>) => { next = short(o); },
+        setStashes: (n: number) => { stashes = n; },
+      };
+    }
+
+    test("updates mergeState and stashCount (and detects them as changes)", async () => {
+      const t = setup();
+      try {
+        t.setStatus({ mergeState: "merging" });
+        t.setStashes(2);
+        await t.rm.refreshRepo("/r/a");
+        assert.strictEqual(t.repo.mergeState, "merging");
+        assert.strictEqual(t.repo.stashCount, 2);
+        // stash-only change must still be applied
+        t.setStatus({ mergeState: "merging" });
+        t.setStashes(0);
+        await t.rm.refreshRepo("/r/a");
+        assert.strictEqual(t.repo.stashCount, 0);
+        // merge resolved
+        t.setStatus({});
+        await t.rm.refreshRepo("/r/a");
+        assert.strictEqual(t.repo.mergeState, undefined);
+      } finally {
+        t.rm.dispose();
+      }
+    });
+
+    test("local commit (parent == old HEAD, ahead grows) fires onDidDetectCommit", async () => {
+      const t = setup();
+      try {
+        t.parents.set(H2, H1);
+        t.setStatus({ headOid: H2, upstream: "origin/main", ahead: 1 });
+        await t.rm.refreshRepo("/r/a");
+        assert.deepStrictEqual(t.commits, ["/r/a"]);
+      } finally {
+        t.rm.dispose();
+      }
+    });
+
+    test("commit on a branch without upstream fires", async () => {
+      const t = setup();
+      try {
+        t.parents.set(H2, H1);
+        t.setStatus({ headOid: H2 });
+        await t.rm.refreshRepo("/r/a");
+        assert.deepStrictEqual(t.commits, ["/r/a"]);
+      } finally {
+        t.rm.dispose();
+      }
+    });
+
+    test("checkout of another branch does not fire", async () => {
+      const t = setup();
+      try {
+        t.parents.set(H2, H1);
+        t.setStatus({ headOid: H2, branch: "feature" });
+        await t.rm.refreshRepo("/r/a");
+        assert.deepStrictEqual(t.commits, []);
+        assert.strictEqual(t.repo.branch, "feature");
+      } finally {
+        t.rm.dispose();
+      }
+    });
+
+    test("fast-forward pull (ahead unchanged with upstream) does not fire", async () => {
+      const t = setup({ behind: 1 });
+      try {
+        t.parents.set(H2, H1); // pulled commit sits right on top of old HEAD
+        t.setStatus({ headOid: H2, upstream: "origin/main", ahead: 0, behind: 0 });
+        await t.rm.refreshRepo("/r/a");
+        assert.deepStrictEqual(t.commits, []);
+      } finally {
+        t.rm.dispose();
+      }
+    });
+
+    test("reset/amend to a commit whose parent isn't the old HEAD does not fire", async () => {
+      const t = setup();
+      try {
+        t.parents.set(H3, H2); // amend: new commit's parent is old HEAD's parent
+        t.setStatus({ headOid: H3 });
+        await t.rm.refreshRepo("/r/a");
+        assert.deepStrictEqual(t.commits, []);
+      } finally {
+        t.rm.dispose();
+      }
+    });
+
+    test("explicit refresh suppresses the watcher; watcher-triggered refresh does not", async () => {
+      const t = setup();
+      try {
+        await t.rm.refreshRepo("/r/a");
+        assert.deepStrictEqual(t.suppressed, ["/r/a"]);
+        await t.rm.refreshRepo("/r/a", { fromWatcher: true });
+        assert.deepStrictEqual(t.suppressed, ["/r/a"], "watcher refresh must not re-suppress");
+      } finally {
+        t.rm.dispose();
+      }
+    });
+  });
+
   describe("dispose", () => {
     test("dispose does not throw on fresh instance", () => {
       const rm = new RepoManager(makeState());

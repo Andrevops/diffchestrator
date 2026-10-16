@@ -1042,10 +1042,29 @@ export class GitExecutor {
     };
   }
 
+  /**
+   * Number of stash entries. Cached in the meta cache, keyed additionally by
+   * a stat signature of the stash reflog (logs/refs/stash in the common git
+   * dir): while the signature is unchanged the cached count is reused with no
+   * TTL, and any stash push/pop/drop — including from a terminal — changes it
+   * and forces a recount. Cheap enough to call on every refresh. Falls back
+   * to the plain 30s TTL when the git dir can't be resolved.
+   */
   async stashCount(repoPath: string): Promise<number> {
     const cacheKey = `${repoPath}:stashCount`;
-    const cached = this._getCachedMeta<number>(cacheKey);
-    if (cached !== undefined) return cached;
+    const sig = await this._stashSignature(repoPath);
+    if (sig === "none") {
+      // No stash reflog → `git stash list` would print nothing
+      this._setCachedMeta(cacheKey, { count: 0, sig });
+      return 0;
+    }
+    if (sig !== undefined) {
+      const raw = this._metaCache.get(cacheKey)?.value as { count: number; sig?: string } | undefined;
+      if (raw && raw.sig === sig) return raw.count;
+    } else {
+      const cached = this._getCachedMeta<{ count: number; sig?: string }>(cacheKey);
+      if (cached !== undefined) return cached.count;
+    }
     const result = await this._run(["stash", "list"], repoPath);
     // Zero stashes is the common case — cache it too, otherwise every scan
     // re-spawns `git stash list` for every clean repo.
@@ -1053,8 +1072,27 @@ export class GitExecutor {
       result.code !== 0 || !result.stdout.trim()
         ? 0
         : result.stdout.trim().split("\n").length;
-    this._setCachedMeta(cacheKey, count);
+    this._setCachedMeta(cacheKey, { count, sig });
     return count;
+  }
+
+  /** "ino:size:mtime" of the stash reflog, "none" if absent, undefined if the git dir is unknown. */
+  private async _stashSignature(repoPath: string): Promise<string | undefined> {
+    const dirs = await this.resolveGitDirs(repoPath);
+    if (!dirs) return undefined;
+    try {
+      const st = await fs.promises.stat(path.join(dirs.commonDir, "logs", "refs", "stash"));
+      return `${st.ino}:${st.size}:${st.mtimeMs}`;
+    } catch (err) {
+      return (err as NodeJS.ErrnoException).code === "ENOENT" ? "none" : undefined;
+    }
+  }
+
+  /** First parent of a commit, or undefined for a root commit / unknown oid. */
+  async firstParent(repoPath: string, oid: string): Promise<string | undefined> {
+    if (!/^[0-9a-f]{7,64}$/i.test(oid)) return undefined;
+    const result = await this._run(["rev-parse", "--verify", "--quiet", `${oid}^1`], repoPath);
+    return result.code === 0 ? result.stdout.trim() || undefined : undefined;
   }
 
   async branches(repoPath: string): Promise<{ name: string; current: boolean }[]> {
