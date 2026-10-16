@@ -281,7 +281,7 @@ export class GitExecutor {
       else if (typeof e.code !== "number") failure = "spawn";
       return {
         stdout: e.stdout ?? "",
-        stderr: e.stderr || String(err),
+        stderr: e.stderr ?? String(err),
         // Never map a kill/overflow (code null or a string) onto a real git
         // exit code — callers treat exit 1 as "no matches"/"nothing to do".
         code: typeof e.code === "number" ? e.code : -1,
@@ -418,7 +418,7 @@ export class GitExecutor {
       // Only clear our own entry — a newer-epoch run may have replaced it.
       if (this._statusInflight.get(repoPath) === entry) this._statusInflight.delete(repoPath);
     };
-    promise.then(clear, clear);
+    void promise.then(clear, clear);
     return promise;
   }
 
@@ -453,7 +453,8 @@ export class GitExecutor {
     if (cached) return cached;
     const promise = GitExecutor._readGitDirs(repoPath);
     this._gitDirs.set(repoPath, promise);
-    promise.then((r) => {
+    // _readGitDirs never rejects (it maps every failure to undefined)
+    void promise.then((r) => {
       if (!r && this._gitDirs.get(repoPath) === promise) this._gitDirs.delete(repoPath);
     });
     return promise;
