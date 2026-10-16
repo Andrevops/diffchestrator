@@ -126,6 +126,7 @@ export type DashboardMessage =
   | { type: "unpinRepo"; repoPath: string }
   | { type: "exportActivity"; format: "clipboard" | "file"; entries: { repoName: string; shortHash: string; author: string; date: string; message: string }[] }
   | { type: "getSettings" }
+  | { type: "getShortcuts" }
   | { type: "updateSetting"; key: string; value: unknown }
   | { type: "addScanRootFromSettings" }
   | { type: "addSkipDirFromSettings" };

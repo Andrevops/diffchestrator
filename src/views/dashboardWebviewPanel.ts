@@ -1,7 +1,9 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { RepoManager } from "../services/repoManager";
+import { readFileSync } from "fs";
 import { getNonce } from "./nonce";
+import { buildShortcuts } from "./shortcuts";
 import type { CommitEntry, DashboardMessage } from "../types";
 import { CMD, BATCH_LARGE } from "../constants";
 import { showTerminalIfExists, terminalIcon } from "../commands/terminal";
@@ -482,6 +484,22 @@ export class DashboardWebviewPanel {
     });
   }
 
+  /**
+   * This extension's package.json. Looked up by extensionUri rather than a
+   * hardcoded id because the publisher differs between the Marketplace
+   * (andrevops-com) and Open VSX (andrevops) builds.
+   */
+  private _ownPackageJSON(): unknown {
+    const uri = this._extensionUri.toString();
+    const ext = vscode.extensions.all.find((e) => e.extensionUri.toString() === uri);
+    if (ext) return ext.packageJSON;
+    try {
+      return JSON.parse(readFileSync(path.join(this._extensionUri.fsPath, "package.json"), "utf8"));
+    } catch {
+      return undefined;
+    }
+  }
+
   private _isKnownRepo(repoPath: string): boolean {
     return !!this._repoManager.getRepo(repoPath);
   }
@@ -797,6 +815,14 @@ export class DashboardWebviewPanel {
 
       case "getSettings": {
         this._postSettings();
+        break;
+      }
+
+      case "getShortcuts": {
+        this._panel.webview.postMessage({
+          type: "shortcutsData",
+          shortcuts: buildShortcuts(this._ownPackageJSON(), process.platform),
+        });
         break;
       }
 
