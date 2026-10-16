@@ -2,10 +2,7 @@
   "compilerOptions": {
     "module": "Node16",
     "target": "ES2022",
-    "outDir": "dist",
     "lib": ["ES2022"],
-    "sourceMap": true,
-    "rootDir": "src",
     "strict": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
@@ -13,5 +10,6 @@
     "skipLibCheck": true,
     "moduleResolution": "Node16"
   },
-  "exclude": ["node_modules", "dist", "webview-ui", "benchmark.ts"]
+  "include": ["src"],
+  "exclude": ["node_modules", "dist", "webview-ui"]
 }
