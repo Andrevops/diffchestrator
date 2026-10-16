@@ -15,12 +15,32 @@ export function registerRepoTerminal(repoPath: string, kind: TerminalKind, termi
   repoTerminals.set(key(repoPath, kind), terminal);
 }
 
+/**
+ * Terminals the extension created for a dedicated purpose (AI commit,
+ * multi-repo sessions). They are never adopted into a repo's kind slots, so
+ * nothing else ever sends text into them. Value: the repo path they belong
+ * to (undefined for multi-repo terminals).
+ */
+export const dedicatedTerminals = new Map<Terminal, string | undefined>();
+
+export function markDedicatedTerminal(terminal: Terminal, repoPath: string | undefined): void {
+  dedicatedTerminals.set(terminal, repoPath);
+}
+
 /** Repo path a terminal is tracked under (exact object identity), if any. */
 export function trackedRepoForTerminal(terminal: Terminal): string | undefined {
   for (const [k, t] of repoTerminals) {
     if (t === terminal) return k.slice(0, k.lastIndexOf("::"));
   }
-  return undefined;
+  return dedicatedTerminals.get(terminal);
+}
+
+/** Drop every tracking entry for a closed terminal. */
+export function forgetTerminal(terminal: Terminal): void {
+  for (const [k, t] of repoTerminals) {
+    if (t === terminal) repoTerminals.delete(k);
+  }
+  dedicatedTerminals.delete(terminal);
 }
 
 export function escapeRegex(s: string): string {
@@ -99,6 +119,8 @@ export function findRepoForTerminal(
 ): string | undefined {
   const tracked = trackedRepoForTerminal(terminal);
   if (tracked !== undefined) return tracked;
+  // Dedicated multi-repo terminals belong to no single repo — never adopt
+  if (dedicatedTerminals.has(terminal)) return undefined;
 
   const name = terminal.name;
   for (const rp of allRepoPaths) {
