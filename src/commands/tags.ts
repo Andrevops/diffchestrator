@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
-import { CMD } from "../constants";
+import { CMD, CONFIG } from "../constants";
 import { withRepo } from "./withRepo";
 
 export function registerTagCommands(
@@ -11,8 +11,8 @@ export function registerTagCommands(
   // Repo tags (#38)
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.setRepoTag, withRepo(repoManager, async (repoPath) => {
-      const config = vscode.workspace.getConfiguration("diffchestrator");
-      const tags: Record<string, string[]> = config.get("repoTags", {});
+      const config = vscode.workspace.getConfiguration();
+      const tags: Record<string, string[]> = config.get(CONFIG.repoTags, {});
       const currentTags = Object.entries(tags)
         .filter(([, repos]) => repos.includes(repoPath))
         .map(([tag]) => tag);
@@ -36,12 +36,12 @@ export function registerTagCommands(
           tags[tag].push(repoPath);
         }
       }
-      await config.update("repoTags", tags, vscode.ConfigurationTarget.Global);
+      await config.update(CONFIG.repoTags, tags, vscode.ConfigurationTarget.Global);
       vscode.window.showInformationMessage(`Diffchestrator: Tags updated for ${path.basename(repoPath)}`);
     })),
     vscode.commands.registerCommand(CMD.filterByTag, async () => {
-      const config = vscode.workspace.getConfiguration("diffchestrator");
-      const tags: Record<string, string[]> = config.get("repoTags", {});
+      const config = vscode.workspace.getConfiguration();
+      const tags: Record<string, string[]> = config.get(CONFIG.repoTags, {});
       const tagNames = Object.keys(tags);
       if (tagNames.length === 0) {
         vscode.window.showInformationMessage("Diffchestrator: No tags defined. Right-click a repo to add tags.");

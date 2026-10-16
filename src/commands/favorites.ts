@@ -1,11 +1,11 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
-import { CMD, CTX } from "../constants";
+import { CMD, CTX, CONFIG } from "../constants";
 
 async function toggleFavorite(itemPath: string): Promise<void> {
-  const config = vscode.workspace.getConfiguration("diffchestrator");
-  const favorites = [...config.get<string[]>("favorites", [])];
+  const config = vscode.workspace.getConfiguration();
+  const favorites = [...config.get<string[]>(CONFIG.favorites, [])];
   const idx = favorites.indexOf(itemPath);
   const name = path.basename(itemPath);
 

@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
-import { CMD } from "../constants";
+import { CMD, CONFIG } from "../constants";
 import { formatRepoList, pluralRepos } from "../utils/repoList";
 import { withRepo } from "./withRepo";
 
@@ -72,8 +72,8 @@ export function registerCommitCommands(
           channel.appendLine(output);
 
           // Auto-push if enabled
-          const config = vscode.workspace.getConfiguration("diffchestrator");
-          if (config.get<boolean>("autoPushAfterCommit", false)) {
+          const config = vscode.workspace.getConfiguration();
+          if (config.get<boolean>(CONFIG.autoPushAfterCommit, false)) {
             try {
               await git.push(repoPath);
               await repoManager.refreshRepo(repoPath);

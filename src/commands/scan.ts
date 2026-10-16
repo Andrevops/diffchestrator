@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import type { RepoManager } from "../services/repoManager";
-import { CMD } from "../constants";
+import { CMD, CONFIG } from "../constants";
 
 export function registerScanCommands(
   context: vscode.ExtensionContext,
@@ -8,8 +8,8 @@ export function registerScanCommands(
 ): void {
   context.subscriptions.push(
     vscode.commands.registerCommand(CMD.scan, async () => {
-      const config = vscode.workspace.getConfiguration("diffchestrator");
-      const configuredRoots = config.get<string[]>("scanRoots", []);
+      const config = vscode.workspace.getConfiguration();
+      const configuredRoots = config.get<string[]>(CONFIG.scanRoots, []);
 
       let rootPath: string | undefined;
 
