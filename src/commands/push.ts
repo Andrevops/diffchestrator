@@ -79,9 +79,14 @@ export function registerPushCommands(
         }
 
         const repoName = path.basename(repoPath);
+        // Always modal — also reached from the push-rejected toast
         const confirm = await vscode.window.showWarningMessage(
-          `Force push ${repoName}? This uses --force-with-lease (safe against overwriting others' work).`,
-          { modal: true },
+          `Force push ${repoName}?`,
+          {
+            modal: true,
+            detail:
+              "Uses --force-with-lease: it refuses if the remote moved since your last fetch, but if you have fetched the remote's new commits, they WILL be overwritten. Prefer Pull when the remote has work you don't have.",
+          },
           "Force Push"
         );
         if (confirm !== "Force Push") return;

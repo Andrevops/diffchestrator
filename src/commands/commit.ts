@@ -12,6 +12,20 @@ export function registerCommitCommands(
 ): void {
   const git = repoManager.git;
 
+  /**
+   * Upstream name if HEAD is already reachable from it (upstream set and
+   * nothing ahead) — rewriting HEAD would then rewrite published history.
+   */
+  const pushedUpstream = async (repoPath: string): Promise<string | undefined> => {
+    try {
+      git.invalidateStatus(repoPath);
+      const s = await git.status(repoPath);
+      return s.upstream && s.ahead === 0 ? s.upstream : undefined;
+    } catch {
+      return undefined; // can't tell — fall back to the normal confirm
+    }
+  };
+
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.commit,
@@ -181,6 +195,19 @@ export function registerCommitCommands(
         const repoName = path.basename(repoPath);
 
         try {
+          const upstream = await pushedUpstream(repoPath);
+          if (upstream) {
+            const proceed = await vscode.window.showWarningMessage(
+              `The last commit in ${repoName} is already pushed to ${upstream}.`,
+              {
+                modal: true,
+                detail:
+                  "Amending rewrites published history: you will have to force-push, and anyone who pulled the original commit will diverge.",
+              },
+              "Amend Anyway"
+            );
+            if (proceed !== "Amend Anyway") return;
+          }
           const lastMessage = await git.lastCommitMessage(repoPath);
           const message = await vscode.window.showInputBox({
             prompt: `Amend last commit in ${repoName}`,
@@ -212,12 +239,22 @@ export function registerCommitCommands(
       try {
         const commits = await git.log(repoPath, 1);
         const lastMsg = commits.length > 0 ? commits[0].message : "last commit";
+        const upstream = await pushedUpstream(repoPath);
+        const confirmLabel = upstream ? "Undo Anyway" : "Undo";
         const confirm = await vscode.window.showWarningMessage(
-          `Undo "${lastMsg}" in ${repoName}? Changes will be kept as staged.`,
-          { modal: true },
-          "Undo"
+          upstream
+            ? `"${lastMsg}" in ${repoName} is already pushed to ${upstream}. Undo it anyway?`
+            : `Undo "${lastMsg}" in ${repoName}? Changes will be kept as staged.`,
+          upstream
+            ? {
+                modal: true,
+                detail:
+                  "Undoing a pushed commit rewrites published history: the next push will need a force-push, and anyone who pulled it will diverge. Changes will be kept as staged.",
+              }
+            : { modal: true },
+          confirmLabel
         );
-        if (confirm !== "Undo") return;
+        if (confirm !== confirmLabel) return;
         await git.resetSoft(repoPath);
         await repoManager.refreshRepo(repoPath);
         vscode.window.showInformationMessage(`Diffchestrator: Undid last commit in ${repoName}. Changes are staged.`);
