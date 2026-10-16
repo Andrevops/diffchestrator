@@ -35,8 +35,10 @@ import { FileWatcher } from "./services/fileWatcher";
 import { InlineBlameService } from "./services/inlineBlame";
 import { WorkspaceAutoScan } from "./services/workspaceAutoScan";
 // GitExecutor accessed via repoManager.git (shared instance)
-import { showTerminalIfExists, findRepoForTerminal, cycleTerminal, closeRepoTerminal, navigateTerminal, adoptExistingTerminals, getRepoTerminal } from "./commands/terminal";
+import { showTerminalIfExists, findRepoForTerminal, cycleTerminal, closeRepoTerminal, navigateTerminal, adoptExistingTerminals, getRepoTerminal, trackedRepoForTerminal } from "./commands/terminal";
 import type { TerminalKind } from "./commands/terminal";
+import { repoNameFromTerminalName } from "./commands/terminalLogic";
+import { findOwningRoot } from "./utils/paths";
 import { extractTabUri } from "./types";
 import { resolveRepoPath } from "./utils/fileItem";
 import * as path from "path";
@@ -127,6 +129,27 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
   // re-reads the queue after each await, so the user's LAST click always wins.
   let suppressTerminalSwitch = false;
   let queuedTerminal: vscode.Terminal | undefined;
+
+  /**
+   * Locate the repo (in a configured root other than the current one) that a
+   * terminal belongs to. Trusts only the tracking map (exact repo path) or an
+   * exact terminal name (bare repo name / legacy prefix) whose lookup result
+   * has that exact basename.
+   */
+  const findTerminalInOtherRoots = async (
+    terminal: vscode.Terminal
+  ): Promise<{ root: string; path: string } | undefined> => {
+    const tracked = trackedRepoForTerminal(terminal);
+    if (tracked) {
+      const roots = vscode.workspace.getConfiguration().get<string[]>(CONFIG.scanRoots, []);
+      const root = findOwningRoot(tracked, roots);
+      return root && root !== repoManager.currentRoot ? { root, path: tracked } : undefined;
+    }
+    const candidate = repoNameFromTerminalName(terminal.name);
+    if (!candidate) return undefined;
+    const match = await repoManager.findRepoInOtherRoots(candidate);
+    return match && path.basename(match.path) === candidate ? match : undefined;
+  };
   let clickWorkerRunning = false;
 
   const runClickWorker = async () => {
@@ -159,8 +182,11 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
           continue;
         }
 
-        // No valid match in current root — search other configured roots
-        const match = await repoManager.findRepoInOtherRoots(terminal.name);
+        // No valid match in current root — search other configured roots,
+        // but only for terminals we track or that are named exactly after a
+        // repo. A substring match on an arbitrary terminal would trigger a
+        // full root rescan and close the user's editors.
+        const match = await findTerminalInOtherRoots(terminal);
         if (match) {
           suppressTerminalSwitch = true;
           try {
@@ -904,9 +930,7 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
             } else {
               // Try to find in other roots and switch
               const terminal = vscode.window.activeTerminal;
-              const match = terminal
-                ? await repoManager.findRepoInOtherRoots(terminal.name)
-                : undefined;
+              const match = terminal ? await findTerminalInOtherRoots(terminal) : undefined;
               if (match) {
                 await vscode.commands.executeCommand(CMD.switchRoot, match.root);
                 repoManager.selectRepo(match.path);

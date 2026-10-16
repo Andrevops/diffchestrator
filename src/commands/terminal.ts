@@ -6,8 +6,15 @@ import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 import { escapeForTerminal } from "../utils/shell";
 import { resolveRepoPath } from "../utils/fileItem";
-import { repoTerminals, key, findRepoForTerminal as findRepoForTerminalLogic } from "./terminalLogic";
-export { repoTerminals };
+import {
+  repoTerminals,
+  key,
+  findRepoForTerminal as findRepoForTerminalLogic,
+  legacyNamePatterns,
+  matchTerminalName,
+  trackedRepoForTerminal,
+} from "./terminalLogic";
+export { repoTerminals, trackedRepoForTerminal };
 
 const execFileAsync = promisify(execFile);
 
@@ -140,16 +147,13 @@ export function adoptExistingTerminals(allRepoPaths: string[]): void {
 
     const name = terminal.name;
 
-    // Match repo by basename in terminal name
+    // Match repo by exact terminal name (bare repo name or legacy prefix) —
+    // never by substring, which would adopt unrelated user terminals.
     for (const rp of sorted) {
-      const repoName = path.basename(rp);
-      if (name === repoName || name.includes(repoName)) {
-        // Infer kind from icon, fall back to name-based inference, then "shell"
-        const kind = inferKindFromIcon(terminal)
-          ?? (/claude/i.test(name) ? "claude" :
-              /yolonew/i.test(name) ? "yolonew" :
-              /yolo/i.test(name) ? "yolo" :
-              /^DC:/i.test(name) ? "shell" : "shell");
+      const match = matchTerminalName(name, path.basename(rp));
+      if (match) {
+        // Legacy prefix decides the kind; bare names use the icon, then "shell"
+        const kind: TerminalKind = match !== "bare" ? match : inferKindFromIcon(terminal) ?? "shell";
 
         // Only adopt if this repo+kind slot is empty
         if (!repoTerminals.has(key(rp, kind))) {
@@ -173,44 +177,12 @@ vscode.window.onDidCloseTerminal((t) => {
 
 /**
  * Name patterns used to detect untracked terminals by scanning
- * vscode.window.terminals. Claude Code renames its terminal to
- * "Claude: <repo>", so we match on that too.
+ * vscode.window.terminals. Only legacy prefixed names are matched here —
+ * icon-only terminals (bare repo name) are handled by fallback 2 below.
+ * Claude Code renames its terminal to "Claude: <repo>", so that's included.
  */
-const NAME_PATTERNS: Record<TerminalKind, RegExp[]> = {
-  claude: [], // built dynamically from repo name
-  claudenew: [],
-  yolo: [],
-  yolonew: [],
-  shell: [],
-};
-
 function buildPatterns(repoPath: string, kind: TerminalKind): RegExp[] {
-  const name = escapeRegex(path.basename(repoPath));
-  // Only match legacy prefixed names — icon-only terminals (bare repo name)
-  // are tracked exclusively via the repoTerminals map to avoid cross-type collisions
-  switch (kind) {
-    case "claude":
-      return [
-        new RegExp(`^Claude:\\s*${name}$`, "i"),
-        new RegExp(`^Claude Code[^]*${name}$`, "i"),
-      ];
-    case "claudenew":
-      return [];
-    case "yolo":
-      return [
-        new RegExp(`^YOLO:\\s*${name}$`, "i"),
-      ];
-    case "yolonew":
-      return [
-        new RegExp(`^YOLONEW:\\s*${name}$`, "i"),
-      ];
-    case "shell":
-      return [new RegExp(`^DC:\\s*${name}$`, "i")];
-  }
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return legacyNamePatterns(path.basename(repoPath), kind);
 }
 
 function getAlive(repoPath: string, kind: TerminalKind): vscode.Terminal | undefined {
@@ -262,9 +234,8 @@ function getAlive(repoPath: string, kind: TerminalKind): vscode.Terminal | undef
  *
  * Matching strategy:
  * 1. Check the tracking map (exact match by terminal object)
- * 2. Check if the terminal name contains any scanned repo's basename
- *    (handles any naming: "Claude: repo", "YOLO: repo", "node repo", etc.)
- *    Longest basename match wins to avoid "foo" matching "foo-bar"
+ * 2. Exact name match: the bare repo basename, or a legacy prefixed name
+ *    ("Claude: repo", "YOLO: repo", "DC: repo"). Substrings never match.
  */
 export function findRepoForTerminal(terminal: vscode.Terminal, allRepoPaths: string[]): string | undefined {
   return findRepoForTerminalLogic(
