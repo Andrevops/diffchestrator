@@ -1292,17 +1292,22 @@ export class GitExecutor {
     return result.stdout;
   }
 
-  async blame(repoPath: string, file: string, line: number): Promise<{
+  /**
+   * Blame one line. Pass `contents` (e.g. an editor's unsaved buffer) to
+   * blame that text instead of the on-disk file — line numbers then match
+   * the buffer, and lines changed in it report the all-zero hash.
+   */
+  async blame(repoPath: string, file: string, line: number, contents?: string): Promise<{
     hash: string;
     author: string;
     date: string;
     summary: string;
   } | undefined> {
     this._validateFilePath(repoPath, file);
-    const result = await this._run(
-      ["blame", "--no-textconv", "-L", `${line},${line}`, "--porcelain", "--", file],
-      repoPath
-    );
+    const args = ["blame", "--no-textconv", "-L", `${line},${line}`, "--porcelain"];
+    if (contents !== undefined) args.push("--contents", "-");
+    args.push("--", file);
+    const result = await this._run(args, repoPath, contents !== undefined ? { input: contents } : undefined);
     if (result.code !== 0 || !result.stdout.trim()) {
       return undefined;
     }
