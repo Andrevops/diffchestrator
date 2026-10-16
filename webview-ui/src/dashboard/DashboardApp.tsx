@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import vscode from "../vscode";
+import { hasModifier, isEditableTarget } from "../keyboard";
 import SyncOverview from "./SyncOverview";
 import BranchMap from "./BranchMap";
 import ChangeHeatmap from "./ChangeHeatmap";
@@ -117,6 +118,9 @@ export default function DashboardApp() {
   // Keyboard navigation
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Never hijack digits typed into form fields (e.g. Auto-Refresh "15",
+      // Max Depth) or chorded with modifiers.
+      if (isEditableTarget(e.target) || hasModifier(e) || e.repeat) return;
       if (e.key === "1") setTab("dashboard");
       else if (e.key === "2") setTab("activity");
       else if (e.key === "3") setTab("settings");

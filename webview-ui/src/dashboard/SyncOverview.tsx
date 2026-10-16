@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import vscode from "../vscode";
+import { hasModifier, isEditableTarget, isInteractiveTarget } from "../keyboard";
 import type { SyncOverviewEntry } from "./DashboardApp";
 
 type SortKey = "name" | "branch" | "ahead" | "behind" | "totalChanges" | "healthScore";
@@ -114,7 +115,7 @@ export default function SyncOverview({ entries, onOpenRepo, collapsed, onToggle 
   // Keyboard navigation
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement) return;
+      if (isEditableTarget(e.target) || hasModifier(e)) return;
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setSelectedIdx((i) => Math.min(i + 1, sorted.length - 1));
@@ -122,8 +123,10 @@ export default function SyncOverview({ entries, onOpenRepo, collapsed, onToggle 
         e.preventDefault();
         setSelectedIdx((i) => Math.max(i - 1, 0));
       } else if (e.key === "Enter" && selectedIdx >= 0 && selectedIdx < sorted.length) {
+        // Leave Enter on buttons/links/menu items to the focused control
+        if (isInteractiveTarget(e.target)) return;
         onOpenRepo(sorted[selectedIdx].path);
-      } else if (e.key === "/" && !(e.target instanceof HTMLInputElement)) {
+      } else if (e.key === "/") {
         e.preventDefault();
         document.querySelector<HTMLInputElement>(".sync-search")?.focus();
       }
