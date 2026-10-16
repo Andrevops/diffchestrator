@@ -517,18 +517,33 @@ export function activate(context: vscode.ExtensionContext): DiffchestratorApi {
     vscode.commands.registerCommand(CMD.closeActiveRepo, async () => {
       const repoPath = repoManager.selectedRepo;
       if (!repoPath) return;
-      await closeEditorsForRepo(repoPath);
       // Close terminals if autoTerminals is configured
       const autoTerminals = vscode.workspace
         .getConfiguration("diffchestrator")
         .get<string[]>("autoTerminals", []);
-      if (autoTerminals.length > 0 || repoManager.isDirectory(repoPath)) {
-        const kinds: TerminalKind[] = ["claude", "claudenew", "yolo", "yolonew", "shell"];
-        for (const k of kinds) {
-          const t = getRepoTerminal(repoPath, k);
-          if (t) t.dispose();
-        }
+      const kinds: TerminalKind[] = ["claude", "claudenew", "yolo", "yolonew", "shell"];
+      const toDispose =
+        autoTerminals.length > 0 || repoManager.isDirectory(repoPath)
+          ? kinds.flatMap((k) => {
+              const t = getRepoTerminal(repoPath, k);
+              return t ? [{ kind: k, terminal: t }] : [];
+            })
+          : [];
+      // Agent sessions may hold unsaved conversation state / running work —
+      // never kill them without asking.
+      const agents = toDispose.filter((t) => t.kind !== "shell");
+      if (agents.length > 0) {
+        const choice = await vscode.window.showWarningMessage(
+          `Close ${path.basename(repoPath)}? This also closes its running ${agents.map((a) => a.kind).join(", ")} terminal${agents.length > 1 ? "s" : ""}.`,
+          { modal: true },
+          "Close Repo and Terminals",
+          "Close Repo Only"
+        );
+        if (!choice) return;
+        if (choice === "Close Repo Only") toDispose.length = 0;
       }
+      await closeEditorsForRepo(repoPath);
+      for (const { terminal } of toDispose) terminal.dispose();
       repoManager.closeRecentRepo(repoPath);
       // Switch to next repo if one exists
       const next = repoManager.selectedRepo;
