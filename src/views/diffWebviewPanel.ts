@@ -5,6 +5,7 @@ import { getNonce } from "./nonce";
 import type { RepoStatus, DiffWebviewMessage } from "../types";
 import { escapeForTerminal } from "../utils/shell";
 import { terminalIcon } from "../commands/terminal";
+import { buildAskClaudePrompt, MAX_ASK_CLAUDE_HUNK_INPUT } from "./askClaudePrompt";
 
 // Message types that must carry a valid repoPath (rejected when it's missing).
 const REPO_SCOPED = new Set<string>([
@@ -265,6 +266,12 @@ export class DiffWebviewPanel {
 
       case "askClaude": {
         const { repoPath: rp, filePath, hunkContent } = msg;
+        if (
+          typeof filePath !== "string" || filePath === "" || filePath.length > 4096 ||
+          typeof hunkContent !== "string" || hunkContent.length > MAX_ASK_CLAUDE_HUNK_INPUT
+        ) {
+          break;
+        }
         const repoName = path.basename(rp);
 
         const terminal = vscode.window.createTerminal({
@@ -274,8 +281,10 @@ export class DiffWebviewPanel {
         });
         terminal.show();
 
-        // Send claude with context about the hunk
-        const prompt = `Explain this change in ${filePath}:\n${hunkContent}`;
+        // Single-line, length-capped prompt: raw newlines in sendText would
+        // submit the command early and run the remaining diff lines as shell
+        // input.
+        const prompt = buildAskClaudePrompt(filePath, hunkContent);
         const escaped = escapeForTerminal(prompt);
         terminal.sendText(`claude -p ${escaped}`);
         break;

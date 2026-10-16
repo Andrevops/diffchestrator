@@ -48,6 +48,29 @@ function safeParseDiff(raw: string) {
   }
 }
 
+type HunkData = ReturnType<typeof parseDiff>[number]["hunks"][number];
+
+/** Max hunk text sent to the extension (it caps the final prompt further). */
+const MAX_HUNK_TEXT = 100_000;
+
+/**
+ * Unified-diff text of a hunk: the @@ header plus every change line with its
+ * +/-/space prefix. (gitdiff-parser's `hunk.content` is only the header.)
+ */
+function hunkToText(hunk: HunkData): string {
+  const header = hunk.content || `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`;
+  const out = [header];
+  let size = header.length;
+  for (const c of hunk.changes) {
+    const prefix = c.type === "insert" ? "+" : c.type === "delete" ? "-" : " ";
+    const line = prefix + c.content;
+    size += line.length + 1;
+    if (size > MAX_HUNK_TEXT) break;
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
 /* ------------------------------------------------------------------ */
 /*  Sub-components                                                     */
 /* ------------------------------------------------------------------ */
@@ -61,11 +84,11 @@ function HunkWithActions({
   repoPath: string;
   filePath: string;
 }) {
-  const hunkContent = hunk.content || `@@ ${hunk.oldStart},${hunk.oldLines} ${hunk.newStart},${hunk.newLines} @@`;
+  const hunkHeader = hunk.content || `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`;
   return (
     <div>
       <div className="hunk-header">
-        <span>{hunkContent}</span>
+        <span>{hunkHeader}</span>
         <button
           className="ask-claude-btn"
           title="Ask Claude about this hunk"
@@ -75,7 +98,7 @@ function HunkWithActions({
               type: "askClaude",
               repoPath,
               filePath,
-              hunkContent: hunkContent,
+              hunkContent: hunkToText(hunk),
             });
           }}
         >
