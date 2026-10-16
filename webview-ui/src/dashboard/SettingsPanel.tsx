@@ -155,10 +155,7 @@ export default function SettingsPanel() {
           description="Additional directory names to skip during scanning"
           values={settings.scanExtraSkipDirs}
           onRemove={(v) => update("scanExtraSkipDirs", settings.scanExtraSkipDirs.filter((d) => d !== v))}
-          onAdd={() => {
-            const name = prompt("Directory name to skip:");
-            if (name) update("scanExtraSkipDirs", [...settings.scanExtraSkipDirs, name]);
-          }}
+          onAdd={() => vscode.postMessage({ type: "addSkipDirFromSettings" })}
         />
         <SettingToggle
           label="Scan on Startup"

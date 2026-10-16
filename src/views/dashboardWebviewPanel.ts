@@ -116,6 +116,19 @@ function isActivityEntry(v: unknown): v is ActivityEntry {
   );
 }
 
+/** Returns an error message for an invalid skip-dir name, or undefined if valid. */
+function validateSkipDirName(raw: string, existing: readonly string[]): string | undefined {
+  const name = raw.trim();
+  if (!name) return "Enter a directory name";
+  if (name.length > 255) return "Name is too long";
+  if (name === "." || name === "..") return "Not a valid directory name";
+  if (/[\\/]/.test(name)) return "Enter a directory name, not a path";
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f\x7f]/.test(name)) return "Name contains control characters";
+  if (existing.includes(name)) return `"${name}" is already skipped`;
+  return undefined;
+}
+
 function isFiniteNumberInRange(v: unknown, min: number, max: number): boolean {
   return typeof v === "number" && Number.isFinite(v) && v >= min && v <= max;
 }
@@ -800,6 +813,24 @@ export class DashboardWebviewPanel {
         }
         const cfg = vscode.workspace.getConfiguration("diffchestrator");
         await cfg.update(key, value, vscode.ConfigurationTarget.Global);
+        break;
+      }
+
+      case "addSkipDirFromSettings": {
+        // window.prompt() is blocked in webviews — collect the name natively.
+        const cfg = vscode.workspace.getConfiguration("diffchestrator");
+        const current = cfg.get<string[]>("scanExtraSkipDirs", []);
+        const input = await vscode.window.showInputBox({
+          title: "Extra Skip Directory",
+          prompt: "Directory name to skip during scanning (matched by exact name, e.g. vendor)",
+          placeHolder: "vendor",
+          validateInput: (v) => validateSkipDirName(v, current),
+        });
+        if (input === undefined || this._disposed) break;
+        const name = input.trim();
+        if (validateSkipDirName(name, current) !== undefined) break;
+        await cfg.update("scanExtraSkipDirs", [...current, name], vscode.ConfigurationTarget.Global);
+        this._postSettings();
         break;
       }
 

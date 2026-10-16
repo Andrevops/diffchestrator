@@ -127,7 +127,8 @@ export type DashboardMessage =
   | { type: "exportActivity"; format: "clipboard" | "file"; entries: { repoName: string; shortHash: string; author: string; date: string; message: string }[] }
   | { type: "getSettings" }
   | { type: "updateSetting"; key: string; value: unknown }
-  | { type: "addScanRootFromSettings" };
+  | { type: "addScanRootFromSettings" }
+  | { type: "addSkipDirFromSettings" };
 
 // Search webview message types (webview → extension)
 export type SearchWebviewMessage =
