@@ -668,18 +668,21 @@
 }
 
 .health--good {
-  background: var(--vscode-gitDecoration-untrackedResourceForeground, #73c991);
-  color: #000;
+  color: var(--vscode-gitDecoration-untrackedResourceForeground, #73c991);
+  background: color-mix(in srgb, var(--vscode-gitDecoration-untrackedResourceForeground, #73c991) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--vscode-gitDecoration-untrackedResourceForeground, #73c991) 45%, transparent);
 }
 
 .health--warn {
-  background: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d);
-  color: #000;
+  color: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d);
+  background: color-mix(in srgb, var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d) 45%, transparent);
 }
 
 .health--bad {
-  background: var(--vscode-gitDecoration-deletedResourceForeground, #c74e39);
-  color: #fff;
+  color: var(--vscode-gitDecoration-deletedResourceForeground, #c74e39);
+  background: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #c74e39) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #c74e39) 45%, transparent);
 }
 
 /* Settings panel */

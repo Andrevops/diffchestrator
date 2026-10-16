@@ -169,11 +169,31 @@ body {
   text-transform: uppercase;
 }
 
-.file-badge.M { background: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d); color: #000; }
-.file-badge.A { background: var(--vscode-gitDecoration-untrackedResourceForeground, #73c991); color: #000; }
-.file-badge.D { background: var(--vscode-gitDecoration-deletedResourceForeground, #c74e39); color: #fff; }
-.file-badge.R { background: var(--vscode-gitDecoration-renamedResourceForeground, #73c991); color: #000; }
-.file-badge.U { background: var(--vscode-gitDecoration-conflictingResourceForeground, #e4676b); color: #fff; }
+.file-badge.M {
+  color: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d);
+  background: color-mix(in srgb, var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d) 45%, transparent);
+}
+.file-badge.A {
+  color: var(--vscode-gitDecoration-untrackedResourceForeground, #73c991);
+  background: color-mix(in srgb, var(--vscode-gitDecoration-untrackedResourceForeground, #73c991) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--vscode-gitDecoration-untrackedResourceForeground, #73c991) 45%, transparent);
+}
+.file-badge.D {
+  color: var(--vscode-gitDecoration-deletedResourceForeground, #c74e39);
+  background: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #c74e39) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #c74e39) 45%, transparent);
+}
+.file-badge.R {
+  color: var(--vscode-gitDecoration-renamedResourceForeground, #73c991);
+  background: color-mix(in srgb, var(--vscode-gitDecoration-renamedResourceForeground, #73c991) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--vscode-gitDecoration-renamedResourceForeground, #73c991) 45%, transparent);
+}
+.file-badge.U {
+  color: var(--vscode-gitDecoration-conflictingResourceForeground, #e4676b);
+  background: color-mix(in srgb, var(--vscode-gitDecoration-conflictingResourceForeground, #e4676b) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--vscode-gitDecoration-conflictingResourceForeground, #e4676b) 45%, transparent);
+}
 
 .file-path {
   flex: 1;
@@ -187,8 +207,8 @@ body {
   font-size: 10px;
   padding: 1px 4px;
   border-radius: 2px;
-  background: var(--vscode-gitDecoration-addedResourceForeground, #73c991);
-  color: #000;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
 }
 
 .hunk-count {
