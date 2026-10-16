@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import type { FileWatcher } from "../services/fileWatcher";
-import { CMD } from "../constants";
+import { CMD, CONFIG } from "../constants";
 import { registerRepoTerminal } from "./terminal";
 
 export function registerScanRootCommands(
@@ -15,8 +15,8 @@ export function registerScanRootCommands(
     vscode.commands.registerCommand(CMD.switchRoot, async (rootPath?: string | object) => {
       if (!rootPath || typeof rootPath !== "string") {
         // Show quick pick of configured roots
-        const config = vscode.workspace.getConfiguration("diffchestrator");
-        const roots = config.get<string[]>("scanRoots", []);
+        const config = vscode.workspace.getConfiguration();
+        const roots = config.get<string[]>(CONFIG.scanRoots, []);
         if (roots.length === 0) {
           vscode.window.showWarningMessage("Diffchestrator: No scan roots configured. Use the + button to add one.");
           return;
@@ -55,18 +55,18 @@ export function registerScanRootCommands(
       });
       if (!folders || folders.length === 0) return;
       const newRoot = folders[0].fsPath;
-      const config = vscode.workspace.getConfiguration("diffchestrator");
-      const current = config.get<string[]>("scanRoots", []);
+      const config = vscode.workspace.getConfiguration();
+      const current = config.get<string[]>(CONFIG.scanRoots, []);
       if (!current.includes(newRoot)) {
-        await config.update("scanRoots", [...current, newRoot], vscode.ConfigurationTarget.Global);
+        await config.update(CONFIG.scanRoots, [...current, newRoot], vscode.ConfigurationTarget.Global);
       }
     }),
     vscode.commands.registerCommand(CMD.removeScanRoot, async (item?: any) => {
       const rootPath = item?.rootPath;
       if (!rootPath) return;
-      const config = vscode.workspace.getConfiguration("diffchestrator");
-      const current = config.get<string[]>("scanRoots", []);
-      await config.update("scanRoots", current.filter((r) => r !== rootPath), vscode.ConfigurationTarget.Global);
+      const config = vscode.workspace.getConfiguration();
+      const current = config.get<string[]>(CONFIG.scanRoots, []);
+      await config.update(CONFIG.scanRoots, current.filter((r) => r !== rootPath), vscode.ConfigurationTarget.Global);
     }),
     vscode.commands.registerCommand(CMD.openRootTerminal, () => {
       const root = repoManager.currentRoot;

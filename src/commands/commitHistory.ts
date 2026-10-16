@@ -3,7 +3,7 @@ import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
 import { timeAgo } from "../utils/time";
-import { resolveRepoPath } from "../utils/fileItem";
+import { withRepo } from "./withRepo";
 
 export function registerCommitHistoryCommands(
   context: vscode.ExtensionContext,
@@ -14,16 +14,7 @@ export function registerCommitHistoryCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.commitHistory,
-      async (item?: any) => {
-        const repoPath =
-          resolveRepoPath(item, repoManager.selectedRepo);
-        if (!repoPath) {
-          vscode.window.showWarningMessage(
-            "Diffchestrator: No repository selected."
-          );
-          return;
-        }
-
+      withRepo(repoManager, async (repoPath) => {
         const repoName = path.basename(repoPath);
 
         try {
@@ -70,7 +61,7 @@ export function registerCommitHistoryCommands(
             `Diffchestrator: Failed to get commit history: ${msg}`
           );
         }
-      }
+      })
     )
   );
 }

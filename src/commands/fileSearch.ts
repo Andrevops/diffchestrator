@@ -2,8 +2,8 @@ import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD, BATCH_SMALL, BATCH_LARGE } from "../constants";
-import { resolveRepoPath } from "../utils/fileItem";
 import { SearchWebviewPanel } from "../views/searchWebviewPanel";
+import { withRepo } from "./withRepo";
 
 /**
  * Pick a codicon per file type as a coarse approximation of Ctrl+P's icon
@@ -160,13 +160,7 @@ export function registerFileSearchCommand(
 
   // Browse files in a specific repo (pre-loaded, instant filter)
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.browseFiles, async (item?: any) => {
-      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
-
+    vscode.commands.registerCommand(CMD.browseFiles, withRepo(repoManager, async (repoPath) => {
       const repoName = path.basename(repoPath);
 
       const quickPick = vscode.window.createQuickPick();
@@ -207,7 +201,7 @@ export function registerFileSearchCommand(
 
       quickPick.onDidHide(() => quickPick.dispose());
       quickPick.show();
-    })
+    }))
   );
 
   // Shared grep QuickPick across one or many repos
@@ -285,22 +279,29 @@ export function registerFileSearchCommand(
       }, 300);
     });
 
-    quickPick.onDidAccept(() => {
+    quickPick.onDidAccept(async () => {
       const selected = quickPick.selectedItems[0] as
         | GrepItem
         | undefined;
+      quickPick.dispose();
       if (selected?._fullPath && !selected._noAction) {
         const line = (selected._line ?? 1) - 1;
-        // Switch to the repo if it's a multi-repo search
-        if (selected._repoPath && selected._repoPath !== repoManager.selectedRepo) {
-          vscode.commands.executeCommand(CMD.viewDiff, { path: selected._repoPath });
+        try {
+          // Switch to the repo if it's a multi-repo search. Await it: viewDiff
+          // closes the old repo's tabs and opens the new repo's first diff —
+          // un-awaited, that landed on top of the grep hit.
+          if (selected._repoPath && selected._repoPath !== repoManager.selectedRepo) {
+            await vscode.commands.executeCommand(CMD.viewDiff, { path: selected._repoPath });
+          }
+          await vscode.window.showTextDocument(
+            vscode.Uri.file(selected._fullPath),
+            { selection: new vscode.Range(line, 0, line, 0) }
+          );
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          vscode.window.showErrorMessage(`Diffchestrator: Could not open ${path.basename(selected._fullPath)}: ${msg}`);
         }
-        vscode.window.showTextDocument(
-          vscode.Uri.file(selected._fullPath),
-          { selection: new vscode.Range(line, 0, line, 0) }
-        );
       }
-      quickPick.dispose();
     });
 
     quickPick.onDidHide(() => {
@@ -313,26 +314,16 @@ export function registerFileSearchCommand(
 
   // Full search panel for the selected repo (out-of-workspace safe)
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.searchPanel, (item?: any) => {
-      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
+    vscode.commands.registerCommand(CMD.searchPanel, withRepo(repoManager, async (repoPath) => {
       SearchWebviewPanel.createOrShow(context.extensionUri, repoManager, repoPath);
-    })
+    }))
   );
 
   // Search in selected repo
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.grepInRepo, async (item?: any) => {
-      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
+    vscode.commands.registerCommand(CMD.grepInRepo, withRepo(repoManager, async (repoPath) => {
       openGrepQuickPick([repoPath], `Search in ${path.basename(repoPath)}...`);
-    })
+    }))
   );
 
   // Search within a folder of the selected repo (Repo Files tree context menu)
@@ -386,14 +377,9 @@ export function registerFileSearchCommand(
 
   // Open repo in new VS Code window — gives full native search, explorer, etc.
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.searchInRepo, async (item?: any) => {
-      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
+    vscode.commands.registerCommand(CMD.searchInRepo, withRepo(repoManager, async (repoPath) => {
       await vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(repoPath), true);
-    })
+    }))
   );
 
   // Switch repo — QuickPick to select a repo and make it active

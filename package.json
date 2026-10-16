@@ -44,6 +44,13 @@
     "onStartupFinished"
   ],
   "main": "./dist/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Diffchestrator runs git and AI agent CLIs in scanned repositories, which requires workspace trust."
+    },
+    "virtualWorkspaces": false
+  },
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -642,6 +649,56 @@
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "diffchestrator.stageFile",
+          "when": "false"
+        },
+        {
+          "command": "diffchestrator.unstageFile",
+          "when": "false"
+        },
+        {
+          "command": "diffchestrator.fileStage",
+          "when": "false"
+        },
+        {
+          "command": "diffchestrator.discardFile",
+          "when": "false"
+        },
+        {
+          "command": "diffchestrator.toggleFavorite",
+          "when": "false"
+        },
+        {
+          "command": "diffchestrator.fileDelete",
+          "when": "false"
+        },
+        {
+          "command": "diffchestrator.fileRename",
+          "when": "false"
+        },
+        {
+          "command": "diffchestrator.fileCopyPath",
+          "when": "false"
+        },
+        {
+          "command": "diffchestrator.fileCopyRelativePath",
+          "when": "false"
+        },
+        {
+          "command": "diffchestrator.fileRevealInExplorer",
+          "when": "false"
+        },
+        {
+          "command": "diffchestrator.fileOpenTerminal",
+          "when": "false"
+        },
+        {
+          "command": "diffchestrator.fileFindInFolder",
+          "when": "false"
+        }
+      ],
       "editor/title": [
         {
           "command": "diffchestrator.prevChangedFile",
@@ -1287,13 +1344,14 @@
         },
         "diffchestrator.claudePermissionMode": {
           "type": "string",
+          "scope": "application",
           "enum": [
             "default",
             "acceptEdits",
             "bypassPermissions"
           ],
           "default": "acceptEdits",
-          "description": "Permission mode for Claude Code AI commits"
+          "description": "Permission mode for Claude Code AI commits. User settings only — workspace settings cannot change it."
         },
         "diffchestrator.scanExtraSkipDirs": {
           "type": "array",
@@ -1318,6 +1376,7 @@
         },
         "diffchestrator.autoTerminals": {
           "type": "array",
+          "scope": "application",
           "items": {
             "type": "string",
             "enum": [
@@ -1329,7 +1388,7 @@
             ]
           },
           "default": [],
-          "description": "Terminal types to auto-open when switching repos (e.g. [\"shell\", \"yolo\"]). Closing a repo also closes its terminals."
+          "description": "Terminal types to auto-open when switching repos (e.g. [\"shell\", \"yolo\"]). Closing a repo also closes its terminals. User settings only."
         }
       }
     },

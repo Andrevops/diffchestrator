@@ -2,7 +2,8 @@ import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
-import { resolveRepoPath } from "../utils/fileItem";
+import { formatRepoList, pluralRepos } from "../utils/repoList";
+import { withRepo } from "./withRepo";
 
 export function registerPushCommands(
   context: vscode.ExtensionContext,
@@ -14,15 +15,7 @@ export function registerPushCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.push,
-      async (item?: any) => {
-        const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-        if (!repoPath) {
-          vscode.window.showWarningMessage(
-            "Diffchestrator: No repository selected."
-          );
-          return;
-        }
-
+      withRepo(repoManager, async (repoPath) => {
         const repoName = path.basename(repoPath);
 
         try {
@@ -63,24 +56,23 @@ export function registerPushCommands(
             );
           }
         }
-      }
+      })
     )
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.forcePush,
-      async (item?: any) => {
-        const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-        if (!repoPath) {
-          vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-          return;
-        }
-
+      withRepo(repoManager, async (repoPath) => {
         const repoName = path.basename(repoPath);
+        // Always modal — also reached from the push-rejected toast
         const confirm = await vscode.window.showWarningMessage(
-          `Force push ${repoName}? This uses --force-with-lease (safe against overwriting others' work).`,
-          { modal: true },
+          `Force push ${repoName}?`,
+          {
+            modal: true,
+            detail:
+              "Uses --force-with-lease: it refuses if the remote moved since your last fetch, but if you have fetched the remote's new commits, they WILL be overwritten. Prefer Pull when the remote has work you don't have.",
+          },
           "Force Push"
         );
         if (confirm !== "Force Push") return;
@@ -104,7 +96,7 @@ export function registerPushCommands(
           const msg = err instanceof Error ? err.message : String(err);
           vscode.window.showErrorMessage(`Diffchestrator: Force push failed for ${repoName}: ${msg}`);
         }
-      }
+      })
     )
   );
 
@@ -119,8 +111,8 @@ export function registerPushCommands(
       }
 
       const confirm = await vscode.window.showWarningMessage(
-        `Push ${selectedPaths.size} repositories?`,
-        { modal: true },
+        `Push ${pluralRepos(selectedPaths.size)}?`,
+        { modal: true, detail: formatRepoList([...selectedPaths].map((p) => path.basename(p))) },
         "Push"
       );
 
@@ -163,9 +155,9 @@ export function registerPushCommands(
         }
       );
 
-      vscode.window.showInformationMessage(
-        `Diffchestrator: Bulk push complete. ${success} succeeded, ${failed} failed.`
-      );
+      const summary = `Diffchestrator: Bulk push complete. ${success} succeeded, ${failed} failed.`;
+      if (failed > 0) vscode.window.showWarningMessage(summary);
+      else vscode.window.showInformationMessage(summary);
     })
   );
 }

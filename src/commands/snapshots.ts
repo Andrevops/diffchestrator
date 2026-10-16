@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import type { FileWatcher } from "../services/fileWatcher";
-import { CMD } from "../constants";
+import { CMD, CONFIG } from "../constants";
 
 export function registerSnapshotCommands(
   context: vscode.ExtensionContext,
@@ -17,20 +17,20 @@ export function registerSnapshotCommands(
         placeHolder: "e.g., Frontend work, Infra day",
       });
       if (!name) return;
-      const config = vscode.workspace.getConfiguration("diffchestrator");
-      const snapshots: Record<string, { root?: string; favorites: string[]; recent: string[]; selected?: string }> = config.get("snapshots", {});
+      const config = vscode.workspace.getConfiguration();
+      const snapshots: Record<string, { root?: string; favorites: string[]; recent: string[]; selected?: string }> = config.get(CONFIG.snapshots, {});
       snapshots[name] = {
         root: repoManager.currentRoot,
-        favorites: config.get<string[]>("favorites", []),
+        favorites: config.get<string[]>(CONFIG.favorites, []),
         recent: [...repoManager.recentRepoPaths],
         selected: repoManager.selectedRepo,
       };
-      await config.update("snapshots", snapshots, vscode.ConfigurationTarget.Global);
+      await config.update(CONFIG.snapshots, snapshots, vscode.ConfigurationTarget.Global);
       vscode.window.showInformationMessage(`Diffchestrator: Snapshot "${name}" saved`);
     }),
     vscode.commands.registerCommand(CMD.loadSnapshot, async () => {
-      const config = vscode.workspace.getConfiguration("diffchestrator");
-      const snapshots = { ...config.get<Record<string, { root?: string; favorites: string[]; recent: string[]; selected?: string }>>("snapshots", {}) };
+      const config = vscode.workspace.getConfiguration();
+      const snapshots = { ...config.get<Record<string, { root?: string; favorites: string[]; recent: string[]; selected?: string }>>(CONFIG.snapshots, {}) };
       const names = Object.keys(snapshots);
       if (names.length === 0) {
         vscode.window.showInformationMessage("Diffchestrator: No snapshots saved.");
@@ -55,7 +55,7 @@ export function registerSnapshotCommands(
 
       if (picked._action === "delete") {
         delete snapshots[picked._name];
-        await config.update("snapshots", snapshots, vscode.ConfigurationTarget.Global);
+        await config.update(CONFIG.snapshots, snapshots, vscode.ConfigurationTarget.Global);
         vscode.window.showInformationMessage(`Diffchestrator: Snapshot "${picked._name}" deleted`);
         return;
       }
@@ -63,7 +63,7 @@ export function registerSnapshotCommands(
       const snap = snapshots[picked._name];
       if (!snap) return;
       // Restore favorites
-      await config.update("favorites", snap.favorites, vscode.ConfigurationTarget.Global);
+      await config.update(CONFIG.favorites, snap.favorites, vscode.ConfigurationTarget.Global);
       // Restore recent repos + selection
       if (snap.recent) repoManager.restoreRecent(snap.recent, snap.selected);
       // Scan the root

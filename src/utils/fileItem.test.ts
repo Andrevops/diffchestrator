@@ -1,6 +1,13 @@
 import * as assert from "node:assert";
 import { test } from "node:test";
-import { resolveFileItem } from "./fileItem.ts";
+import { resolveFileItem, resolveFileStatus } from "./fileItem.ts";
+
+test("resolveFileStatus", () => {
+  assert.strictEqual(resolveFileStatus(undefined), undefined);
+  assert.strictEqual(resolveFileStatus({ repoPath: "/r", filePath: "a" }), undefined);
+  assert.strictEqual(resolveFileStatus({ fileChange: { path: "a", status: "staged" } }), "staged");
+  assert.strictEqual(resolveFileStatus({ fileChange: { path: "a", status: 3 } }), undefined);
+});
 
 test("resolveFileItem", () => {
   // Test undefined/null item

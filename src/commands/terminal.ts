@@ -4,10 +4,19 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
-import { escapeForTerminal } from "../utils/shell";
-import { resolveRepoPath } from "../utils/fileItem";
-import { repoTerminals, key, findRepoForTerminal as findRepoForTerminalLogic } from "./terminalLogic";
-export { repoTerminals };
+import { withRepo } from "./withRepo";
+import {
+  repoTerminals,
+  key,
+  findRepoForTerminal as findRepoForTerminalLogic,
+  legacyNamePatterns,
+  matchTerminalName,
+  trackedRepoForTerminal,
+  dedicatedTerminals,
+  forgetTerminal,
+  markDedicatedTerminal,
+} from "./terminalLogic";
+export { repoTerminals, trackedRepoForTerminal };
 
 const execFileAsync = promisify(execFile);
 
@@ -22,9 +31,17 @@ const TERMINAL_ICONS: Record<TerminalKind, vscode.ThemeIcon> = {
   shell: new vscode.ThemeIcon("terminal"),
 };
 
+/** Icon for the dedicated AI-commit terminal (never adopted into a kind slot). */
+const AI_COMMIT_ICON = new vscode.ThemeIcon("git-commit", new vscode.ThemeColor("terminal.ansiYellow"));
+
 /** Get the icon for a terminal kind. Exported for use in other modules. */
-export function terminalIcon(kind: TerminalKind): vscode.ThemeIcon {
-  return TERMINAL_ICONS[kind];
+export function terminalIcon(kind: TerminalKind | "aiCommit"): vscode.ThemeIcon {
+  return kind === "aiCommit" ? AI_COMMIT_ICON : TERMINAL_ICONS[kind];
+}
+
+function isAiCommitTerminal(terminal: vscode.Terminal): boolean {
+  const icon = (terminal.creationOptions as { iconPath?: vscode.ThemeIcon })?.iconPath;
+  return icon instanceof vscode.ThemeIcon && icon.id === AI_COMMIT_ICON.id;
 }
 
 /**
@@ -131,25 +148,23 @@ export function adoptExistingTerminals(allRepoPaths: string[]): void {
   );
 
   for (const terminal of vscode.window.terminals) {
-    // Skip if already tracked
-    let tracked = false;
-    for (const [, t] of repoTerminals) {
-      if (t === terminal) { tracked = true; break; }
-    }
-    if (tracked) continue;
+    // Skip if already tracked, or owned by the extension for another purpose
+    if (trackedRepoForTerminal(terminal) !== undefined || dedicatedTerminals.has(terminal)) continue;
 
     const name = terminal.name;
 
-    // Match repo by basename in terminal name
+    // Match repo by exact terminal name (bare repo name or legacy prefix) —
+    // never by substring, which would adopt unrelated user terminals.
     for (const rp of sorted) {
-      const repoName = path.basename(rp);
-      if (name === repoName || name.includes(repoName)) {
-        // Infer kind from icon, fall back to name-based inference, then "shell"
-        const kind = inferKindFromIcon(terminal)
-          ?? (/claude/i.test(name) ? "claude" :
-              /yolonew/i.test(name) ? "yolonew" :
-              /yolo/i.test(name) ? "yolo" :
-              /^DC:/i.test(name) ? "shell" : "shell");
+      const match = matchTerminalName(name, path.basename(rp));
+      if (match) {
+        // A restored AI-commit terminal stays dedicated — never a kind slot
+        if (isAiCommitTerminal(terminal)) {
+          markDedicatedTerminal(terminal, rp);
+          break;
+        }
+        // Legacy prefix decides the kind; bare names use the icon, then "shell"
+        const kind: TerminalKind = match !== "bare" ? match : inferKindFromIcon(terminal) ?? "shell";
 
         // Only adopt if this repo+kind slot is empty
         if (!repoTerminals.has(key(rp, kind))) {
@@ -161,56 +176,14 @@ export function adoptExistingTerminals(allRepoPaths: string[]): void {
   }
 }
 
-// Clean up map when terminals close
-vscode.window.onDidCloseTerminal((t) => {
-  for (const [k, term] of repoTerminals) {
-    if (term === t) {
-      repoTerminals.delete(k);
-      break;
-    }
-  }
-});
-
 /**
  * Name patterns used to detect untracked terminals by scanning
- * vscode.window.terminals. Claude Code renames its terminal to
- * "Claude: <repo>", so we match on that too.
+ * vscode.window.terminals. Only legacy prefixed names are matched here —
+ * icon-only terminals (bare repo name) are handled by fallback 2 below.
+ * Claude Code renames its terminal to "Claude: <repo>", so that's included.
  */
-const NAME_PATTERNS: Record<TerminalKind, RegExp[]> = {
-  claude: [], // built dynamically from repo name
-  claudenew: [],
-  yolo: [],
-  yolonew: [],
-  shell: [],
-};
-
 function buildPatterns(repoPath: string, kind: TerminalKind): RegExp[] {
-  const name = escapeRegex(path.basename(repoPath));
-  // Only match legacy prefixed names — icon-only terminals (bare repo name)
-  // are tracked exclusively via the repoTerminals map to avoid cross-type collisions
-  switch (kind) {
-    case "claude":
-      return [
-        new RegExp(`^Claude:\\s*${name}$`, "i"),
-        new RegExp(`^Claude Code[^]*${name}$`, "i"),
-      ];
-    case "claudenew":
-      return [];
-    case "yolo":
-      return [
-        new RegExp(`^YOLO:\\s*${name}$`, "i"),
-      ];
-    case "yolonew":
-      return [
-        new RegExp(`^YOLONEW:\\s*${name}$`, "i"),
-      ];
-    case "shell":
-      return [new RegExp(`^DC:\\s*${name}$`, "i")];
-  }
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return legacyNamePatterns(path.basename(repoPath), kind);
 }
 
 function getAlive(repoPath: string, kind: TerminalKind): vscode.Terminal | undefined {
@@ -225,6 +198,7 @@ function getAlive(repoPath: string, kind: TerminalKind): vscode.Terminal | undef
   // Fallback 1: scan by legacy prefixed name patterns
   const patterns = buildPatterns(repoPath, kind);
   for (const terminal of vscode.window.terminals) {
+    if (dedicatedTerminals.has(terminal)) continue;
     if (patterns.some((p) => p.test(terminal.name))) {
       repoTerminals.set(key(repoPath, kind), terminal);
       return terminal;
@@ -236,12 +210,9 @@ function getAlive(repoPath: string, kind: TerminalKind): vscode.Terminal | undef
   const repoName = path.basename(repoPath);
   for (const terminal of vscode.window.terminals) {
     if (terminal.name === repoName) {
-      // Already tracked under a different kind? Skip.
-      let alreadyTracked = false;
-      for (const [, t] of repoTerminals) {
-        if (t === terminal) { alreadyTracked = true; break; }
-      }
-      if (alreadyTracked) continue;
+      // Already tracked under a different kind, or dedicated (AI commit)? Skip.
+      if (trackedRepoForTerminal(terminal) !== undefined || dedicatedTerminals.has(terminal)) continue;
+      if (isAiCommitTerminal(terminal)) continue;
 
       // Verify kind via icon if available, otherwise accept for requested kind
       const iconKind = inferKindFromIcon(terminal);
@@ -262,9 +233,8 @@ function getAlive(repoPath: string, kind: TerminalKind): vscode.Terminal | undef
  *
  * Matching strategy:
  * 1. Check the tracking map (exact match by terminal object)
- * 2. Check if the terminal name contains any scanned repo's basename
- *    (handles any naming: "Claude: repo", "YOLO: repo", "node repo", etc.)
- *    Longest basename match wins to avoid "foo" matching "foo-bar"
+ * 2. Exact name match: the bare repo basename, or a legacy prefixed name
+ *    ("Claude: repo", "YOLO: repo", "DC: repo"). Substrings never match.
  */
 export function findRepoForTerminal(terminal: vscode.Terminal, allRepoPaths: string[]): string | undefined {
   return findRepoForTerminalLogic(
@@ -450,9 +420,6 @@ const groupVisited = new Set<vscode.Terminal>();
  */
 const knownGroupEdges = new Map<vscode.Terminal, Set<1 | -1>>();
 
-// Clean up edge cache when terminals close
-vscode.window.onDidCloseTerminal((t) => knownGroupEdges.delete(t));
-
 /**
  * Execute a VS Code command and wait for activeTerminal to change.
  * Sets up listener BEFORE executing to avoid race conditions.
@@ -558,16 +525,20 @@ export function registerTerminalCommand(
   context: vscode.ExtensionContext,
   repoManager: RepoManager
 ): void {
+  // Tracking cleanup when terminals close (disposed with the extension)
+  context.subscriptions.push(
+    vscode.window.onDidCloseTerminal((t) => {
+      forgetTerminal(t);
+      knownGroupEdges.delete(t);
+      groupVisited.delete(t);
+    })
+  );
+
   // Open shell terminal
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.openTerminal,
-      (item?: any) => {
-        const targetPath = resolveRepoPath(item, repoManager.selectedRepo);
-        if (!targetPath) {
-          vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-          return;
-        }
+      withRepo(repoManager, async (targetPath) => {
         // If path is not a known repo, track as directory entry
         if (!repoManager.getRepo(targetPath)) {
           repoManager.addDirectoryPath(targetPath);
@@ -576,108 +547,7 @@ export function registerTerminalCommand(
         }
         const terminal = getOrCreateTerminal(targetPath);
         terminal.show();
-      }
-    )
-  );
-
-  // Yolo — reuse existing yolo terminal or create new one
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      CMD.yolo,
-      async (item?: any) => {
-        if (!(await validateCli("yolo"))) return;
-
-        const selectedPaths = repoManager.selectedRepoPaths;
-        const singlePath = resolveRepoPath(item, repoManager.selectedRepo);
-
-        if (selectedPaths.size > 1) {
-          // Multi-repo mode: open yolo with --add-dir for each selected repo
-          const addDirArgs = [...selectedPaths]
-            .map((p) => `--add-dir ${escapeForTerminal(p)}`)
-            .join(" ");
-
-          const terminal = vscode.window.createTerminal({
-            name: "Multi-repo",
-            cwd: repoManager.currentRoot,
-            iconPath: TERMINAL_ICONS.yolo,
-          });
-          terminal.show();
-          terminal.sendText(`yolo ${addDirArgs}`);
-        } else if (singlePath) {
-          if (!repoManager.getRepo(singlePath)) {
-            repoManager.addDirectoryPath(singlePath);
-          } else {
-            repoManager.selectRepo(singlePath);
-          }
-          const existing = getAlive(singlePath, "yolo");
-          if (existing) {
-            existing.show();
-            return;
-          }
-
-          const name = path.basename(singlePath);
-          const terminal = vscode.window.createTerminal({
-            name,
-            cwd: singlePath,
-            iconPath: TERMINAL_ICONS.yolo,
-          });
-          repoTerminals.set(key(singlePath, "yolo"), terminal);
-          terminal.show();
-          terminal.sendText("yolo");
-        } else {
-          vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        }
-      }
-    )
-  );
-
-  // Yolonew — reuse existing yolonew terminal or create new one
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      CMD.yolonew,
-      async (item?: any) => {
-        if (!(await validateCli("yolo"))) return;
-
-        const selectedPaths = repoManager.selectedRepoPaths;
-        const singlePath = resolveRepoPath(item, repoManager.selectedRepo);
-
-        if (selectedPaths.size > 1) {
-          const addDirArgs = [...selectedPaths]
-            .map((p) => `--add-dir ${escapeForTerminal(p)}`)
-            .join(" ");
-
-          const terminal = vscode.window.createTerminal({
-            name: "Multi-repo",
-            cwd: repoManager.currentRoot,
-            iconPath: TERMINAL_ICONS.yolonew,
-          });
-          terminal.show();
-          terminal.sendText(`yolonew ${addDirArgs}`);
-        } else if (singlePath) {
-          if (!repoManager.getRepo(singlePath)) {
-            repoManager.addDirectoryPath(singlePath);
-          } else {
-            repoManager.selectRepo(singlePath);
-          }
-          const existing = getAlive(singlePath, "yolonew");
-          if (existing) {
-            existing.show();
-            return;
-          }
-
-          const name = path.basename(singlePath);
-          const terminal = vscode.window.createTerminal({
-            name,
-            cwd: singlePath,
-            iconPath: TERMINAL_ICONS.yolonew,
-          });
-          repoTerminals.set(key(singlePath, "yolonew"), terminal);
-          terminal.show();
-          terminal.sendText("yolonew");
-        } else {
-          vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        }
-      }
+      })
     )
   );
 }

@@ -1,8 +1,9 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
-import { CMD } from "../constants";
-import { resolveRepoPath } from "../utils/fileItem";
+import { CMD, CONFIG } from "../constants";
+import { formatRepoList, pluralRepos } from "../utils/repoList";
+import { withRepo } from "./withRepo";
 
 export function registerCommitCommands(
   context: vscode.ExtensionContext,
@@ -11,18 +12,24 @@ export function registerCommitCommands(
 ): void {
   const git = repoManager.git;
 
+  /**
+   * Upstream name if HEAD is already reachable from it (upstream set and
+   * nothing ahead) — rewriting HEAD would then rewrite published history.
+   */
+  const pushedUpstream = async (repoPath: string): Promise<string | undefined> => {
+    try {
+      git.invalidateStatus(repoPath);
+      const s = await git.status(repoPath);
+      return s.upstream && s.ahead === 0 ? s.upstream : undefined;
+    } catch {
+      return undefined; // can't tell — fall back to the normal confirm
+    }
+  };
+
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.commit,
-      async (item?: any) => {
-        const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-        if (!repoPath) {
-          vscode.window.showWarningMessage(
-            "Diffchestrator: No repository selected."
-          );
-          return;
-        }
-
+      withRepo(repoManager, async (repoPath) => {
         const repoName = path.basename(repoPath);
 
         // Conventional commit prefix picker
@@ -65,8 +72,8 @@ export function registerCommitCommands(
           channel.appendLine(output);
 
           // Auto-push if enabled
-          const config = vscode.workspace.getConfiguration("diffchestrator");
-          if (config.get<boolean>("autoPushAfterCommit", false)) {
+          const config = vscode.workspace.getConfiguration();
+          if (config.get<boolean>(CONFIG.autoPushAfterCommit, false)) {
             try {
               await git.push(repoPath);
               await repoManager.refreshRepo(repoPath);
@@ -84,7 +91,7 @@ export function registerCommitCommands(
             `Diffchestrator: Commit failed for ${repoName}: ${msg}`
           );
         }
-      }
+      })
     )
   );
 
@@ -110,6 +117,16 @@ export function registerCommitCommands(
       });
 
       if (!message) return;
+
+      const confirm = await vscode.window.showWarningMessage(
+        `Commit staged changes in ${pluralRepos(selectedPaths.size)}?`,
+        {
+          modal: true,
+          detail: `Message: ${message.trim()}\n\n${formatRepoList([...selectedPaths].map((p) => path.basename(p)))}`,
+        },
+        "Commit"
+      );
+      if (confirm !== "Commit") return;
 
       channel.show();
 
@@ -151,9 +168,9 @@ export function registerCommitCommands(
         }
       );
 
-      vscode.window.showInformationMessage(
-        `Diffchestrator: Bulk commit complete. ${success} succeeded, ${failed} failed.`
-      );
+      const summary = `Diffchestrator: Bulk commit complete. ${success} succeeded, ${failed} failed.`;
+      if (failed > 0) vscode.window.showWarningMessage(summary);
+      else vscode.window.showInformationMessage(summary);
     })
   );
 
@@ -161,15 +178,23 @@ export function registerCommitCommands(
   context.subscriptions.push(
     vscode.commands.registerCommand(
       CMD.amendCommit,
-      async (item?: any) => {
-        const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-        if (!repoPath) {
-          vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-          return;
-        }
+      withRepo(repoManager, async (repoPath) => {
         const repoName = path.basename(repoPath);
 
         try {
+          const upstream = await pushedUpstream(repoPath);
+          if (upstream) {
+            const proceed = await vscode.window.showWarningMessage(
+              `The last commit in ${repoName} is already pushed to ${upstream}.`,
+              {
+                modal: true,
+                detail:
+                  "Amending rewrites published history: you will have to force-push, and anyone who pulled the original commit will diverge.",
+              },
+              "Amend Anyway"
+            );
+            if (proceed !== "Amend Anyway") return;
+          }
           const lastMessage = await git.lastCommitMessage(repoPath);
           const message = await vscode.window.showInputBox({
             prompt: `Amend last commit in ${repoName}`,
@@ -185,28 +210,33 @@ export function registerCommitCommands(
           const msg = err instanceof Error ? err.message : String(err);
           vscode.window.showErrorMessage(`Diffchestrator: Amend failed for ${repoName}: ${msg}`);
         }
-      }
+      })
     )
   );
 
   // Undo last commit (#41)
   context.subscriptions.push(
-    vscode.commands.registerCommand(CMD.undoCommit, async (item?: any) => {
-      const repoPath = resolveRepoPath(item, repoManager.selectedRepo);
-      if (!repoPath) {
-        vscode.window.showWarningMessage("Diffchestrator: No repository selected.");
-        return;
-      }
+    vscode.commands.registerCommand(CMD.undoCommit, withRepo(repoManager, async (repoPath) => {
       const repoName = path.basename(repoPath);
       try {
         const commits = await git.log(repoPath, 1);
         const lastMsg = commits.length > 0 ? commits[0].message : "last commit";
+        const upstream = await pushedUpstream(repoPath);
+        const confirmLabel = upstream ? "Undo Anyway" : "Undo";
         const confirm = await vscode.window.showWarningMessage(
-          `Undo "${lastMsg}" in ${repoName}? Changes will be kept as staged.`,
-          { modal: true },
-          "Undo"
+          upstream
+            ? `"${lastMsg}" in ${repoName} is already pushed to ${upstream}. Undo it anyway?`
+            : `Undo "${lastMsg}" in ${repoName}? Changes will be kept as staged.`,
+          upstream
+            ? {
+                modal: true,
+                detail:
+                  "Undoing a pushed commit rewrites published history: the next push will need a force-push, and anyone who pulled it will diverge. Changes will be kept as staged.",
+              }
+            : { modal: true },
+          confirmLabel
         );
-        if (confirm !== "Undo") return;
+        if (confirm !== confirmLabel) return;
         await git.resetSoft(repoPath);
         await repoManager.refreshRepo(repoPath);
         vscode.window.showInformationMessage(`Diffchestrator: Undid last commit in ${repoName}. Changes are staged.`);
@@ -214,6 +244,6 @@ export function registerCommitCommands(
         const msg = err instanceof Error ? err.message : String(err);
         vscode.window.showErrorMessage(`Diffchestrator: Undo failed: ${msg}`);
       }
-    })
+    }))
   );
 }
