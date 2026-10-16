@@ -2,15 +2,9 @@ import * as vscode from "vscode";
 import * as path from "path";
 import type { RepoManager } from "../services/repoManager";
 import { CMD } from "../constants";
-import { FileStatus } from "../types";
-
-function resolveFileItem(item: any): { repoPath: string; filePath: string; status?: FileStatus } | undefined {
-  const repoPath = item?.repoPath;
-  const filePath = item?.fileChange?.path ?? item?.filePath;
-  const status = item?.fileChange?.status as FileStatus | undefined;
-  if (repoPath && filePath) return { repoPath, filePath, status };
-  return undefined;
-}
+import { ChangeType } from "../types";
+import { resolveFileItem, resolveFileStatus } from "../utils/fileItem";
+import { planDiscard } from "./discardLogic";
 
 export function registerDiscardCommands(
   context: vscode.ExtensionContext,
@@ -28,30 +22,50 @@ export function registerDiscardCommands(
           vscode.window.showWarningMessage("Diffchestrator: No file selected.");
           return;
         }
-
-        const fileName = path.basename(resolved.filePath);
-        const isUntracked = resolved.status === FileStatus.Untracked;
-        const confirmMsg = isUntracked
-          ? `Delete untracked file "${fileName}"? This cannot be undone.`
-          : `Discard changes to "${fileName}"? This cannot be undone.`;
-        const confirm = await vscode.window.showWarningMessage(
-          confirmMsg,
-          { modal: true },
-          "Yes"
-        );
-
-        if (confirm !== "Yes") return;
+        const { repoPath, filePath } = resolved;
+        const fileName = path.basename(filePath);
 
         try {
-          if (isUntracked) {
-            await git.cleanFile(resolved.repoPath, resolved.filePath);
-          } else {
-            await git.checkoutFile(resolved.repoPath, resolved.filePath);
+          // Ask git for the file's current state: the tree item only knows
+          // which group it was in, but a file can be staged AND modified, and
+          // `checkout --` restores from the index (staged changes survive).
+          git.invalidateStatus(repoPath);
+          const status = await git.status(repoPath);
+          const stagedChange = status.staged.find((f) => f.path === filePath);
+          const prompt = planDiscard(fileName, {
+            itemStatus: resolveFileStatus(item),
+            staged: !!stagedChange,
+            unstaged: status.unstaged.some((f) => f.path === filePath),
+            untracked: status.untracked.some((f) => f.path === filePath),
+            addedInIndex: stagedChange?.changeType === ChangeType.Added,
+          });
+          if (!prompt) {
+            vscode.window.showInformationMessage(`Diffchestrator: No changes to discard in ${fileName}.`);
+            await repoManager.refreshRepo(repoPath);
+            return;
           }
-          await repoManager.refreshRepo(resolved.repoPath);
-          vscode.window.showInformationMessage(
-            `Diffchestrator: Discarded changes to ${fileName}`
+
+          const picked = await vscode.window.showWarningMessage(
+            prompt.message,
+            { modal: true },
+            ...prompt.choices.map((c) => c.label)
           );
+          const choice = prompt.choices.find((c) => c.label === picked);
+          if (!choice) return;
+
+          switch (choice.action) {
+            case "clean":
+              await git.cleanFile(repoPath, filePath);
+              break;
+            case "checkout":
+              await git.checkoutFile(repoPath, filePath);
+              break;
+            case "restoreHead":
+              await git.restoreFileFromHead(repoPath, filePath);
+              break;
+          }
+          await repoManager.refreshRepo(repoPath);
+          vscode.window.showInformationMessage(`Diffchestrator: ${choice.done}`);
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           vscode.window.showErrorMessage(
