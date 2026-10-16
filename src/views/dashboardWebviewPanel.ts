@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { RepoManager } from "../services/repoManager";
+import { getNonce } from "./nonce";
 import type { CommitEntry, DashboardMessage } from "../types";
 import { CMD, BATCH_LARGE } from "../constants";
 import { showTerminalIfExists, terminalIcon } from "../commands/terminal";
@@ -80,8 +81,35 @@ const MAIN_BRANCHES = new Set(["main", "master", "develop", "development"]);
 
 const MAX_PINNED_REPOS = 100;
 
+// Message types that must carry a valid repoPath (rejected when it's missing).
+const REPO_SCOPED = new Set<string>([
+  "openRepo", "pullRepo", "pushRepo", "openTerminal", "openClaude", "aiCommit",
+  "switchBranch", "discardAll", "commitHistory", "openRemoteUrl", "copyRepoInfo",
+  "stashPop", "stashApply", "stashDrop", "pinRepo", "unpinRepo",
+]);
+
 function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((x) => typeof x === "string");
+}
+
+const MAX_EXPORT_ENTRIES = 10_000;
+const MAX_EXPORT_FIELD = 1_000;
+
+function isShortString(v: unknown): v is string {
+  return typeof v === "string" && v.length <= MAX_EXPORT_FIELD;
+}
+
+function isActivityEntry(v: unknown): v is ActivityEntry {
+  if (!v || typeof v !== "object") return false;
+  const e = v as Record<string, unknown>;
+  return (
+    isShortString(e.repoName) &&
+    isShortString(e.shortHash) &&
+    isShortString(e.author) &&
+    isShortString(e.message) &&
+    isShortString(e.date) &&
+    !Number.isNaN(new Date(e.date).getTime())
+  );
 }
 
 function isFiniteNumberInRange(v: unknown, min: number, max: number): boolean {
@@ -446,11 +474,22 @@ export class DashboardWebviewPanel {
   }
 
   private async _handleMessage(msg: DashboardMessage): Promise<void> {
-    // Validate repoPath against known repos for any message that includes one
-    const repoPath = "repoPath" in msg ? msg.repoPath : undefined;
-    if (repoPath && !this._isKnownRepo(repoPath)) {
-      // Allow pin/unpin (path may be in config but not currently scanned)
-      if (msg.type !== "pinRepo" && msg.type !== "unpinRepo") {
+    if (this._disposed) return;
+    if (!msg || typeof msg !== "object" || typeof (msg as { type?: unknown }).type !== "string") {
+      return;
+    }
+    // Validate repoPath for any message that carries one: it must be a
+    // non-empty string naming a known repo. Pin/unpin are exempt from the
+    // known-repo check (path may be in config but not currently scanned) and
+    // apply their own absolute-path checks below.
+    if ("repoPath" in msg || REPO_SCOPED.has(msg.type)) {
+      const repoPath: unknown = (msg as { repoPath?: unknown }).repoPath;
+      if (typeof repoPath !== "string" || repoPath === "") return;
+      if (
+        !this._isKnownRepo(repoPath) &&
+        msg.type !== "pinRepo" &&
+        msg.type !== "unpinRepo"
+      ) {
         return;
       }
     }
@@ -709,7 +748,10 @@ export class DashboardWebviewPanel {
 
       case "exportActivity": {
         const format = msg.format;
-        const entries = msg.entries;
+        if (format !== "clipboard" && format !== "file") break;
+        if (!Array.isArray(msg.entries) || msg.entries.length > MAX_EXPORT_ENTRIES) break;
+        const entries = msg.entries.filter(isActivityEntry);
+        if (entries.length === 0) break;
         const lines: string[] = ["# Diffchestrator Activity Log", ""];
         const grouped = new Map<string, ActivityEntry[]>();
         for (const e of entries) {
@@ -800,14 +842,4 @@ export class DashboardWebviewPanel {
       d?.dispose();
     }
   }
-}
-
-function getNonce(): string {
-  let text = "";
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  for (let i = 0; i < 32; i++) {
-    text += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return text;
 }

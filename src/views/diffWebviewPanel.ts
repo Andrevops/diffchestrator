@@ -1,9 +1,15 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { RepoManager } from "../services/repoManager";
+import { getNonce } from "./nonce";
 import type { RepoStatus, DiffWebviewMessage } from "../types";
 import { escapeForTerminal } from "../utils/shell";
 import { terminalIcon } from "../commands/terminal";
+
+// Message types that must carry a valid repoPath (rejected when it's missing).
+const REPO_SCOPED = new Set<string>([
+  "stageFile", "unstageFile", "stageAll", "unstageAll", "openTerminal", "askClaude",
+]);
 
 export class DiffWebviewPanel {
   public static currentPanel: DiffWebviewPanel | undefined;
@@ -192,10 +198,18 @@ export class DiffWebviewPanel {
   }
 
   private async _handleMessage(msg: DiffWebviewMessage): Promise<void> {
-    // Validate repoPath against known repos
-    const repoPath = "repoPath" in msg ? msg.repoPath : undefined;
-    if (repoPath && !this._repoManager.getRepo(repoPath)) {
+    if (this._disposed) return;
+    if (!msg || typeof msg !== "object" || typeof (msg as { type?: unknown }).type !== "string") {
       return;
+    }
+    // Every repo-scoped message must carry a non-empty string repoPath that
+    // names a known repo — never fall through with undefined/"" (e.g.
+    // path.basename(undefined) throws).
+    if ("repoPath" in msg || REPO_SCOPED.has(msg.type)) {
+      const repoPath: unknown = (msg as { repoPath?: unknown }).repoPath;
+      if (typeof repoPath !== "string" || repoPath === "" || !this._repoManager.getRepo(repoPath)) {
+        return;
+      }
     }
 
     switch (msg.type) {
@@ -209,6 +223,7 @@ export class DiffWebviewPanel {
         break;
 
       case "stageFile": {
+        if (typeof msg.filePath !== "string" || msg.filePath === "") break;
         await this._git.stage(msg.repoPath, [msg.filePath]);
         await this._repoManager.refreshRepo(msg.repoPath);
         await this._update();
@@ -216,6 +231,7 @@ export class DiffWebviewPanel {
       }
 
       case "unstageFile": {
+        if (typeof msg.filePath !== "string" || msg.filePath === "") break;
         await this._git.unstage(msg.repoPath, [msg.filePath]);
         await this._repoManager.refreshRepo(msg.repoPath);
         await this._update();
@@ -276,14 +292,4 @@ export class DiffWebviewPanel {
       d?.dispose();
     }
   }
-}
-
-function getNonce(): string {
-  let text = "";
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  for (let i = 0; i < 32; i++) {
-    text += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return text;
 }
