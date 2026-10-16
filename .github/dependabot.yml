@@ -1,0 +1,37 @@
+version: 2
+updates:
+  # Keeps SHA-pinned actions (and their # vX.Y.Z comments) current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+    ignore:
+      # Must track engines.vscode; raise both together, deliberately.
+      - dependency-name: "@types/vscode"
+        update-types: [version-update:semver-minor, version-update:semver-major]
+
+  - package-ecosystem: npm
+    directory: /webview-ui
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      webview:
+        update-types: [minor, patch]
