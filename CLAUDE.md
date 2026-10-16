@@ -8,7 +8,10 @@ VS Code extension for multi-repo Git orchestration. Publisher: `andrevops-com` (
 make build              # Full build (webview + dashboard + extension)
 make compile            # Extension only (fast, for dev)
 make package            # Build + package .vsix
-make install            # Install latest Marketplace .vsix locally
+make install            # Install the Marketplace .vsix for the package.json version
+make typecheck          # tsc (extension + webview-ui)
+make lint               # ESLint
+make test               # Unit tests
 make clean              # Remove build artifacts
 ```
 
@@ -20,16 +23,20 @@ cd webview-ui && npm run build:dashboard
 ## Release Workflow
 
 ```bash
-make release            # Auto-detect bump from conventional commits, build, package
+make release            # Auto-detect bump from conventional commits, verify, package, commit + tag
 make release-patch      # Force patch bump
 make release-minor      # Force minor bump
 make release-major      # Force major bump
-git push && git push --tags    # Triggers CI (GitHub Actions)
+git push --atomic origin main vX.Y.Z   # Triggers the release workflow
 ```
 
-The release script: bumps version, updates CHANGELOG.md, commits, tags, builds two `.vsix` files (Marketplace + Open VSX). CI creates GitHub Release and auto-publishes to Open VSX.
+The release script: preflight (clean tree, on main, in sync with origin, tag absent) → bump package.json/lock + CHANGELOG.md → typecheck, test, build, package both `.vsix` (Marketplace + Open VSX) → commit + tag last. Files are restored on failure. Pure logic lives in `scripts/releaseLib.mjs` (tested).
+
+CI: `.github/workflows/ci.yml` runs on PRs and pushes to main. `.github/workflows/publish.yml` runs on `v*` tags in two jobs. The read-only build job builds and packages. The publish job runs in the `release` environment and signs, attests, creates the GitHub Release, and publishes the CI-built `.vsix` to Open VSX, and to the Marketplace when `VSCE_PAT` is set. Release notes come from CHANGELOG.md. All actions are SHA-pinned (Dependabot keeps them current).
 
 ## Publishing
+
+Normally CI publishes. These are manual fallbacks, and they pick the `.vsix` matching the package.json version:
 
 ```bash
 make publish            # Publish to both VS Code Marketplace and Open VSX
@@ -69,8 +76,12 @@ make publish-openvsx      # Open VSX only
 ## Testing
 
 ```bash
-npm test    # Node.js native test runner (*.test.ts in src/utils/)
+npm test            # Node.js native test runner: src/**/*.test.ts + scripts/**/*.test.mjs
+npm run typecheck   # tsc for extension + webview-ui (esbuild does not typecheck)
+npm run lint        # ESLint, high-signal rules, warn-only (errors fail CI)
 ```
+
+Tests live next to the code they cover anywhere under `src/` (git/, services/, commands/, utils/, …). The `vscode` module is stubbed via `src/test-setup/`. `@types/vscode` is pinned to `engines.vscode` (~1.95). Don't use newer APIs without raising both.
 
 ## Dashboard Architecture
 
@@ -84,7 +95,7 @@ Message protocol: webview sends `{ type, ...payload }`, panel handles in `_handl
 
 ## Important Notes
 
-- `make install` excludes `*-openvsx.vsix` files (installs Marketplace build only)
+- `make install` installs `diffchestrator-<package.json version>.vsix` (Marketplace build only)
 - Dashboard, diff, and search webviews are separate Vite builds with separate configs
 - `RepoTreeProvider` implements `Disposable` — must be pushed to `context.subscriptions`
 - GitExecutor has metadata cache (30s TTL) for `getRemoteUrl`, `stashCount`, `lastCommitDate`
