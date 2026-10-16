@@ -27,7 +27,8 @@ export function registerStashCommands(
 
         const action = await vscode.window.showQuickPick(
           [
-            { label: "$(archive) Stash changes", description: "Save working directory to stash", _action: "push" as const },
+            { label: "$(archive) Stash changes", description: "Save tracked changes (staged + unstaged) to stash", _action: "push" as const },
+            { label: "$(archive) Stash changes (include untracked)", description: "Also stash untracked files (git stash -u)", _action: "pushUntracked" as const },
             { label: "$(list-unordered) List stashes", description: "View all stashes", _action: "list" as const },
             { label: "$(debug-step-out) Pop latest stash", description: "Apply and remove most recent stash", _action: "pop" as const },
             { label: "$(history) Apply stash...", description: "Apply a specific stash (keep in list)", _action: "apply" as const },
@@ -40,16 +41,29 @@ export function registerStashCommands(
 
         try {
           switch (action._action) {
-            case "push": {
+            case "push":
+            case "pushUntracked": {
+              const includeUntracked = action._action === "pushUntracked";
               const message = await vscode.window.showInputBox({
                 prompt: "Stash message (optional)",
                 placeHolder: "WIP: description",
               });
               if (message === undefined) return; // cancelled
-              await git.stashPush(repoPath, message || undefined);
+              try {
+                await git.stashPush(repoPath, message || undefined, includeUntracked);
+              } catch (err: unknown) {
+                // Nothing to stash isn't an error — git exits 0 for it
+                if (err instanceof Error && /No local changes to save/.test(err.message)) {
+                  vscode.window.showInformationMessage(
+                    `Diffchestrator: No local changes to save in ${repoName}${includeUntracked ? "" : " (untracked files are only stashed with \"include untracked\")"}.`
+                  );
+                  return;
+                }
+                throw err;
+              }
               await repoManager.refreshRepo(repoPath);
               vscode.window.showInformationMessage(
-                `Diffchestrator: Stashed changes in ${repoName}`
+                `Diffchestrator: Stashed ${includeUntracked ? "changes and untracked files" : "changes"} in ${repoName}`
               );
               break;
             }
@@ -112,7 +126,9 @@ export function registerStashCommands(
 
               const items = stashes.map((s) => ({
                 label: s.message,
+                description: s.date,
                 _index: s.index,
+                _sha: s.sha,
               }));
 
               const selected = await vscode.window.showQuickPick(items, {
@@ -120,7 +136,8 @@ export function registerStashCommands(
               });
 
               if (selected) {
-                await git.stashApply(repoPath, selected._index);
+                // SHA guard: fails if the stash stack shifted since listing
+                await git.stashApply(repoPath, selected._index, selected._sha || undefined);
                 await repoManager.refreshRepo(repoPath);
                 vscode.window.showInformationMessage(
                   `Diffchestrator: Applied stash in ${repoName}`
@@ -142,6 +159,7 @@ export function registerStashCommands(
                 label: s.message,
                 description: s.date,
                 _index: s.index,
+                _sha: s.sha,
               }));
 
               const selected = await vscode.window.showQuickPick(items, {
@@ -150,12 +168,13 @@ export function registerStashCommands(
 
               if (selected) {
                 const confirm = await vscode.window.showWarningMessage(
-                  `Drop stash@{${selected._index}} from ${repoName}?`,
+                  `Drop stash@{${selected._index}} ("${selected.label}") from ${repoName}?`,
                   { modal: true },
                   "Drop"
                 );
                 if (confirm === "Drop") {
-                  await git.stashDrop(repoPath, selected._index);
+                  // SHA guard: never drop a different stash if the stack shifted
+                  await git.stashDrop(repoPath, selected._index, selected._sha || undefined);
                   await repoManager.refreshRepo(repoPath);
                   vscode.window.showInformationMessage(
                     `Diffchestrator: Dropped stash in ${repoName}`
