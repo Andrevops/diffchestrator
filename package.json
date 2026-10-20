@@ -1517,7 +1517,7 @@
     "test": "node --experimental-strip-types --import ./src/test-setup/register.mjs --test \"src/**/*.test.ts\" \"scripts/**/*.test.mjs\""
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
+    "@types/node": "^26.6.5",
     "@types/vscode": "~1.95.0",
     "@vscode/vsce": "3.9.2",
     "esbuild": "^0.25.12",
